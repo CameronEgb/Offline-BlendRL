@@ -28,8 +28,22 @@ if [ "$LOCAL_MODE" = true ]; then
     pkill -f "$EXP_ID"
 else
     echo "Canceling SLURM jobs for experiment $EXP_ID..."
-    # Match any job name containing the experiment ID
-    scancel --name="*$EXP_ID*"
+    
+    # Precise cancellation using job IDs from out/runs/EXP_ID/jobids.txt
+    JOBIDS_FILE="out/runs/$EXP_ID/jobids.txt"
+    if [ -f "$JOBIDS_FILE" ]; then
+        echo "Reading job IDs from $JOBIDS_FILE..."
+        while read -r jid; do
+            if [ -n "$jid" ]; then
+                echo "Canceling job $jid..."
+                scancel "$jid"
+            fi
+        done < "$JOBIDS_FILE"
+    else
+        echo "Warning: $JOBIDS_FILE not found. Using fallback name-based cancellation."
+        # Fallback to name-based matching
+        scancel --name="*$EXP_ID*"
+    fi
 fi
 
 echo "Removing data for experiment $EXP_ID..."
