@@ -1,20 +1,18 @@
 #!/bin/bash
 # --- Configuration Section ---
-# These are the default values. 
-# Any flags passed to this script (e.g., --environment mountaincar) 
-# will override these defaults in the python execution.
-EXPERIMENT_ID="mc_test_sm"
-ENVIRONMENT="mountaincar"
+EXPERIMENT_ID="seaquest_test_demo"
+ENVIRONMENT="seaquest"
 ONLINE_METHODS="ppo,blendrl_ppo"
-ONLINE_STEPS=50000
+ONLINE_STEPS=30000
 OFFLINE_METHODS="iql,blendrl_iql"
-OFFLINE_DATASETS="blendrl_ppo"
-OFFLINE_EPOCHS=100
-INTERVALS_COUNT=30
+OFFLINE_DATASETS="blendrl_ppo,ppo"
+OFFLINE_EPOCHS=50
+INTERVALS_COUNT=5
 EVAL_EPISODES=100
-USE_LARGE_DATASET_PATH=false
-LARGE_DATASET_PATH=""
-LOCAL=true
+# -----------------------------
+USE_LARGE_DATASET_PATH=true
+LARGE_DATASET_PATH="/mnt/beegfs/cegbert/offlineDatasets"
+LOCAL=false
 SEED=1
 # -----------------------------
 
