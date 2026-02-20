@@ -52,10 +52,10 @@ def parse_args():
     
     use_large = os.getenv("USE_LARGE_DATASET_PATH", "false").lower() == "true"
     parser.add_argument("--use_large_dataset_path", action="store_true", default=use_large)
+    parser.add_argument("--use_large_dataset_path", action="store_true", default=use_large)
     parser.add_argument("--large_dataset_path", type=str, default=os.getenv("LARGE_DATASET_PATH", ""))
     
-    local_val = os.getenv("LOCAL", "true").lower() == "true"
-    parser.add_argument("--local", action="store_true", default=local_val)
+    parser.add_argument("--local", action="store_true", help="Run experiments locally instead of submitting to cluster")
     
     parser.add_argument("--seed", type=int, default=int(os.getenv("SEED", "1")))
     return parser.parse_args()
