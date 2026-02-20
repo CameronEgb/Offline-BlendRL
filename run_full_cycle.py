@@ -194,7 +194,40 @@ def main():
     
     # 1. Online Training
     for method in online_methods:
-        # ... (rest of the loop)
+        method = method.strip()
+        if not method: continue
+        
+        run_name = f"{env_name}_{method}_{experiment_id}"
+        run_path = os.path.join(DATA_DIR, experiment_id, run_name)
+        
+        if check_experiment_exists(run_path):
+            if ask_user_overwrite(run_name):
+                print(f"Clearing old run data: {run_path}")
+                import shutil
+                shutil.rmtree(run_path, ignore_errors=True)
+                if args.use_large_dataset_path and args.large_dataset_path:
+                    dataset_path = os.path.join(args.large_dataset_path, experiment_id, run_name)
+                else:
+                    dataset_path = os.path.join(DATA_DIR, experiment_id, run_name, "offline_dataset")
+                if os.path.exists(dataset_path):
+                    shutil.rmtree(dataset_path, ignore_errors=True)
+            else:
+                continue
+        
+        script_name = "train_neuralppo.py" if method == "ppo" else "train_blenderl.py"
+        if method not in ["ppo", "blendrl_ppo"]:
+            print(f"Warning: Unknown method {method}")
+            continue
+            
+        cmd = f"{python_cmd} {script_name} --env_name {env_name} --total_timesteps {args.online_steps} --seed {args.seed} --save_dataset --dataset_path {dataset_base_path} --run_id {run_name} --exp_id {experiment_id} --intervals {args.intervals_count} --eval_episodes {args.eval_episodes} --learning_rate {args.lr} --gamma {args.gamma} --ent_coef {args.ent_coef} --num_envs {args.num_envs} --num_steps {args.num_steps} --reasoner {args.reasoner} --algorithm {args.algorithm} --blender_mode {args.blender_mode} --blend_function {args.blend_function} --actor_mode {args.actor_mode} --rules {args.rules}"
+        if args.pretrained: cmd += " --pretrained"
+        if args.joint_training: cmd += " --joint_training"
+            
+        if method == "ppo":
+            cmd += f" --update_epochs {args.ppo_epochs}"
+        elif method == "blendrl_ppo":
+            cmd += f" --logic_learning_rate {args.logic_lr} --blender_learning_rate {args.blender_lr} --blend_ent_coef {args.blend_ent_coef} --num_blend_envs {args.num_blend_envs}"
+        
         jid = submit_job(cmd, f"on_{method}_{experiment_id}", local=args.local, log_dir=f"logs/{experiment_id}")
         if jid: 
             online_job_ids[method] = jid
@@ -204,11 +237,30 @@ def main():
 
     # 2. Offline Training
     for off_method in offline_methods:
-        # ... (rest of the loop)
-        jid = submit_job(cmd, f"off_{off_method}_{data_source}_{experiment_id}", dependency=dependency, local=args.local, log_dir=f"logs/{experiment_id}")
-        if jid and not args.local:
-            jobids_file.write(f"{jid}\n")
-            jobids_file.flush()
+        off_method = off_method.strip()
+        if not off_method: continue
+        for data_source in offline_datasets:
+            data_source = data_source.strip()
+            if not data_source: continue
+            
+            run_name = f"off_{off_method}_{data_source}_{experiment_id}"
+            run_path = os.path.join(DATA_DIR, experiment_id, run_name)
+            
+            if check_experiment_exists(run_path) and not ask_user_overwrite(run_name):
+                continue
+            if check_experiment_exists(run_path):
+                import shutil
+                shutil.rmtree(run_path, ignore_errors=True)
+
+            dataset_run_id = f"{env_name}_{data_source}_{experiment_id}"
+            script = "train_iql.py" if off_method == "iql" else "train_blendrl_iql.py"
+            dependency = online_job_ids.get(data_source)
+
+            cmd = f"{python_cmd} {script} --env_name {env_name} --dataset_path {dataset_base_path} --dataset_run_name {dataset_run_id} --intervals {args.intervals_count} --epochs_per_interval {args.offline_epochs} --seed {args.seed} --run_id {run_name} --exp_id {experiment_id} --eval_episodes {args.eval_episodes} --learning_rate {args.offline_lr} --gamma {args.gamma} --tau {args.iql_tau} --beta {args.iql_beta} --batch_size {args.batch_size} --algorithm {args.algorithm} --blender_mode {args.blender_mode} --blend_function {args.blend_function} --actor_mode {args.actor_mode} --rules {args.rules} --reasoner {args.reasoner}"
+            jid = submit_job(cmd, f"off_{off_method}_{data_source}_{experiment_id}", dependency=dependency, local=args.local, log_dir=f"logs/{experiment_id}")
+            if jid and not args.local:
+                jobids_file.write(f"{jid}\n")
+                jobids_file.flush()
     
     jobids_file.close()
 
