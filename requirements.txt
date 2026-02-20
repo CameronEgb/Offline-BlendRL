@@ -1,15 +1,14 @@
 tyro
 pygame
 vidmaker
-opencv-python>=4.5.5.64
+opencv-python==4.5.5.64
 stable-baselines3
 captum
-ocatari @ git+https://github.com/k4ntz/OC_Atari.git
+ocatari
 hackatari @ git+https://github.com/k4ntz/HackAtari.git
 pyyaml
 tensorboard
 rtpt
 wandb
 gymnasium[atari, accept-rom-license]
-torch>=2.4.0
-dataclasses
+torch==2.4.0
