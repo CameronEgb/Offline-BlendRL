@@ -12,4 +12,4 @@ rtpt
 wandb
 gymnasium[atari, accept-rom-license]
 torch>=2.4.0
-dataclasses; python_version < "3.7"
+dataclasses
