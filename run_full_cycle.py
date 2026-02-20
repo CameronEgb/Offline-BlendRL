@@ -174,7 +174,7 @@ def main():
     print(f"--- Starting Full Cycle: {experiment_id} ---")
     
     online_job_ids = {} # method -> job_id
-    python_cmd = sys.executable if args.local else "python3"
+    python_cmd = sys.executable if args.local else "./venv/bin/python"
     
     # 1. Online Training
     for method in online_methods:
