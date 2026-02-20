@@ -1,0 +1,21 @@
+#!/bin/bash
+# Install requirements and setup virtual environment
+
+echo "Creating virtual environment..."
+python3 -m venv venv
+
+echo "activating virtual environment..."
+source venv/bin/activate
+
+echo "Upgrading pip..."
+pip install --upgrade pip
+
+echo "Installing base requirements from requirements.txt..."
+pip install -r requirements.txt
+
+echo "Installing internal packages (neumann, nsfr, nudge)..."
+pip install -e neumann/
+pip install -e nsfr/
+pip install -e nudge/
+
+echo "Setup complete. You can now run experiments."

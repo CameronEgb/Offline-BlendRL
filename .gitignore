@@ -1,0 +1,22 @@
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment
+venv/
+.env
+
+# Large Data & Logs
+out/
+logs/
+plots/
+offline_dataset/
+*.h5
+*.pkl
+*.pth
+
+# OS Specific
+.DS_Store
+assets/
