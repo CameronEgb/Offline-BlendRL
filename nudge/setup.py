@@ -1,5 +1,8 @@
 from setuptools import setup, find_packages
 
+with open("../misc/README.md", "r", encoding="utf-8") as fh:
+    long_description = fh.read()
+
 setup(
     name='nudge',
     version='0.5.0',
