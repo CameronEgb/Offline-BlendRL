@@ -1,7 +1,6 @@
 import os
 import random
 import time
-from dataclasses import dataclass
 
 import gymnasium as gym
 import numpy as np
@@ -37,116 +36,116 @@ IN_PATH = Path("in/")
 torch.set_num_threads(5)
 
 
-@dataclass
 class Args:
-    exp_name: str = os.path.basename(__file__)[: -len(".py")]
-    """the name of this experiment"""
-    seed: int = int(os.getenv("SEED", "1"))
-    """seed of the experiment"""
-    torch_deterministic: bool = True
-    """if toggled, `torch.backends.cudnn.deterministic=False`"""
-    cuda: bool = True
-    """if toggled, cuda will be enabled by default"""
-    track: bool = False
-    """if toggled, this experiment will be tracked with Weights and Biases"""
-    wandb_project_name: str = "blendeRL"
-    """the wandb's project name"""
-    wandb_entity: str = None
-    """the entity (team) of wandb's project"""
-    capture_video: bool = False
-    """whether to capture videos of the agent performances (check out `videos` folder)"""
+    def __init__(self):
+        self.exp_name: str = os.path.basename(__file__)[: -len(".py")]
+        """the name of this experiment"""
+        self.seed: int = int(os.getenv("SEED", "1"))
+        """seed of the experiment"""
+        self.torch_deterministic: bool = True
+        """if toggled, `torch.backends.cudnn.deterministic=False`"""
+        self.cuda: bool = True
+        """if toggled, cuda will be enabled by default"""
+        self.track: bool = False
+        """if toggled, this experiment will be tracked with Weights and Biases"""
+        self.wandb_project_name: str = "blendeRL"
+        """the wandb's project name"""
+        self.wandb_entity: str = None
+        """the entity (team) of wandb's project"""
+        self.capture_video: bool = False
+        """whether to capture videos of the agent performances (check out `videos` folder)"""
 
-    # Algorithm specific arguments
-    env_id: str = "Seaquest-v4"
-    """the id of the environment"""
-    total_timesteps: int = int(os.getenv("ONLINE_STEPS", "0"))
-    """total timesteps of the experiments"""
-    num_envs: int = int(os.getenv("NUM_ENVS", "0"))
-    """the number of parallel game environments"""
-    num_blend_envs: int = int(os.getenv("NUM_BLEND_ENVS", "0"))
-    """the number of parallel game environments for blenderl"""
-    num_steps: int = int(os.getenv("NUM_STEPS", "0"))
-    """the number of steps to run in each environment per policy rollout"""
-    anneal_lr: bool = True
-    """Toggle learning rate annealing for policy and value networks"""
-    gamma: float = float(os.getenv("GAMMA", "0.99"))
-    """the discount factor gamma"""
-    gae_lambda: float = 0.95
-    """the lambda for the general advantage estimation"""
-    num_minibatches: int = 4
-    """the number of mini-batches"""
-    update_epochs: int = 10
-    """the K epochs to update the policy"""
-    norm_adv: bool = True
-    """Toggles advantages normalization"""
-    clip_coef: float = 0.1
-    """the surrogate clipping coefficient"""
-    clip_vloss: bool = True
-    """Toggles whether or not to use a clipped loss for the value function, as per the paper."""
-    ent_coef: float = float(os.getenv("ENT_COEF", "-1.0"))
-    """coefficient of the entropy"""
-    vf_coef: float = 0.5
-    """coefficient of the value function"""
-    max_grad_norm: float = 0.5
-    """the maximum norm for the gradient clipping"""
-    target_kl: float = None
-    """the target KL divergence threshold"""
+        # Algorithm specific arguments
+        self.env_id: str = "Seaquest-v4"
+        """the id of the environment"""
+        self.total_timesteps: int = int(os.getenv("ONLINE_STEPS", "0"))
+        """total timesteps of the experiments"""
+        self.num_envs: int = int(os.getenv("NUM_ENVS", "0"))
+        """the number of parallel game environments"""
+        self.num_blend_envs: int = int(os.getenv("NUM_BLEND_ENVS", "0"))
+        """the number of parallel game environments for blenderl"""
+        self.num_steps: int = int(os.getenv("NUM_STEPS", "0"))
+        """the number of steps to run in each environment per policy rollout"""
+        self.anneal_lr: bool = True
+        """Toggle learning rate annealing for policy and value networks"""
+        self.gamma: float = float(os.getenv("GAMMA", "0.99"))
+        """the discount factor gamma"""
+        self.gae_lambda: float = 0.95
+        """the lambda for the general advantage estimation"""
+        self.num_minibatches: int = 4
+        """the number of mini-batches"""
+        self.update_epochs: int = 10
+        """the K epochs to update the policy"""
+        self.norm_adv: bool = True
+        """Toggles advantages normalization"""
+        self.clip_coef: float = 0.1
+        """the surrogate clipping coefficient"""
+        self.clip_vloss: bool = True
+        """Toggles whether or not to use a clipped loss for the value function, as per the paper."""
+        self.ent_coef: float = float(os.getenv("ENT_COEF", "-1.0"))
+        """coefficient of the entropy"""
+        self.vf_coef: float = 0.5
+        """coefficient of the value function"""
+        self.max_grad_norm: float = 0.5
+        """the maximum norm for the gradient clipping"""
+        self.target_kl: float = None
+        """the target KL divergence threshold"""
 
-    # to be filled in runtime
-    batch_size: int = 0
-    """the batch size (computed in runtime)"""
-    minibatch_size: int = 0
-    """the mini-batch size (computed in runtime)"""
-    num_iterations: int = 0
-    """the number of iterations (computed in runtime)"""
+        # to be filled in runtime
+        self.batch_size: int = 0
+        """the batch size (computed in runtime)"""
+        self.minibatch_size: int = 0
+        """the mini-batch size (computed in runtime)"""
+        self.num_iterations: int = 0
+        """the number of iterations (computed in runtime)"""
 
-    # added
-    env_name: str = os.getenv("ENVIRONMENT", "")
-    """the name of the environment"""
-    algorithm: str = os.getenv("ALGORITHM", "blender")
-    """the algorithm used in the agent"""
-    blender_mode: str = os.getenv("BLENDER_MODE", "logic")
-    """the mode for the blend (logic or neural)"""
-    blend_function: str = os.getenv("BLEND_FUNCTION", "softmax")
-    """the function to blend the neural and logic agents: softmax or gumbel_softmax"""
-    actor_mode: str = os.getenv("ACTOR_MODE", "hybrid")
-    """the mode for the agent"""
-    rules: str = os.getenv("RULES", "default")
-    """the ruleset used in the agent"""
-    save_steps: int = 5000000
-    """the number of steps to save models"""
-    pretrained: bool = False
-    """to use pretrained neural agent"""
-    joint_training: bool = False
-    """jointly train neural actor and logic actor and blender"""
-    learning_rate: float = float(os.getenv("LR", "0.0"))
-    """the learning rate of the optimizer (neural)"""
-    logic_learning_rate: float = float(os.getenv("LOGIC_LR", "0.0"))
-    """the learning rate of the optimizer (logic)"""
-    blender_learning_rate: float = float(os.getenv("BLENDER_LR", "0.0"))
-    """the learning rate of the optimizer (blender)"""
-    blend_ent_coef: float = float(os.getenv("BLEND_ENT_COEF", "-1.0"))
-    """coefficient of the blend entropy"""
-    recover: bool = False
-    """recover the training from the last checkpoint"""
-    reasoner: str = os.getenv("REASONER", "nsfr")
-    """the reasoner used in the agent; nsfr or neumann"""
-    
-    # added for offline dataset generation
-    save_dataset: bool = False
-    """whether to save the dataset for offline training"""
-    dataset_path: str = "offline_dataset"
-    """path to save the dataset"""
-    
-    # added for orchestration
-    run_id: str = ""
-    """run id to override run name"""
-    exp_id: str = os.getenv("EXPERIMENT_ID", "")
-    """experiment ID for grouping runs"""
-    intervals: int = int(os.getenv("INTERVALS_COUNT", "7"))
-    """number of evaluation intervals (required)"""
-    eval_episodes: int = int(os.getenv("EVAL_EPISODES", "100"))
-    """number of evaluation episodes"""
+        # added
+        self.env_name: str = os.getenv("ENVIRONMENT", "")
+        """the name of the environment"""
+        self.algorithm: str = os.getenv("ALGORITHM", "blender")
+        """the algorithm used in the agent"""
+        self.blender_mode: str = os.getenv("BLENDER_MODE", "logic")
+        """the mode for the blend (logic or neural)"""
+        self.blend_function: str = os.getenv("BLEND_FUNCTION", "softmax")
+        """the function to blend the neural and logic agents: softmax or gumbel_softmax"""
+        self.actor_mode: str = os.getenv("ACTOR_MODE", "hybrid")
+        """the mode for the agent"""
+        self.rules: str = os.getenv("RULES", "default")
+        """the ruleset used in the agent"""
+        self.save_steps: int = 5000000
+        """the number of steps to save models"""
+        self.pretrained: bool = False
+        """to use pretrained neural agent"""
+        self.joint_training: bool = False
+        """jointly train neural actor and logic actor and blender"""
+        self.learning_rate: float = float(os.getenv("LR", "0.0"))
+        """the learning rate of the optimizer (neural)"""
+        self.logic_learning_rate: float = float(os.getenv("LOGIC_LR", "0.0"))
+        """the learning rate of the optimizer (logic)"""
+        self.blender_learning_rate: float = float(os.getenv("BLENDER_LR", "0.0"))
+        """the learning rate of the optimizer (blender)"""
+        self.blend_ent_coef: float = float(os.getenv("BLEND_ENT_COEF", "-1.0"))
+        """coefficient of the blend entropy"""
+        self.recover: bool = False
+        """recover the training from the last checkpoint"""
+        self.reasoner: str = os.getenv("REASONER", "nsfr")
+        """the reasoner used in the agent; nsfr or neumann"""
+        
+        # added for offline dataset generation
+        self.save_dataset: bool = False
+        """whether to save the dataset for offline training"""
+        self.dataset_path: str = "offline_dataset"
+        """path to save the dataset"""
+        
+        # added for orchestration
+        self.run_id: str = ""
+        """run id to override run name"""
+        self.exp_id: str = os.getenv("EXPERIMENT_ID", "")
+        """experiment ID for grouping runs"""
+        self.intervals: int = int(os.getenv("INTERVALS_COUNT", "7"))
+        """number of evaluation intervals (required)"""
+        self.eval_episodes: int = int(os.getenv("EVAL_EPISODES", "100"))
+        """number of evaluation episodes"""
 
 
 def main():
