@@ -1,29 +1,29 @@
 #!/bin/bash
 
 # --- Configuration ---
-REMOTE_USER_HOST="cegbert@arc.csc.ncsu.edu"
-REMOTE_PROJECT_ROOT="/home/cegbert/Code/BlendRL-Minigrid"
+LOCAL_DIRS=("out/runs" "logs" "plots")
 
 echo "===================================================="
-echo "WARNING: This will PERMANENTLY DELETE all remote data"
-echo "in out/runs, logs, and plots on the cluster."
+echo "WARNING: This will DELETE all local data synced from remote."
+echo "Any folder ending in '-remote' inside out/runs, logs, and plots will be removed."
 echo "===================================================="
-read -p "Are you absolutely sure? (y/n): " confirm
+read -p "Are you sure you want to delete these local copies? (y/n): " confirm
 
 if [[ "$confirm" != "y" ]]; then
     echo "Operation cancelled."
     exit 0
 fi
 
-# Directories to clear
-DIRS=("out/runs" "logs" "plots")
-
-for DIR in "${DIRS[@]}"; do
-    echo "Clearing remote $DIR..."
-    # We delete the *contents* of the directory but keep the directory itself
-    ssh "${REMOTE_USER_HOST}" "rm -rf ${REMOTE_PROJECT_ROOT}/${DIR}/*"
+for DIR in "${LOCAL_DIRS[@]}"; do
+    if [ -d "$DIR" ]; then
+        echo "Scanning $DIR for '-remote' directories..."
+        # Find directories ending in -remote and delete them
+        find "$DIR" -maxdepth 1 -type d -name "*-remote" -exec rm -rf {} + -print
+    else
+        echo "Directory $DIR not found, skipping."
+    fi
 done
 
 echo "===================================================="
-echo "Remote logs and data cleared successfully."
+echo "Local copies of remote logs have been cleared."
 echo "===================================================="
