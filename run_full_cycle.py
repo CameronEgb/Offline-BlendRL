@@ -91,8 +91,15 @@ def submit_job(command, job_name, dependency=None, log_dir="logs", partition=CLU
 #SBATCH --error={log_dir}/{job_name}_%j.err
 """
         if dependency:
-            sbatch_script += f"#SBATCH --dependency=afterok:{dependency}"
+            sbatch_script += f"#SBATCH --dependency=afterok:{dependency}\n"
+        
+        sbatch_script += "\n"
+        sbatch_script += "if [ -d \"venv\" ]; then\n"
+        sbatch_script += "    source venv/bin/activate\n"
+        sbatch_script += "fi\n"
+        sbatch_script += "export PYTHONPATH=$PYTHONPATH:.\n"
         sbatch_script += f"{command}"
+        
         res = subprocess.run(["sbatch"], input=sbatch_script.encode(), capture_output=True)
         if res.returncode == 0:
             job_id = res.stdout.decode().strip().split(" ")[-1]
@@ -167,7 +174,7 @@ def main():
     print(f"--- Starting Full Cycle: {experiment_id} ---")
     
     online_job_ids = {} # method -> job_id
-    python_cmd = sys.executable if args.local else "python"
+    python_cmd = sys.executable if args.local else "python3"
     
     # 1. Online Training
     for method in online_methods:

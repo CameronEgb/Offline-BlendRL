@@ -2,7 +2,7 @@
 
 # --- Configuration ---
 REMOTE_USER_HOST="cegbert@arc.csc.ncsu.edu"
-REMOTE_PROJECT_ROOT="/home/cegbert/Code/BlendRL-Minigrid" # Update if renamed on remote
+REMOTE_PROJECT_ROOT="/home/cegbert/Code/Offline-BlendRL"
 
 # Check for experiment ID argument
 EXP_ID=$1

@@ -5,7 +5,7 @@ import torch as th
 from ocatari.ram.seaquest import MAX_NB_OBJECTS
 import gymnasium as gym
 from hackatari.core import HackAtari
-
+from gymnasium.vector import AsyncVectorEnv
 
 class VectorizedNudgeEnv(VectorizedNudgeBaseEnv):
     name = "seaquest"
@@ -17,7 +17,6 @@ class VectorizedNudgeEnv(VectorizedNudgeBaseEnv):
         "left": 4,
         "down": 5,
     }
-    pred_names: Sequence
 
     def __init__(
         self,
@@ -28,31 +27,32 @@ class VectorizedNudgeEnv(VectorizedNudgeBaseEnv):
         seed=None,
     ):
         super().__init__(mode)
-        # set up multiple envs
         self.n_envs = n_envs
-        self.envs = [
-            HackAtari(
-                env_name="ALE/Seaquest-v5",
-                mode="ram",
-                obs_mode="ori",
-                rewardfunc_path="in/envs/seaquest/blenderl_reward.py",
-                render_mode=render_mode,
-                render_oc_overlay=render_oc_overlay,
-            )
-            for i in range(n_envs)
-        ]
-        # apply wrapper to _env in OCAtari
-        for i in range(n_envs):
-            self.envs[i]._env = make_env(self.envs[i]._env)
+        self.seed = seed
+        
+        def make_hackatari_env(rank):
+            def _thunk():
+                env = HackAtari(
+                    env_name="ALE/Seaquest-v5",
+                    mode="ram",
+                    obs_mode="ori",
+                    rewardfunc_path="in/envs/seaquest/blenderl_reward.py",
+                    render_mode=render_mode,
+                    render_oc_overlay=render_oc_overlay,
+                )
+                env._env = make_env(env._env)
+                if seed is not None:
+                    env.action_space.seed(seed + rank)
+                return env
+            return _thunk
 
-        # for learning script from cleanrl
+        self.venv = AsyncVectorEnv([make_hackatari_env(i) for i in range(n_envs)])
+        
         self.n_actions = 6
         self.n_raw_actions = 18
         self.n_objects = 43
-        self.n_features = 4  # visible, x-pos, y-pos, right-facing
-        self.seed = seed
-
-        # Compute index offsets. Needed to deal with multiple same-category objects
+        self.n_features = 4
+        
         self.obj_offsets = {}
         offset = 0
         for obj, max_count in MAX_NB_OBJECTS.items():
@@ -61,69 +61,40 @@ class VectorizedNudgeEnv(VectorizedNudgeBaseEnv):
         self.relevant_objects = set(MAX_NB_OBJECTS.keys())
 
     def reset(self):
+        obs, infos = self.venv.reset(seed=self.seed)
+        # obs is (N, 4, 84, 84)
+        neural_states = th.tensor(obs).float()
+        
+        # Get objects from all envs
+        all_objects = self.venv.get_attr("objects")
+        
         logic_states = []
-        neural_states = []
-        seed_i = self.seed
-        for env in self.envs:
-            obs, _ = env.reset(seed=seed_i)
-            # lazy frame to tensor
-            obs = th.tensor(obs).float()
-            state = env.objects
-            raw_state = obs  # self.env.dqn_obs
-            logic_state, neural_state = self.extract_logic_state(
-                state
-            ), self.extract_neural_state(raw_state)
-            logic_states.append(logic_state)
-            neural_states.append(neural_state)
-            seed_i += 1
-        return th.stack(logic_states), th.stack(neural_states)
+        for objects in all_objects:
+            logic_states.append(self.extract_logic_state(objects))
+        
+        return th.stack(logic_states), neural_states
 
     def step(self, actions, is_mapped: bool = False):
-        assert (
-            len(actions) == self.n_envs
-        ), "Invalid number of actions: n_actions is {} and n_envs is {}".format(
-            len(actions), self.n_envs
-        )
-        observations = []
-        rewards = []
-        truncations = []
-        dones = []
-        infos = []
+        obs, rewards, terminations, truncations, infos = self.venv.step(actions)
+        
+        neural_states = th.tensor(obs).float()
+        all_objects = self.venv.get_attr("objects")
+        
         logic_states = []
-        neural_states = []
-        for i, env in enumerate(self.envs):
-            action = actions[i]
-            # make a step in the env
-            obs, reward, truncation, done, info = env.step(action)
-            # lazy frame to tensor
-            obs = th.tensor(obs).float()
-            # get logic and neural state
-            state = env.objects
-            raw_state = obs
-            logic_state, neural_state = self.convert_state(state, raw_state)
-            logic_states.append(logic_state)
-            neural_states.append(neural_state)
-            observations.append(obs)
-            rewards.append(reward)
-            truncations.append(truncation)
-            dones.append(done)
-            infos.append(info)
-            # store final info
-
-        # observations = th.stack(observations)
+        for objects in all_objects:
+            logic_states.append(self.extract_logic_state(objects))
+            
         return (
-            (th.stack(logic_states), th.stack(neural_states)),
+            (th.stack(logic_states), neural_states),
             rewards,
+            terminations,
             truncations,
-            dones,
             infos,
         )
 
     def extract_logic_state(self, input_state):
         state = th.zeros((self.n_objects, self.n_features), dtype=th.int32)
-
         obj_count = {k: 0 for k in MAX_NB_OBJECTS.keys()}
-
         for obj in input_state:
             if obj.category not in self.relevant_objects:
                 continue
@@ -142,5 +113,4 @@ class VectorizedNudgeEnv(VectorizedNudgeBaseEnv):
         return raw_input_state
 
     def close(self):
-        for env in self.envs:
-            env.close()
+        self.venv.close()

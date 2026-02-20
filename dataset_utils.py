@@ -48,6 +48,42 @@ class DatasetWriter:
         if len(self.buffer) >= self.chunk_size:
             self.flush()
 
+    def batch_add(self, obs, logic_obs, action, reward, next_obs, next_logic_obs, done):
+        """
+        Add a batch of transitions.
+        """
+        batch_size = len(obs)
+        
+        def to_cpu(x, is_obs=False):
+            if isinstance(x, torch.Tensor):
+                x = x.detach().cpu().numpy()
+            if is_obs and x is not None:
+                return x.astype(np.uint8)
+            return x
+
+        obs_cpu = to_cpu(obs, is_obs=True)
+        logic_obs_cpu = to_cpu(logic_obs) if logic_obs is not None else None
+        action_cpu = to_cpu(action)
+        reward_cpu = to_cpu(reward)
+        next_obs_cpu = to_cpu(next_obs, is_obs=True)
+        next_logic_obs_cpu = to_cpu(next_logic_obs) if next_logic_obs is not None else None
+        done_cpu = to_cpu(done)
+
+        for i in range(batch_size):
+            transition = {
+                "obs": obs_cpu[i],
+                "logic_obs": logic_obs_cpu[i] if logic_obs_cpu is not None else None,
+                "action": action_cpu[i],
+                "reward": reward_cpu[i],
+                "next_obs": next_obs_cpu[i],
+                "next_logic_obs": next_logic_obs_cpu[i] if next_logic_obs_cpu is not None else None,
+                "done": done_cpu[i]
+            }
+            self.buffer.append(transition)
+        
+        if len(self.buffer) >= self.chunk_size:
+            self.flush()
+
     def flush(self):
         if not self.buffer:
             return
