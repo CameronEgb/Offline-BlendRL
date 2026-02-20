@@ -25,19 +25,18 @@ fi
 
 if [ "$LOCAL_MODE" = true ]; then
     echo "Killing local processes for experiment $EXP_ID..."
-    pkill -f "run_full_cycle.py.*$EXP_ID"
-    pkill -f "train_.*py.*$EXP_ID"
+    pkill -f "$EXP_ID"
 else
     echo "Canceling SLURM jobs for experiment $EXP_ID..."
-    scancel --name="on_*_$EXP_ID"
-    scancel --name="off_*_$EXP_ID"
+    # Match any job name containing the experiment ID
+    scancel --name="*$EXP_ID*"
 fi
 
 echo "Removing data for experiment $EXP_ID..."
 rm -rf logs/"$EXP_ID"
 rm -rf out/runs/"$EXP_ID" # Remove top level dir if exists
-find out/runs -name "*$EXP_ID*" -exec rm -rf {} +
-find out/tensorboard -name "*$EXP_ID*" -exec rm -rf {} +
-find offline_dataset -name "*$EXP_ID*" -exec rm -rf {} +
+find out/runs -name "*$EXP_ID*" -exec rm -rf {} + 2>/dev/null
+find out/tensorboard -name "*$EXP_ID*" -exec rm -rf {} + 2>/dev/null
+find offline_dataset -name "*$EXP_ID*" -exec rm -rf {} + 2>/dev/null
 
 echo "Done."

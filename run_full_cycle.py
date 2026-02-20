@@ -71,6 +71,12 @@ def ask_user_overwrite(run_name):
 def submit_job(command, job_name, dependency=None, log_dir="logs", partition=CLUSTER_PARTITION, local=False):
     os.makedirs(log_dir, exist_ok=True)
     
+    # Use unbuffered output for better logging
+    if "python " in command:
+        command = command.replace("python ", "python -u ")
+    elif "python3 " in command:
+        command = command.replace("python3 ", "python -u ")
+
     if local:
         if dependency:
             command = f"while kill -0 {dependency} 2>/dev/null; do sleep 5; done; {command}"
@@ -82,6 +88,8 @@ def submit_job(command, job_name, dependency=None, log_dir="logs", partition=CLU
         print(f"Started local process {proc.pid}. Log: {log_file}")
         return str(proc.pid)
     else:
+        # Get absolute path for venv sourcing if possible
+        cwd = os.getcwd()
         sbatch_script = f"""#!/bin/bash
 #SBATCH --partition={partition}
 #SBATCH --nodes={CLUSTER_NODES}
@@ -93,10 +101,13 @@ def submit_job(command, job_name, dependency=None, log_dir="logs", partition=CLU
             sbatch_script += f"#SBATCH --dependency=afterok:{dependency}\n"
         
         sbatch_script += "\n"
+        sbatch_script += f"cd {cwd}\n"
         sbatch_script += "if [ -d \"venv\" ]; then\n"
         sbatch_script += "    source venv/bin/activate\n"
         sbatch_script += "fi\n"
-        sbatch_script += "export PYTHONPATH=$PYTHONPATH:.\n"
+        
+        # Comprehensive PYTHONPATH based on working outdated script
+        sbatch_script += "export PYTHONPATH=\".:nsfr:neumann:in/envs/seaquest:in/envs/mountaincar:$PYTHONPATH\"\n"
         sbatch_script += f"{command}"
         
         res = subprocess.run(["sbatch"], input=sbatch_script.encode(), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -172,8 +183,14 @@ def main():
     
     print(f"--- Starting Full Cycle: {experiment_id} ---")
     
+    # Automatically detect and use venv python if available
+    venv_python = os.path.join(os.getcwd(), "venv", "bin", "python")
+    if os.path.exists(venv_python):
+        python_cmd = venv_python
+    else:
+        python_cmd = sys.executable
+    
     online_job_ids = {} # method -> job_id
-    python_cmd = sys.executable if args.local else "./venv/bin/python"
     
     # 1. Online Training
     for method in online_methods:
