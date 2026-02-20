@@ -5,7 +5,7 @@ import numpy as np
 from pathlib import Path
 
 class DatasetWriter:
-    def __init__(self, save_dir, chunk_size=10000, env_name="env"):
+    def __init__(self, save_dir, chunk_size=100000, env_name="env"):
         self.save_dir = Path(save_dir)
         self.save_dir.mkdir(parents=True, exist_ok=True)
         self.chunk_size = chunk_size

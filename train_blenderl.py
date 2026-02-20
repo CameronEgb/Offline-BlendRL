@@ -223,7 +223,7 @@ def main():
             else:
                 # Save in separate large dataset directory, grouped by exp_id
                 dataset_save_dir = Path(args.dataset_path) / exp_subdir / run_name
-            dataset_writer = DatasetWriter(save_dir=dataset_save_dir, env_name=args.env_name, chunk_size=1000)
+            dataset_writer = DatasetWriter(save_dir=dataset_save_dir, env_name=args.env_name)
 
     writer = SummaryWriter(writer_dir)
     writer.add_text(
