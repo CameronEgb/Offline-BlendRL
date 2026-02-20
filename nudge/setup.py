@@ -4,7 +4,7 @@ with open("../misc/README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 with open("../requirements.txt", "r", encoding="utf-8") as fh:
-    requirements = fh.readlines()
+    requirements = [line.strip() for line in fh if line.strip() and not line.startswith("#") and "@" not in line]
 
 setup(
     name='nudge',
