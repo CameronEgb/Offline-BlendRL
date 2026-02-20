@@ -7,8 +7,8 @@ python3.11 -m venv venv
 echo "activating virtual environment..."
 source venv/bin/activate
 
-echo "Upgrading pip..."
-pip install --upgrade pip
+echo "Upgrading pip, setuptools, and wheel..."
+pip install --upgrade pip setuptools wheel
 
 echo "Installing base requirements from requirements.txt..."
 pip install -r requirements.txt
