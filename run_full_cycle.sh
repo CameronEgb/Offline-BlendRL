@@ -28,7 +28,7 @@ export PYTHONPATH=$PYTHONPATH:.
 
 # We pass the hardcoded defaults first, and then "$@" at the end.
 # In argparse, the LAST occurrence of a flag wins, so "$@" takes precedence.
-python3 run_full_cycle.py \
+python3.11 run_full_cycle.py \
     --experimentid "$EXPERIMENT_ID" \
     --environment "$ENVIRONMENT" \
     --online_methods "$ONLINE_METHODS" \
