@@ -4,7 +4,7 @@ vidmaker
 opencv-python>=4.5.5.64
 stable-baselines3
 captum
-ocatari @ git+https://github.com/p-beane/OCAtari.git
+ocatari @ git+https://github.com/PRL-mbeane/OCAtari.git
 hackatari @ git+https://github.com/k4ntz/HackAtari.git
 pyyaml
 tensorboard
