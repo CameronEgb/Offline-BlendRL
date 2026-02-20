@@ -88,8 +88,6 @@ def submit_job(command, job_name, dependency=None, log_dir="logs", partition=CLU
         print(f"Started local process {proc.pid}. Log: {log_file}")
         return str(proc.pid)
     else:
-        # Get absolute path for venv sourcing if possible
-        cwd = os.getcwd()
         sbatch_script = f"""#!/bin/bash
 #SBATCH --partition={partition}
 #SBATCH --nodes={CLUSTER_NODES}
@@ -101,13 +99,13 @@ def submit_job(command, job_name, dependency=None, log_dir="logs", partition=CLU
             sbatch_script += f"#SBATCH --dependency=afterok:{dependency}\n"
         
         sbatch_script += "\n"
-        sbatch_script += f"cd {cwd}\n"
-        sbatch_script += f"if [ -d \"{cwd}/venv\" ]; then\n"
-        sbatch_script += f"    source {cwd}/venv/bin/activate\n"
-        sbatch_script += "fi\n"
+        sbatch_script += "source venv/bin/activate\n"
         
-        # Comprehensive PYTHONPATH based on working outdated script
-        sbatch_script += f"export PYTHONPATH=\"{cwd}:{cwd}/nsfr:{cwd}/neumann:{cwd}/in/envs/seaquest:{cwd}/in/envs/mountaincar:$PYTHONPATH\"\n"
+        # Debug info
+        sbatch_script += "echo \"Running on host $(hostname) with python $(which python3) version $(python3 --version)\"\n"
+        
+        # Comprehensive PYTHONPATH
+        sbatch_script += "export PYTHONPATH=\".:nsfr:neumann:in/envs/seaquest:in/envs/mountaincar:$PYTHONPATH\"\n"
         sbatch_script += f"{command}"
         
         res = subprocess.run(["sbatch"], input=sbatch_script.encode(), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -184,11 +182,12 @@ def main():
     print(f"--- Starting Full Cycle: {experiment_id} ---")
     
     # We will save job IDs to a file for precise killing later
+    # Open early to ensure it exists
     jobids_path = exp_dir / "jobids.txt"
     jobids_file = open(jobids_path, "w")
     
-    # Use 'python' and rely on venv sourcing in submit_job
-    python_cmd = "python"
+    # Use 'python3' to ensure we use a modern interpreter
+    python_cmd = "python3"
     
     online_job_ids = {} # method -> job_id
     
