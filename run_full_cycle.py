@@ -99,7 +99,7 @@ def submit_job(command, job_name, dependency=None, log_dir="logs", partition=CLU
         sbatch_script += "export PYTHONPATH=$PYTHONPATH:.\n"
         sbatch_script += f"{command}"
         
-        res = subprocess.run(["sbatch"], input=sbatch_script.encode(), capture_output=True)
+        res = subprocess.run(["sbatch"], input=sbatch_script.encode(), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if res.returncode == 0:
             job_id = res.stdout.decode().strip().split(" ")[-1]
             print(f"Submitted job {job_id} ({job_name})")
