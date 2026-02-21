@@ -276,23 +276,26 @@ def main():
         
         # --- Step 0 Evaluation (Only if not recovering) ---
         print(f"--- Evaluating Interval 0 at Global Step 0 ---")
-        eval_env = VectorizedNudgeBaseEnv.from_name(args.env_name, n_envs=1, mode=args.algorithm, seed=args.seed + 100)
+        n_eval_envs = args.num_envs
+        eval_env = VectorizedNudgeBaseEnv.from_name(args.env_name, n_envs=n_eval_envs, mode=args.algorithm, seed=args.seed + 100)
         eval_total_rewards = []
-        for _ in range(args.eval_episodes):
-            e_logic_obs, e_obs = eval_env.reset()
-            e_obs = torch.Tensor(e_obs).to(device)
-            done = False
-            ep_reward = 0
-            while not done:
-                with torch.no_grad():
-                    action, _, _, _ = agent.get_action_and_value(e_obs)
-                (e_logic_obs, e_obs), reward, terminations, truncations, _ = eval_env.step(action.cpu().numpy())
-                e_obs = torch.Tensor(e_obs).to(device)
-                ep_reward += reward[0]
-                done = terminations[0] or truncations[0]
-            eval_total_rewards.append(ep_reward)
+        _, e_obs = eval_env.reset()
+        e_obs = torch.Tensor(e_obs).to(device)
         
-        avg_reward = np.mean(eval_total_rewards)
+        while len(eval_total_rewards) < args.eval_episodes:
+            with torch.no_grad():
+                action, _, _, _ = agent.get_action_and_value(e_obs)
+            (e_logic_obs, e_obs), reward, terminations, truncations, infos = eval_env.step(action.cpu().numpy())
+            e_obs = torch.Tensor(e_obs).to(device)
+            
+            if "final_info" in infos:
+                for info in infos["final_info"]:
+                    if info is not None and "episode" in info:
+                        eval_total_rewards.append(info["episode"]["r"])
+                        if len(eval_total_rewards) >= args.eval_episodes:
+                            break
+        
+        avg_reward = np.mean(eval_total_rewards[:args.eval_episodes])
         print(f"Interval 0 Eval Reward: {avg_reward}")
         writer.add_scalar("charts/eval_return", avg_reward, 0)
         interval_results.append({"interval": 0, "data_limit": 0, "avg_reward": float(avg_reward), "step": 0})
@@ -505,23 +508,26 @@ def main():
             interval_idx = len(interval_results)
             print(f"--- Evaluating Interval {interval_idx} at Global Step {global_step} (Target: {interval_idx * eval_step_freq:.0f}) ---")
             
-            eval_env = VectorizedNudgeBaseEnv.from_name(args.env_name, n_envs=1, mode=args.algorithm, seed=args.seed + 100)
+            n_eval_envs = args.num_envs
+            eval_env = VectorizedNudgeBaseEnv.from_name(args.env_name, n_envs=n_eval_envs, mode=args.algorithm, seed=args.seed + 100)
             eval_total_rewards = []
-            for _ in range(args.eval_episodes):
-                e_logic_obs, e_obs = eval_env.reset()
-                e_obs = torch.Tensor(e_obs).to(device)
-                done = False
-                ep_reward = 0
-                while not done:
-                    with torch.no_grad():
-                        action, _, _, _ = agent.get_action_and_value(e_obs)
-                    (e_logic_obs, e_obs), reward, terminations, truncations, _ = eval_env.step(action.cpu().numpy())
-                    e_obs = torch.Tensor(e_obs).to(device)
-                    ep_reward += reward[0]
-                    done = terminations[0] or truncations[0]
-                eval_total_rewards.append(ep_reward)
+            _, e_obs = eval_env.reset()
+            e_obs = torch.Tensor(e_obs).to(device)
             
-            avg_reward = np.mean(eval_total_rewards)
+            while len(eval_total_rewards) < args.eval_episodes:
+                with torch.no_grad():
+                    action, _, _, _ = agent.get_action_and_value(e_obs)
+                (e_logic_obs, e_obs), reward, terminations, truncations, infos = eval_env.step(action.cpu().numpy())
+                e_obs = torch.Tensor(e_obs).to(device)
+                
+                if "final_info" in infos:
+                    for info in infos["final_info"]:
+                        if info is not None and "episode" in info:
+                            eval_total_rewards.append(info["episode"]["r"])
+                            if len(eval_total_rewards) >= args.eval_episodes:
+                                break
+            
+            avg_reward = np.mean(eval_total_rewards[:args.eval_episodes])
             print(f"Interval {interval_idx} Eval Reward: {avg_reward}")
             writer.add_scalar("charts/eval_return", avg_reward, global_step)
             
