@@ -2,7 +2,7 @@
 # --- Configuration Section ---
 EXPERIMENT_ID="seaquest_test_demo"
 ENVIRONMENT="seaquest"
-ONLINE_METHODS="ppo,blendrl_ppo"
+ONLINE_METHODS="" # Leave empty to skip online and run ONLY offline
 ONLINE_STEPS=30000
 OFFLINE_METHODS="iql,blendrl_iql"
 OFFLINE_DATASETS="blendrl_ppo,ppo"

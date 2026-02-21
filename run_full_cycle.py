@@ -199,11 +199,13 @@ def main():
         run_name = f"{env_name}_{method}_{experiment_id}"
         run_path = os.path.join(DATA_DIR, experiment_id, run_name)
         
+        # Check if this specific run already has data
         if check_experiment_exists(run_path):
             if ask_user_overwrite(run_name):
                 print(f"Clearing old run data: {run_path}")
                 import shutil
                 shutil.rmtree(run_path, ignore_errors=True)
+                # Also clear dataset if it's in the same path
                 if args.use_large_dataset_path and args.large_dataset_path:
                     dataset_path = os.path.join(args.large_dataset_path, experiment_id, run_name)
                 else:
@@ -211,6 +213,9 @@ def main():
                 if os.path.exists(dataset_path):
                     shutil.rmtree(dataset_path, ignore_errors=True)
             else:
+                print(f"Skipping online method: {method} (existing data preserved)")
+                # If skipping online, we still need the Job ID if it's currently running, 
+                # but since we're in "existing data" mode, we assume it's finished.
                 continue
         
         script_name = "train_neuralppo.py" if method == "ppo" else "train_blenderl.py"
@@ -245,11 +250,15 @@ def main():
             run_name = f"off_{off_method}_{data_source}_{experiment_id}"
             run_path = os.path.join(DATA_DIR, experiment_id, run_name)
             
-            if check_experiment_exists(run_path) and not ask_user_overwrite(run_name):
-                continue
+            # Check for existing offline data
             if check_experiment_exists(run_path):
-                import shutil
-                shutil.rmtree(run_path, ignore_errors=True)
+                if ask_user_overwrite(run_name):
+                    print(f"Clearing old offline data: {run_path}")
+                    import shutil
+                    shutil.rmtree(run_path, ignore_errors=True)
+                else:
+                    print(f"Skipping offline method: {off_method} on {data_source} (existing data preserved)")
+                    continue
 
             dataset_run_id = f"{env_name}_{data_source}_{experiment_id}"
             script = "train_iql.py" if off_method == "iql" else "train_blendrl_iql.py"
