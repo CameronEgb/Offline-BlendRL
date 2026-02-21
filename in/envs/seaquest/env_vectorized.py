@@ -36,7 +36,7 @@ class VectorizedNudgeEnv(VectorizedNudgeBaseEnv):
                     env_name="ALE/Seaquest-v5",
                     mode="ram",
                     obs_mode="ori",
-                    rewardfunc_path=None,
+                    rewardfunc_path="in/envs/seaquest/blenderl_reward.py",
                     render_mode=render_mode,
                     render_oc_overlay=render_oc_overlay,
                 )
