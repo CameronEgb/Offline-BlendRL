@@ -41,6 +41,8 @@ class VectorizedNudgeEnv(VectorizedNudgeBaseEnv):
                     render_oc_overlay=render_oc_overlay,
                 )
                 env._env = make_env(env._env)
+                # Ensure the top-level observation space matches the wrapped internal space
+                env.observation_space = env._env.observation_space
                 if seed is not None:
                     env.action_space.seed(seed + rank)
                 return env
