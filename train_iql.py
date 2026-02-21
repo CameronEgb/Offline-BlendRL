@@ -2,6 +2,7 @@ import json
 import os
 import random
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import gymnasium as gym
@@ -92,47 +93,47 @@ class QNetwork(nn.Module):
         return self.network(x / 255.0)
 
 @dataclass
+@dataclass
 class Args:
-    def __init__(self):
-        self.exp_name: str = os.path.basename(__file__)[: -len(".py")]
-        self.seed: int = int(os.getenv("SEED", "1"))
-        self.torch_deterministic: bool = True
-        self.cuda: bool = True
-        self.track: bool = False
-        self.wandb_project_name: str = "offline_iql"
-        self.wandb_entity: str = None
-        
-        self.env_name: str = os.getenv("ENVIRONMENT", "")
-        self.dataset_path: str = os.getenv("DATASET_PATH", "offline_dataset")
-        self.dataset_run_name: str = "" 
-        
-        self.total_timesteps: int = 1000000 # Number of gradient steps
-        self.batch_size: int = int(os.getenv("BATCH_SIZE", "256"))
-        self.learning_rate: float = float(os.getenv("OFFLINE_LR", "3e-4"))
-        self.tau: float = float(os.getenv("IQL_TAU", "0.7"))
-        self.beta: float = float(os.getenv("IQL_BETA", "3.0"))
-        self.iql_tau: float = 0.005 
-        self.gamma: float = float(os.getenv("GAMMA", "0.99"))
-        
-        self.eval_freq: int = 5000
-        self.eval_episodes: int = int(os.getenv("EVAL_EPISODES", "100"))
-        
-        self.algorithm: str = os.getenv("ALGORITHM", "blender")
-        
-        # BlendRL specific (ignored but allowed for orchestration compatibility)
-        self.blender_mode: str = os.getenv("BLENDER_MODE", "logic")
-        self.blend_function: str = os.getenv("BLEND_FUNCTION", "softmax")
-        self.actor_mode: str = os.getenv("ACTOR_MODE", "hybrid")
-        self.rules: str = os.getenv("RULES", "default")
-        self.reasoner: str = os.getenv("REASONER", "nsfr")
-        
-        # Interval training
-        self.intervals: int = int(os.getenv("INTERVALS_COUNT", "7"))
-        self.epochs_per_interval: int = int(os.getenv("OFFLINE_EPOCHS", "10"))
-        
-        # Orchestration
-        self.run_id: str = ""
-        self.exp_id: str = os.getenv("EXPERIMENT_ID", "")
+    exp_name: str = os.path.basename(__file__)[: -len(".py")]
+    seed: int = int(os.getenv("SEED", "1"))
+    torch_deterministic: bool = True
+    cuda: bool = True
+    track: bool = False
+    wandb_project_name: str = "offline_iql"
+    wandb_entity: str = None
+    
+    env_name: str = os.getenv("ENVIRONMENT", "")
+    dataset_path: str = os.getenv("DATASET_PATH", "offline_dataset")
+    dataset_run_name: str = "" 
+    
+    total_timesteps: int = 1000000 # Number of gradient steps
+    batch_size: int = int(os.getenv("BATCH_SIZE", "256"))
+    learning_rate: float = float(os.getenv("OFFLINE_LR", "3e-4"))
+    tau: float = float(os.getenv("IQL_TAU", "0.7"))
+    beta: float = float(os.getenv("IQL_BETA", "3.0"))
+    iql_tau: float = 0.005 
+    gamma: float = float(os.getenv("GAMMA", "0.99"))
+    
+    eval_freq: int = 5000
+    eval_episodes: int = int(os.getenv("EVAL_EPISODES", "100"))
+    
+    algorithm: str = os.getenv("ALGORITHM", "blender")
+    
+    # BlendRL specific (ignored but allowed for orchestration compatibility)
+    blender_mode: str = os.getenv("BLENDER_MODE", "logic")
+    blend_function: str = os.getenv("BLEND_FUNCTION", "softmax")
+    actor_mode: str = os.getenv("ACTOR_MODE", "hybrid")
+    rules: str = os.getenv("RULES", "default")
+    reasoner: str = os.getenv("REASONER", "nsfr")
+    
+    # Interval training
+    intervals: int = int(os.getenv("INTERVALS_COUNT", "7"))
+    epochs_per_interval: int = int(os.getenv("OFFLINE_EPOCHS", "10"))
+    
+    # Orchestration
+    run_id: str = ""
+    exp_id: str = os.getenv("EXPERIMENT_ID", "")
 
 
 def main():
