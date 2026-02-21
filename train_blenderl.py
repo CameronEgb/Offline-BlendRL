@@ -241,7 +241,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
 
     envs = VectorizedNudgeBaseEnv.from_name(
-        args.env_name, n_envs=args.num_envs, mode=args.algorithm, seed=args.seed, use_shaping=True
+        args.env_name, n_envs=args.num_envs, mode=args.algorithm, seed=args.seed
     )  # $, **env_kwargs)
 
     agent = BlenderActorCritic(
@@ -294,7 +294,7 @@ def main():
         
         # --- Step 0 Evaluation (Only if not recovering) ---
         print(f"--- Evaluating Interval 0 at Global Step 0 ---")
-        eval_env = VectorizedNudgeBaseEnv.from_name(args.env_name, n_envs=1, mode=args.algorithm, seed=args.seed + 100, use_shaping=False)
+        eval_env = VectorizedNudgeBaseEnv.from_name(args.env_name, n_envs=1, mode=args.algorithm, seed=args.seed + 100)
         eval_total_rewards = []
         for _ in range(args.eval_episodes):
             e_logic_obs, e_obs = eval_env.reset()
@@ -615,7 +615,7 @@ def main():
             print(f"--- Evaluating Interval {interval_idx} at Global Step {global_step} (Target: {interval_idx * eval_step_freq:.0f}) ---")
             
             # Create a separate eval env
-            eval_env = VectorizedNudgeBaseEnv.from_name(args.env_name, n_envs=1, mode=args.algorithm, seed=args.seed + 100, use_shaping=False)
+            eval_env = VectorizedNudgeBaseEnv.from_name(args.env_name, n_envs=1, mode=args.algorithm, seed=args.seed + 100)
             
             eval_total_rewards = []
             for _ in range(args.eval_episodes):

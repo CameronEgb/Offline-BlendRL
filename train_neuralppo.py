@@ -234,7 +234,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
 
     envs = VectorizedNudgeBaseEnv.from_name(
-        args.env_name, n_envs=args.num_envs, mode=args.algorithm, seed=args.seed, use_shaping=True
+        args.env_name, n_envs=args.num_envs, mode=args.algorithm, seed=args.seed
     )
 
     # The dataset contains raw action indices (0-17) for Atari.
@@ -276,7 +276,7 @@ def main():
         
         # --- Step 0 Evaluation (Only if not recovering) ---
         print(f"--- Evaluating Interval 0 at Global Step 0 ---")
-        eval_env = VectorizedNudgeBaseEnv.from_name(args.env_name, n_envs=1, mode=args.algorithm, seed=args.seed + 100, use_shaping=False)
+        eval_env = VectorizedNudgeBaseEnv.from_name(args.env_name, n_envs=1, mode=args.algorithm, seed=args.seed + 100)
         eval_total_rewards = []
         for _ in range(args.eval_episodes):
             e_logic_obs, e_obs = eval_env.reset()
@@ -504,7 +504,7 @@ def main():
             interval_idx = len(interval_results)
             print(f"--- Evaluating Interval {interval_idx} at Global Step {global_step} (Target: {interval_idx * eval_step_freq:.0f}) ---")
             
-            eval_env = VectorizedNudgeBaseEnv.from_name(args.env_name, n_envs=1, mode=args.algorithm, seed=args.seed + 100, use_shaping=False)
+            eval_env = VectorizedNudgeBaseEnv.from_name(args.env_name, n_envs=1, mode=args.algorithm, seed=args.seed + 100)
             eval_total_rewards = []
             for _ in range(args.eval_episodes):
                 e_logic_obs, e_obs = eval_env.reset()
