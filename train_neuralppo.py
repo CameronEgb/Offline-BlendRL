@@ -388,16 +388,17 @@ def main():
 
             episodic_game_returns += torch.tensor(reward).to(device).view(-1)
 
-            for k, info in enumerate(infos):
-                if "episode" in info:
-                    if episode_log_count < 20:
-                        print(f"env={k}, global_step={global_step}, episodic_return={info['episode']['r']}, episodic_length={info['episode']['l']}")
-                    writer.add_scalar("charts/episodic_return", info["episode"]["r"], global_step)
-                    writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
-                    episodic_returns.append(info["episode"]["r"])
-                    episodic_lengths.append(info["episode"]["l"])
-                    episodic_game_returns[k] = 0
-                    episode_log_count += 1
+            if "final_info" in infos:
+                for k, info in enumerate(infos["final_info"]):
+                    if info is not None and "episode" in info:
+                        if episode_log_count < 20:
+                            print(f"env={k}, global_step={global_step}, episodic_return={info['episode']['r']}, episodic_length={info['episode']['l']}")
+                        writer.add_scalar("charts/episodic_return", info["episode"]["r"], global_step)
+                        writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
+                        episodic_returns.append(info["episode"]["r"])
+                        episodic_lengths.append(info["episode"]["l"])
+                        episodic_game_returns[k] = 0
+                        episode_log_count += 1
               
             # Periodic Progress Report
             if global_step % (args.num_envs * 100) == 0:
