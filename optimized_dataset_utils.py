@@ -87,3 +87,95 @@ class SeaquestDatasetWriter:
 
     def close(self):
         self.flush()
+
+class SeaquestDatasetReader:
+    def __init__(self, dataset_dirs, device="cpu"):
+        """
+        dataset_dirs: list of directories containing dataset chunks
+        """
+        self.device = device
+        self.files = []
+        if isinstance(dataset_dirs, (str, Path)):
+            dataset_dirs = [dataset_dirs]
+            
+        for d in dataset_dirs:
+            p = Path(d)
+            if p.exists():
+                self.files.extend(sorted(list(p.glob("*.pkl"))))
+        
+        if not self.files:
+            print(f"Warning: No dataset files found in {dataset_dirs}")
+
+        self.transitions = []
+        for f in self.files:
+            with open(f, "rb") as fh:
+                data = pickle.load(fh)
+                self.transitions.extend(data)
+        
+        # Convert to structure of arrays for faster sampling
+        self.obs = []
+        self.logic_obs = []
+        self.actions = []
+        self.rewards = []
+        self.next_obs = []
+        self.next_logic_obs = []
+        self.dones = []
+        
+        has_logic = False
+        if len(self.transitions) > 0 and self.transitions[0]["logic_obs"] is not None:
+            has_logic = True
+
+        for t in self.transitions:
+            self.obs.append(t["obs"])
+            if has_logic:
+                self.logic_obs.append(t["logic_obs"])
+            self.actions.append(t["action"])
+            self.rewards.append(t["reward"])
+            self.next_obs.append(t["next_obs"])
+            if has_logic:
+                self.next_logic_obs.append(t["next_logic_obs"])
+            self.dones.append(t["done"])
+
+        self.obs = np.array(self.obs)
+        if has_logic:
+            self.logic_obs = np.array(self.logic_obs)
+        else:
+            self.logic_obs = None
+        self.actions = np.array(self.actions)
+        self.rewards = np.array(self.rewards)
+        self.next_obs = np.array(self.next_obs)
+        if has_logic:
+            self.next_logic_obs = np.array(self.next_logic_obs)
+        else:
+            self.next_logic_obs = None
+        self.dones = np.array(self.dones)
+        
+        self.limit = len(self.obs)
+        del self.transitions
+    
+    def set_limit(self, limit):
+        self.limit = min(limit, len(self.obs))
+        print(f"Dataset limit set to {self.limit} transitions.")
+
+    def sample(self, batch_size):
+        idxs = np.random.randint(0, self.limit, size=batch_size)
+        
+        batch = {
+            "obs": torch.tensor(self.obs[idxs], device=self.device, dtype=torch.float32),
+            "action": torch.tensor(self.actions[idxs], device=self.device, dtype=torch.long),
+            "reward": torch.tensor(self.rewards[idxs], device=self.device, dtype=torch.float32),
+            "next_obs": torch.tensor(self.next_obs[idxs], device=self.device, dtype=torch.float32),
+            "done": torch.tensor(self.dones[idxs], device=self.device, dtype=torch.float32)
+        }
+        
+        if self.logic_obs is not None:
+            batch["logic_obs"] = torch.tensor(self.logic_obs[idxs], device=self.device, dtype=torch.float32)
+            batch["next_logic_obs"] = torch.tensor(self.next_logic_obs[idxs], device=self.device, dtype=torch.float32)
+        else:
+            batch["logic_obs"] = None
+            batch["next_logic_obs"] = None
+            
+        return batch
+
+    def __len__(self):
+        return len(self.obs)
