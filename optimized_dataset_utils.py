@@ -14,39 +14,14 @@ class SeaquestDatasetWriter:
         self.env_name = env_name
         self.total_steps = 0
 
-    def add(self, obs, logic_obs, action, reward, next_obs, next_logic_obs, done):
-        """
-        Add a single transition.
-        """
-        def to_cpu(x, is_obs=False):
-            if isinstance(x, torch.Tensor):
-                x = x.detach().cpu().numpy()
-            if is_obs and x is not None:
-                return x.astype(np.uint8)
-            return x
-
-        transition = {
-            "obs": to_cpu(obs, is_obs=True),
-            "logic_obs": to_cpu(logic_obs),
-            "action": to_cpu(action),
-            "reward": to_cpu(reward),
-            "next_obs": to_cpu(next_obs, is_obs=True),
-            "next_logic_obs": to_cpu(next_logic_obs),
-            "done": to_cpu(done)
-        }
-        self.buffer.append(transition)
-        
-        if len(self.buffer) >= self.chunk_size:
-            self.flush()
-
     def batch_add(self, obs, logic_obs, action, reward, next_obs, next_logic_obs, done):
         """
         Add a batch of transitions.
-        obs: (N, ...)
+        Optimized: Stores only the LATEST frame of next_obs to save space.
+        Reconstruction happens in the Reader.
         """
         batch_size = len(obs)
         
-        # Optimized batch conversion
         if isinstance(obs, torch.Tensor): obs = obs.detach().cpu().numpy()
         if isinstance(logic_obs, torch.Tensor): logic_obs = logic_obs.detach().cpu().numpy()
         if isinstance(action, torch.Tensor): action = action.detach().cpu().numpy()
@@ -55,8 +30,11 @@ class SeaquestDatasetWriter:
         if isinstance(next_logic_obs, torch.Tensor): next_logic_obs = next_logic_obs.detach().cpu().numpy()
         if isinstance(done, torch.Tensor): done = done.detach().cpu().numpy()
 
+        # obs is (N, 4, 84, 84), next_obs is (N, 4, 84, 84)
+        # We only save the newest frame of next_obs: (N, 1, 84, 84)
+        # This saves 3/8 of total observation storage.
         obs = obs.astype(np.uint8)
-        next_obs = next_obs.astype(np.uint8)
+        next_obs_latest = next_obs[:, -1:, :, :].astype(np.uint8)
 
         for i in range(batch_size):
             transition = {
@@ -64,7 +42,7 @@ class SeaquestDatasetWriter:
                 "logic_obs": logic_obs[i],
                 "action": action[i],
                 "reward": reward[i],
-                "next_obs": next_obs[i],
+                "next_obs_new": next_obs_latest[i], # The "tricky" part
                 "next_logic_obs": next_logic_obs[i],
                 "done": done[i]
             }
@@ -76,11 +54,9 @@ class SeaquestDatasetWriter:
     def flush(self):
         if not self.buffer:
             return
-        
         filename = self.save_dir / f"dataset_{self.env_name}_{self.chunk_idx:05d}.pkl"
         with open(filename, "wb") as f:
             pickle.dump(self.buffer, f)
-        
         self.total_steps += len(self.buffer)
         self.buffer = []
         self.chunk_idx += 1
@@ -90,14 +66,10 @@ class SeaquestDatasetWriter:
 
 class SeaquestDatasetReader:
     def __init__(self, dataset_dirs, device="cpu"):
-        """
-        dataset_dirs: list of directories containing dataset chunks
-        """
         self.device = device
         self.files = []
         if isinstance(dataset_dirs, (str, Path)):
             dataset_dirs = [dataset_dirs]
-            
         for d in dataset_dirs:
             p = Path(d)
             if p.exists():
@@ -106,76 +78,61 @@ class SeaquestDatasetReader:
         if not self.files:
             print(f"Warning: No dataset files found in {dataset_dirs}")
 
-        self.transitions = []
+        # Loading into memory-efficient arrays
+        # Note: For 20M steps, we might want memmap, but let's start with 
+        # packed numpy arrays which are much smaller than a list of dicts.
+        all_obs = []
+        all_logic_obs = []
+        all_actions = []
+        all_rewards = []
+        all_next_obs_new = []
+        all_next_logic_obs = []
+        all_dones = []
+
+        print(f"Loading {len(self.files)} dataset chunks...")
         for f in self.files:
             with open(f, "rb") as fh:
-                data = pickle.load(fh)
-                self.transitions.extend(data)
-        
-        # Convert to structure of arrays for faster sampling
-        self.obs = []
-        self.logic_obs = []
-        self.actions = []
-        self.rewards = []
-        self.next_obs = []
-        self.next_logic_obs = []
-        self.dones = []
-        
-        has_logic = False
-        if len(self.transitions) > 0 and self.transitions[0]["logic_obs"] is not None:
-            has_logic = True
+                chunk = pickle.load(fh)
+                for t in chunk:
+                    all_obs.append(t["obs"])
+                    all_logic_obs.append(t["logic_obs"])
+                    all_actions.append(t["action"])
+                    all_rewards.append(t["reward"])
+                    all_next_obs_new.append(t["next_obs_new"])
+                    all_next_logic_obs.append(t["next_logic_obs"])
+                    all_dones.append(t["done"])
 
-        for t in self.transitions:
-            self.obs.append(t["obs"])
-            if has_logic:
-                self.logic_obs.append(t["logic_obs"])
-            self.actions.append(t["action"])
-            self.rewards.append(t["reward"])
-            self.next_obs.append(t["next_obs"])
-            if has_logic:
-                self.next_logic_obs.append(t["next_logic_obs"])
-            self.dones.append(t["done"])
-
-        self.obs = np.array(self.obs)
-        if has_logic:
-            self.logic_obs = np.array(self.logic_obs)
-        else:
-            self.logic_obs = None
-        self.actions = np.array(self.actions)
-        self.rewards = np.array(self.rewards)
-        self.next_obs = np.array(self.next_obs)
-        if has_logic:
-            self.next_logic_obs = np.array(self.next_logic_obs)
-        else:
-            self.next_logic_obs = None
-        self.dones = np.array(self.dones)
+        self.obs = np.array(all_obs, dtype=np.uint8)
+        self.logic_obs = np.array(all_logic_obs, dtype=np.float32)
+        self.actions = np.array(all_actions, dtype=np.int64)
+        self.rewards = np.array(all_rewards, dtype=np.float32)
+        self.next_obs_new = np.array(all_next_obs_new, dtype=np.uint8)
+        self.next_logic_obs = np.array(all_next_logic_obs, dtype=np.float32)
+        self.dones = np.array(all_dones, dtype=np.float32)
         
         self.limit = len(self.obs)
-        del self.transitions
-    
-    def set_limit(self, limit):
-        self.limit = min(limit, len(self.obs))
-        print(f"Dataset limit set to {self.limit} transitions.")
+        print(f"Dataset loaded: {self.limit} transitions.")
 
     def sample(self, batch_size):
         idxs = np.random.randint(0, self.limit, size=batch_size)
         
+        obs_batch = torch.tensor(self.obs[idxs], device=self.device, dtype=torch.float32)
+        next_new_frame = torch.tensor(self.next_obs_new[idxs], device=self.device, dtype=torch.float32)
+        
+        # TRICKY RECONSTRUCTION:
+        # next_obs = [obs[1], obs[2], obs[3], next_new_frame]
+        next_obs_batch = torch.cat([obs_batch[:, 1:, :, :], next_new_frame], dim=1)
+        
         batch = {
-            "obs": torch.tensor(self.obs[idxs], device=self.device, dtype=torch.float32),
+            "obs": obs_batch,
             "action": torch.tensor(self.actions[idxs], device=self.device, dtype=torch.long),
             "reward": torch.tensor(self.rewards[idxs], device=self.device, dtype=torch.float32),
-            "next_obs": torch.tensor(self.next_obs[idxs], device=self.device, dtype=torch.float32),
-            "done": torch.tensor(self.dones[idxs], device=self.device, dtype=torch.float32)
+            "next_obs": next_obs_batch,
+            "done": torch.tensor(self.dones[idxs], device=self.device, dtype=torch.float32),
+            "logic_obs": torch.tensor(self.logic_obs[idxs], device=self.device, dtype=torch.float32),
+            "next_logic_obs": torch.tensor(self.next_logic_obs[idxs], device=self.device, dtype=torch.float32)
         }
-        
-        if self.logic_obs is not None:
-            batch["logic_obs"] = torch.tensor(self.logic_obs[idxs], device=self.device, dtype=torch.float32)
-            batch["next_logic_obs"] = torch.tensor(self.next_logic_obs[idxs], device=self.device, dtype=torch.float32)
-        else:
-            batch["logic_obs"] = None
-            batch["next_logic_obs"] = None
-            
         return batch
 
     def __len__(self):
-        return len(self.obs)
+        return self.limit
