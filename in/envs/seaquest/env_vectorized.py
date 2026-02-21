@@ -25,18 +25,21 @@ class VectorizedNudgeEnv(VectorizedNudgeBaseEnv):
         render_mode="rgb_array",
         render_oc_overlay=False,
         seed=None,
+        use_shaping=True,
     ):
         super().__init__(mode)
         self.n_envs = n_envs
         self.seed = seed
+        self.use_shaping = use_shaping
         
         def make_hackatari_env(rank):
             def _thunk():
+                reward_func = "in/envs/seaquest/blenderl_reward.py" if use_shaping else None
                 env = HackAtari(
                     env_name="ALE/Seaquest-v5",
                     mode="ram",
                     obs_mode="ori",
-                    rewardfunc_path="in/envs/seaquest/blenderl_reward.py",
+                    rewardfunc_path=reward_func,
                     render_mode=render_mode,
                     render_oc_overlay=render_oc_overlay,
                 )
@@ -46,6 +49,7 @@ class VectorizedNudgeEnv(VectorizedNudgeBaseEnv):
                 return env
             return _thunk
 
+        print(f"Creating {n_envs} Seaquest envs (shaping={'ON' if use_shaping else 'OFF'})")
         self.venv = AsyncVectorEnv([make_hackatari_env(i) for i in range(n_envs)])
         
         self.n_actions = 6
