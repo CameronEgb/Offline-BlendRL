@@ -3,6 +3,7 @@ import pickle
 import torch
 import numpy as np
 from pathlib import Path
+import lz4.frame # New import for LZ4 compression
 
 class SeaquestDatasetWriter:
     def __init__(self, save_dir, chunk_size=100000, env_name="seaquest"):
@@ -19,9 +20,11 @@ class SeaquestDatasetWriter:
         Add a batch of transitions.
         Optimized: Stores only the LATEST frame of next_obs to save space.
         Reconstruction happens in the Reader.
+        Applies LZ4 compression and data type optimizations.
         """
         batch_size = len(obs)
         
+        # Convert to numpy and optimize data types
         if isinstance(obs, torch.Tensor): obs = obs.detach().cpu().numpy()
         if isinstance(logic_obs, torch.Tensor): logic_obs = logic_obs.detach().cpu().numpy()
         if isinstance(action, torch.Tensor): action = action.detach().cpu().numpy()
@@ -30,21 +33,34 @@ class SeaquestDatasetWriter:
         if isinstance(next_logic_obs, torch.Tensor): next_logic_obs = next_logic_obs.detach().cpu().numpy()
         if isinstance(done, torch.Tensor): done = done.detach().cpu().numpy()
 
-        # obs is (N, 4, 84, 84), next_obs is (N, 4, 84, 84)
-        # We only save the newest frame of next_obs: (N, 1, 84, 84)
-        # This saves 3/8 of total observation storage.
-        obs = obs.astype(np.uint8)
-        next_obs_latest = next_obs[:, -1:, :, :].astype(np.uint8)
+        # Neural Obs (uint8 + LZ4 compression)
+        # obs is (N, 4, 84, 84)
+        obs_compressed = [lz4.frame.compress(o.astype(np.uint8).tobytes()) for o in obs]
+        # next_obs is (N, 4, 84, 84), we only save the newest frame (N, 1, 84, 84)
+        next_obs_latest_compressed = [lz4.frame.compress(n[-1:].astype(np.uint8).tobytes()) for n in next_obs]
+
+        # Logic Obs (int32)
+        logic_obs_processed = logic_obs.astype(np.int32)
+        next_logic_obs_processed = next_logic_obs.astype(np.int32)
+
+        # Action (uint8)
+        action_processed = action.astype(np.uint8)
+
+        # Reward (float32)
+        reward_processed = reward.astype(np.float32)
+        
+        # Done (bool)
+        done_processed = done.astype(np.bool_)
 
         for i in range(batch_size):
             transition = {
-                "obs": obs[i],
-                "logic_obs": logic_obs[i],
-                "action": action[i],
-                "reward": reward[i],
-                "next_obs_new": next_obs_latest[i], # The "tricky" part
-                "next_logic_obs": next_logic_obs[i],
-                "done": done[i]
+                "obs": obs_compressed[i],
+                "logic_obs": logic_obs_processed[i],
+                "action": action_processed[i],
+                "reward": reward_processed[i],
+                "next_obs_new": next_obs_latest_compressed[i],
+                "next_logic_obs": next_logic_obs_processed[i],
+                "done": done_processed[i]
             }
             self.buffer.append(transition)
         
@@ -54,9 +70,20 @@ class SeaquestDatasetWriter:
     def flush(self):
         if not self.buffer:
             return
+        # Store metadata for reconstruction and memmap creation
+        metadata = {
+            "num_transitions": len(self.buffer),
+            "obs_shape": (4, 84, 84),
+            "logic_obs_shape": self.buffer[0]["logic_obs"].shape if "logic_obs" in self.buffer[0] and self.buffer[0]["logic_obs"] is not None else None,
+            "action_dtype": "uint8",
+            "reward_dtype": "float32",
+            "done_dtype": "bool",
+            "compression": "lz4"
+        }
+        
         filename = self.save_dir / f"dataset_{self.env_name}_{self.chunk_idx:05d}.pkl"
         with open(filename, "wb") as f:
-            pickle.dump(self.buffer, f)
+            pickle.dump({"data": self.buffer, "metadata": metadata}, f)
         self.total_steps += len(self.buffer)
         self.buffer = []
         self.chunk_idx += 1
@@ -77,57 +104,97 @@ class SeaquestDatasetReader:
         
         if not self.files:
             print(f"Warning: No dataset files found in {dataset_dirs}")
+            self.obs = np.array([])
+            self.logic_obs = None
+            self.actions = np.array([])
+            self.rewards = np.array([])
+            self.next_obs_new = np.array([])
+            self.next_logic_obs = None
+            self.dones = np.array([])
+            self.limit = 0
+            self.has_logic = False
+            return
 
-        # Loading into memory-efficient arrays
-        # Note: For 20M steps, we might want memmap, but let's start with 
-        # packed numpy arrays which are much smaller than a list of dicts.
-        all_obs = []
-        all_logic_obs = []
-        all_actions = []
-        all_rewards = []
-        all_next_obs_new = []
-        all_next_logic_obs = []
-        all_dones = []
-
-        print(f"Loading {len(self.files)} dataset chunks...")
+        # Phase 1: Collect metadata and total number of transitions
+        total_transitions = 0
+        obs_shape = (4, 84, 84) # Default, confirmed from env
+        next_obs_new_shape = (1, 84, 84)
+        logic_obs_shape = None
+        action_dtype = np.uint8
+        reward_dtype = np.float32
+        done_dtype = np.bool_
+        
+        print(f"Scanning {len(self.files)} dataset chunks for metadata...")
         for f in self.files:
             with open(f, "rb") as fh:
-                chunk = pickle.load(fh)
-                for t in chunk:
-                    all_obs.append(t["obs"])
-                    # Check if logic data exists in this transition
-                    all_logic_obs.append(t["logic_obs"] if t.get("logic_obs") is not None else None)
-                    all_actions.append(t["action"])
-                    all_rewards.append(t["reward"])
-                    
-                    # BACKWARD COMPATIBILITY CHECK
-                    if "next_obs_new" in t:
-                        all_next_obs_new.append(t["next_obs_new"])
-                    else:
-                        # Old format had the full 4-frame stack in 'next_obs'
-                        # We take only the latest frame [1, 84, 84] to match our optimized format
-                        all_next_obs_new.append(t["next_obs"][-1:])
-                        
-                    all_next_logic_obs.append(t["next_logic_obs"] if t.get("next_logic_obs") is not None else None)
-                    all_dones.append(t["done"])
-
-        self.obs = np.array(all_obs, dtype=np.uint8)
+                chunk_data = pickle.load(fh)
+                metadata = chunk_data.get("metadata", {})
+                total_transitions += metadata.get("num_transitions", len(chunk_data["data"]) if "data" in chunk_data else len(chunk_data))
+                
+                if metadata: # Use metadata from a chunk if available
+                    obs_shape = metadata.get("obs_shape", obs_shape)
+                    logic_obs_shape = metadata.get("logic_obs_shape", logic_obs_shape)
+                    action_dtype = getattr(np, metadata.get("action_dtype", "uint8"))
+                    reward_dtype = getattr(np, metadata.get("reward_dtype", "float32"))
+                    done_dtype = getattr(np, metadata.get("done_dtype", "bool"))
         
         # Determine if we have logic data
-        self.has_logic = all_logic_obs[0] is not None if len(all_logic_obs) > 0 else False
+        self.has_logic = logic_obs_shape is not None and len(logic_obs_shape) > 0
+        
+        # Create memory-mapped arrays
+        base_path = Path(dataset_dirs[0]) if isinstance(dataset_dirs, list) else Path(dataset_dirs)
+        self.memmap_dir = base_path / "memmap_cache"
+        self.memmap_dir.mkdir(parents=True, exist_ok=True)
+        
+        print(f"Creating memory-mapped files in {self.memmap_dir} for {total_transitions} transitions...")
+
+        self.obs = np.memmap(self.memmap_dir / "obs.mmap", dtype=np.uint8, mode='w+', shape=(total_transitions,) + obs_shape)
+        self.next_obs_new = np.memmap(self.memmap_dir / "next_obs_new.mmap", dtype=np.uint8, mode='w+', shape=(total_transitions,) + next_obs_new_shape)
+        self.actions = np.memmap(self.memmap_dir / "actions.mmap", dtype=action_dtype, mode='w+', shape=(total_transitions,))
+        self.rewards = np.memmap(self.memmap_dir / "rewards.mmap", dtype=reward_dtype, mode='w+', shape=(total_transitions,))
+        self.dones = np.memmap(self.memmap_dir / "dones.mmap", dtype=done_dtype, mode='w+', shape=(total_transitions,))
+        
         if self.has_logic:
-            self.logic_obs = np.array(all_logic_obs, dtype=np.float32)
-            self.next_logic_obs = np.array(all_next_logic_obs, dtype=np.float32)
+            self.logic_obs = np.memmap(self.memmap_dir / "logic_obs.mmap", dtype=np.int32, mode='w+', shape=(total_transitions,) + logic_obs_shape)
+            self.next_logic_obs = np.memmap(self.memmap_dir / "next_logic_obs.mmap", dtype=np.int32, mode='w+', shape=(total_transitions,) + logic_obs_shape)
         else:
             self.logic_obs = None
             self.next_logic_obs = None
 
-        self.actions = np.array(all_actions, dtype=np.int64)
-        self.rewards = np.array(all_rewards, dtype=np.float32)
-        self.next_obs_new = np.array(all_next_obs_new, dtype=np.uint8)
-        self.dones = np.array(all_dones, dtype=np.float32)
-        
-        self.limit = len(self.obs)
+        # Phase 2: Load and decompress into memory-mapped arrays
+        current_idx = 0
+        print(f"Loading and decompressing {len(self.files)} chunks into memory-mapped files...")
+        for f in self.files:
+            with open(f, "rb") as fh:
+                chunk_data = pickle.load(fh)
+                transitions = chunk_data.get("data", chunk_data) # handle old format if no 'data' key
+                
+                num_transitions_in_chunk = len(transitions)
+                end_idx = current_idx + num_transitions_in_chunk
+
+                # Decompress and store
+                for i, t in enumerate(transitions):
+                    self.obs[current_idx + i] = np.frombuffer(lz4.frame.decompress(t["obs"]), dtype=np.uint8).reshape(obs_shape)
+                    self.next_obs_new[current_idx + i] = np.frombuffer(lz4.frame.decompress(t["next_obs_new"]), dtype=np.uint8).reshape(next_obs_new_shape)
+                    self.actions[current_idx + i] = t["action"]
+                    self.rewards[current_idx + i] = t["reward"]
+                    self.dones[current_idx + i] = t["done"]
+                    if self.has_logic:
+                        self.logic_obs[current_idx + i] = t["logic_obs"]
+                        self.next_logic_obs[current_idx + i] = t["next_logic_obs"]
+                current_idx = end_idx
+                
+        # Flush changes to disk
+        self.obs.flush()
+        self.next_obs_new.flush()
+        self.actions.flush()
+        self.rewards.flush()
+        self.dones.flush()
+        if self.has_logic:
+            self.logic_obs.flush()
+            self.next_logic_obs.flush()
+
+        self.limit = total_transitions
         print(f"Dataset loaded: {self.limit} transitions (logic data: {'YES' if self.has_logic else 'NO'}).")
 
     def set_limit(self, limit):
@@ -163,3 +230,12 @@ class SeaquestDatasetReader:
 
     def __len__(self):
         return self.limit
+
+    def cleanup_memmap_cache(self):
+        """
+        Removes the memory-mapped cache files. Call this when the dataset is no longer needed.
+        """
+        if hasattr(self, 'memmap_dir') and self.memmap_dir.exists():
+            import shutil
+            print(f"Cleaning up memory-mapped cache: {self.memmap_dir}")
+            shutil.rmtree(self.memmap_dir)

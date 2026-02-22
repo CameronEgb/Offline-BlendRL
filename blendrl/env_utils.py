@@ -11,7 +11,6 @@ from stable_baselines3.common.atari_wrappers import (  # isort:skip
 
 def make_env(env):
     env = gym.wrappers.RecordEpisodeStatistics(env)
-    env = gym.wrappers.Autoreset(env)
     env = NoopResetEnv(env, noop_max=30)
     env = MaxAndSkipEnv(env, skip=4)
     env = EpisodicLifeEnv(env)
