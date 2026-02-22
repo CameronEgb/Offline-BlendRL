@@ -494,21 +494,20 @@ def main():
                         episodic_game_returns[k] = 0
                         
                         episode_log_count += 1
+                        print(f"Iteration {iteration} | env {k} finished episode: return={info['episode']['r']}, length={info['episode']['l']}")
 
-            # Periodic Progress Report
-            if global_step % (args.num_envs * 100) == 0: # Check more frequently than before
-                # save training data
-                training_log = (
-                    episodic_returns,
-                    episodic_lengths,
-                    value_losses,
-                    policy_losses,
-                    entropies,
-                    blend_entropies,
-                    episodic_raw_returns,
-                )
-                with open(checkpoint_dir / "training_log.pkl", "wb") as f:
-                    pickle.dump(training_log, f)
+            # Save training log every iteration for reliable plotting
+            training_log = (
+                episodic_returns,
+                episodic_lengths,
+                value_losses,
+                policy_losses,
+                entropies,
+                blend_entropies,
+                episodic_raw_returns,
+            )
+            with open(checkpoint_dir / "training_log.pkl", "wb") as f:
+                pickle.dump(training_log, f)
 
         # bootstrap value if not done
         with torch.no_grad():
