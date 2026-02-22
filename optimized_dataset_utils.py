@@ -95,7 +95,8 @@ class SeaquestDatasetReader:
                 chunk = pickle.load(fh)
                 for t in chunk:
                     all_obs.append(t["obs"])
-                    all_logic_obs.append(t["logic_obs"])
+                    # Check if logic data exists in this transition
+                    all_logic_obs.append(t["logic_obs"] if t.get("logic_obs") is not None else None)
                     all_actions.append(t["action"])
                     all_rewards.append(t["reward"])
                     
@@ -107,19 +108,27 @@ class SeaquestDatasetReader:
                         # We take only the latest frame [1, 84, 84] to match our optimized format
                         all_next_obs_new.append(t["next_obs"][-1:])
                         
-                    all_next_logic_obs.append(t["next_logic_obs"])
+                    all_next_logic_obs.append(t["next_logic_obs"] if t.get("next_logic_obs") is not None else None)
                     all_dones.append(t["done"])
 
         self.obs = np.array(all_obs, dtype=np.uint8)
-        self.logic_obs = np.array(all_logic_obs, dtype=np.float32)
+        
+        # Determine if we have logic data
+        self.has_logic = all_logic_obs[0] is not None if len(all_logic_obs) > 0 else False
+        if self.has_logic:
+            self.logic_obs = np.array(all_logic_obs, dtype=np.float32)
+            self.next_logic_obs = np.array(all_next_logic_obs, dtype=np.float32)
+        else:
+            self.logic_obs = None
+            self.next_logic_obs = None
+
         self.actions = np.array(all_actions, dtype=np.int64)
         self.rewards = np.array(all_rewards, dtype=np.float32)
         self.next_obs_new = np.array(all_next_obs_new, dtype=np.uint8)
-        self.next_logic_obs = np.array(all_next_logic_obs, dtype=np.float32)
         self.dones = np.array(all_dones, dtype=np.float32)
         
         self.limit = len(self.obs)
-        print(f"Dataset loaded: {self.limit} transitions.")
+        print(f"Dataset loaded: {self.limit} transitions (logic data: {'YES' if self.has_logic else 'NO'}).")
 
     def sample(self, batch_size):
         idxs = np.random.randint(0, self.limit, size=batch_size)
@@ -137,9 +146,15 @@ class SeaquestDatasetReader:
             "reward": torch.tensor(self.rewards[idxs], device=self.device, dtype=torch.float32),
             "next_obs": next_obs_batch,
             "done": torch.tensor(self.dones[idxs], device=self.device, dtype=torch.float32),
-            "logic_obs": torch.tensor(self.logic_obs[idxs], device=self.device, dtype=torch.float32),
-            "next_logic_obs": torch.tensor(self.next_logic_obs[idxs], device=self.device, dtype=torch.float32)
         }
+        
+        if self.has_logic:
+            batch["logic_obs"] = torch.tensor(self.logic_obs[idxs], device=self.device, dtype=torch.float32)
+            batch["next_logic_obs"] = torch.tensor(self.next_logic_obs[idxs], device=self.device, dtype=torch.float32)
+        else:
+            batch["logic_obs"] = None
+            batch["next_logic_obs"] = None
+            
         return batch
 
     def __len__(self):

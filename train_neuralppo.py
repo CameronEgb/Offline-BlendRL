@@ -363,24 +363,15 @@ def main():
             real_next_done = np.logical_or(terminations, truncations)
             
             if dataset_writer is not None:
-                curr_obs_np = next_obs.cpu().numpy()
-                curr_logic_obs_np = next_logic_obs.cpu().numpy()
-                act_np = action.cpu().numpy()
-                rew_np = reward 
-                next_obs_np = real_next_obs
-                next_logic_obs_np = real_next_logic_obs.cpu().numpy()
-                done_np = real_next_done 
-                
-                for i in range(args.num_envs):
-                    dataset_writer.add(
-                        obs=curr_obs_np[i],
-                        logic_obs=curr_logic_obs_np[i],
-                        action=act_np[i],
-                        reward=rew_np[i],
-                        next_obs=next_obs_np[i],
-                        next_logic_obs=next_logic_obs_np[i],
-                        done=done_np[i]
-                    )
+                dataset_writer.batch_add(
+                    obs=next_obs,
+                    logic_obs=next_logic_obs,
+                    action=action,
+                    reward=reward,
+                    next_obs=real_next_obs,
+                    next_logic_obs=real_next_logic_obs,
+                    done=real_next_done
+                )
 
             rewards[step] = torch.tensor(reward).to(device).view(-1)
             next_obs, next_logic_obs, next_done = (
