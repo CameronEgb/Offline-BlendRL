@@ -205,6 +205,17 @@ def main():
                 print(f"Clearing old run data: {run_path}")
                 import shutil
                 shutil.rmtree(run_path, ignore_errors=True)
+                
+                # Clear existing log files for this specific method/experiment
+                log_prefix = os.path.join(f"logs/{experiment_id}", f"on_{method}_{experiment_id}")
+                for ext in [".log", ".out", ".err"]:
+                    # Also handle Slurm's %j suffix by using glob-like cleanup if needed, 
+                    # but simpler is to just delete anything starting with the job name
+                    import glob
+                    for f in glob.glob(f"{log_prefix}*"):
+                        try: os.remove(f)
+                        except: pass
+
                 # Also clear dataset if it's in the same path
                 if args.use_large_dataset_path and args.large_dataset_path:
                     dataset_path = os.path.join(args.large_dataset_path, experiment_id, run_name)
@@ -256,6 +267,13 @@ def main():
                     print(f"Clearing old offline data: {run_path}")
                     import shutil
                     shutil.rmtree(run_path, ignore_errors=True)
+                    
+                    # Clear existing log files for this specific offline method/experiment
+                    log_prefix = os.path.join(f"logs/{experiment_id}", f"off_{off_method}_{data_source}_{experiment_id}")
+                    import glob
+                    for f in glob.glob(f"{log_prefix}*"):
+                        try: os.remove(f)
+                        except: pass
                 else:
                     print(f"Skipping offline method: {off_method} on {data_source} (existing data preserved)")
                     continue

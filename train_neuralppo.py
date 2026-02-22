@@ -257,7 +257,19 @@ def main():
         )
         # load training logs
         with open(checkpoint_dir / "training_log.pkl", "rb") as f:
-            (episodic_returns, episodic_lengths, value_losses, policy_losses, entropies, blend_entropies) = pickle.load(f)
+            log_data = pickle.load(f)
+            (
+                episodic_returns,
+                episodic_lengths,
+                value_losses,
+                policy_losses,
+                entropies,
+                blend_entropies,
+            ) = log_data[:6]
+            if len(log_data) >= 7:
+                episodic_raw_returns = log_data[6]
+            else:
+                episodic_raw_returns = episodic_returns.copy()
         
         # Load interval results
         if (experiment_dir / "results.json").exists():
@@ -406,28 +418,36 @@ def main():
             episodic_game_returns += torch.tensor(reward).to(device).view(-1)
 
             # --- Episode Logging Fix ---
-            if "_episode" in infos: # Check for the _episode mask
-                for k in range(args.num_envs): # Iterate through all environments
-                    if infos["_episode"][k]: # If this environment completed an episode
-                        episode_r = infos["episode"]["r"][k]
-                        episode_l = infos["episode"]["l"][k]
-                        
-                        if episode_log_count < 20:
-                            print(f"env={k}, global_step={global_step}, episodic_return={episode_r}, episodic_length={episode_l}")
-                        writer.add_scalar("charts/episodic_return", episode_r, global_step)
-                        writer.add_scalar("charts/episodic_length", episode_l, global_step)
-                        episodic_returns.append(episode_r)
-                        episodic_raw_returns.append(episode_r) # For PPO, raw and shaped might be identical unless env wrapper changes them
-                        episodic_lengths.append(episode_l)
-                        episodic_game_returns[k] = 0
-                        episode_log_count += 1
-                        print(f"Iteration {iteration} | env {k} finished episode: return={episode_r}, length={episode_l}")
+            # Try multiple ways to detect completed episodes in vector environments
+            found_episodes = []
+            if "_episode" in infos:
+                found_episodes = [k for k in range(args.num_envs) if infos["_episode"][k]]
+            elif "episode" in infos and isinstance(infos["episode"], dict):
+                # Some gymnasium versions or wrappers might not have _episode but have episode dict
+                # If it's a dict with 'r', it's likely a VectorRecordEpisodeStatistics output
+                if "r" in infos["episode"]:
+                    found_episodes = [k for k in range(len(infos["episode"]["r"])) if infos["episode"]["r"][k] != 0 or infos["episode"]["l"][k] != 0]
+
+            for k in found_episodes:
+                episode_r = infos["episode"]["r"][k]
+                episode_l = infos["episode"]["l"][k]
+                
+                if episode_log_count < 20:
+                    print(f"env={k}, global_step={global_step}, episodic_return={episode_r}, episodic_length={episode_l}")
+                writer.add_scalar("charts/episodic_return", episode_r, global_step)
+                writer.add_scalar("charts/episodic_length", episode_l, global_step)
+                episodic_returns.append(episode_r)
+                episodic_raw_returns.append(episode_r)
+                episodic_lengths.append(episode_l)
+                episodic_game_returns[k] = 0
+                episode_log_count += 1
+                print(f"Iteration {iteration} | env {k} finished episode: return={episode_r}, length={episode_l}")
             # --- End Episode Logging Fix ---
               
-            # Save training log every iteration
-            training_log = (episodic_returns, episodic_lengths, value_losses, policy_losses, entropies, blend_entropies, episodic_raw_returns)
-            with open(checkpoint_dir / "training_log.pkl", "wb") as f:
-                pickle.dump(training_log, f)
+        # Save training log every iteration (outside the step loop for efficiency)
+        training_log = (episodic_returns, episodic_lengths, value_losses, policy_losses, entropies, blend_entropies, episodic_raw_returns)
+        with open(checkpoint_dir / "training_log.pkl", "wb") as f:
+            pickle.dump(training_log, f)
                 
         # bootstrap value if not done
         with torch.no_grad():
