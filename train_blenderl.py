@@ -386,6 +386,7 @@ def main():
         save_step_bar = most_recent_step
     start_time = time.time()
     next_logic_obs, next_obs = envs.reset()  # (seed=seed)
+    print("Environments reset and training started.")
     
     # ALGO Logic: Storage setup
     observation_space = next_obs.shape[1:]
@@ -628,7 +629,7 @@ def main():
         writer.add_scalar("losses/explained_variance", explained_var, global_step)
 
         # Periodic progress report
-        if iteration % 10 == 0:
+        if iteration % 1 == 0:
             sps = int(global_step / (time.time() - start_time))
             print(f"Iteration: {iteration}/{args.num_iterations}, Global Step: {global_step}, SPS: {sps}")
             writer.add_scalar("charts/SPS", sps, global_step)

@@ -336,6 +336,7 @@ def main():
         save_step_bar = most_recent_step
     start_time = time.time()
     next_logic_obs, next_obs = envs.reset()
+    print("Environments reset and training started.")
     
     # ALGO Logic: Storage setup
     observation_space = next_obs.shape[1:]
@@ -508,7 +509,7 @@ def main():
         writer.add_scalar("losses/clipfrac", np.mean(clipfracs) if clipfracs else 0.0, global_step)
         writer.add_scalar("losses/explained_variance", explained_var, global_step)
         
-        if iteration % 10 == 0:
+        if iteration % 1 == 0:
             sps = int(global_step / (time.time() - start_time))
             print(f"Iteration: {iteration}/{args.num_iterations}, Global Step: {global_step}, SPS: {sps}")
             writer.add_scalar("charts/SPS", sps, global_step)
@@ -576,7 +577,7 @@ def main():
                 "avg_raw_reward": float(avg_raw_reward),
                 "step": global_step
             })
-            with open(checkpoint_dir / "results.json", "w") as f:
+            with open(experiment_dir / "results.json", "w") as f:
                 import json
                 json.dump(interval_results, f, indent=4)
             
