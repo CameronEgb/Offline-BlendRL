@@ -150,10 +150,10 @@ def plot_results(experiment_id, runs_dir="out/runs", output_dir="plots", num_env
     if eval_shaped:
         plt.figure(figsize=(10, 6))
         for label, rewards in eval_shaped.items():
-            # For eval, we usually plot against data_limit (steps)
-            x = np.array(eval_limits[label]) / float(num_envs)
+            # For eval, we usually plot against total data_limit (steps)
+            x = np.array(eval_limits[label])
             plt.plot(x, rewards, marker='o', label=label)
-        plt.xlabel(f"Steps (per Env, assuming total/{num_envs})"); plt.ylabel("Avg Eval Return (Shaped)")
+        plt.xlabel("Total Training Steps / Dataset Size"); plt.ylabel("Avg Eval Return (Shaped)")
         plt.title(f"Evaluation Comparison - Shaped Rewards ({experiment_id})")
         plt.legend(); plt.grid(True); plt.savefig(output_path / "eval_shaped.png")
 
@@ -161,9 +161,9 @@ def plot_results(experiment_id, runs_dir="out/runs", output_dir="plots", num_env
     if eval_raw:
         plt.figure(figsize=(10, 6))
         for label, rewards in eval_raw.items():
-            x = np.array(eval_limits[label]) / float(num_envs)
+            x = np.array(eval_limits[label])
             plt.plot(x, rewards, marker='s', linestyle='--', label=label)
-        plt.xlabel(f"Steps (per Env, assuming total/{num_envs})"); plt.ylabel("Avg Atari Score")
+        plt.xlabel("Total Training Steps / Dataset Size"); plt.ylabel("Avg Atari Score")
         plt.title(f"Evaluation Comparison - Raw Atari Score ({experiment_id})")
         plt.legend(); plt.grid(True); plt.savefig(output_path / "eval_raw.png")
 
