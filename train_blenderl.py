@@ -489,12 +489,12 @@ def main():
                         f"env={k}, global_step={global_step}, episodic_game_return={np.round(episodic_game_returns[k].detach().cpu().numpy(), 2)}, episodic_return={episode_r}, episodic_length={episode_l}"
                     )
                 writer.add_scalar(
-                    "charts/episodic_return", episode_r, global_step
+                    "charts/episodic_return", episodic_game_returns[k], global_step
                 )
                 writer.add_scalar(
                     "charts/episodic_length", episode_l, global_step
                 )
-                episodic_returns.append(episode_r)
+                episodic_returns.append(episodic_game_returns[k].item())
                 episodic_raw_returns.append(episode_r)
                 episodic_lengths.append(episode_l)
 
