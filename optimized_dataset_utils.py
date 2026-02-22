@@ -136,7 +136,11 @@ class SeaquestDatasetReader:
                     logic_obs_shape = metadata.get("logic_obs_shape", logic_obs_shape)
                     action_dtype = getattr(np, metadata.get("action_dtype", "uint8"))
                     reward_dtype = getattr(np, metadata.get("reward_dtype", "float32"))
-                    done_dtype = getattr(np, metadata.get("done_dtype", "bool"))
+                    done_dtype_str = metadata.get("done_dtype", "bool_")
+                    if done_dtype_str == "bool":
+                        done_dtype = np.bool_
+                    else:
+                        done_dtype = getattr(np, done_dtype_str)
         
         # Determine if we have logic data
         self.has_logic = logic_obs_shape is not None and len(logic_obs_shape) > 0
