@@ -297,6 +297,7 @@ def main():
         n_eval_envs = 10
         eval_env = VectorizedNudgeBaseEnv.from_name(args.env_name, n_envs=n_eval_envs, mode=args.algorithm, seed=args.seed + 100)
         eval_total_rewards = []
+        eval_total_raw_rewards = []
         eval_cumulative_rewards = np.zeros(n_eval_envs)
         e_logic_obs, e_obs = eval_env.reset()
         e_obs = torch.Tensor(e_obs).to(device)
@@ -316,6 +317,13 @@ def main():
                 if terminations[i] or truncations[i]:
                     eval_total_rewards.append(eval_cumulative_rewards[i])
                     eval_cumulative_rewards[i] = 0
+                    
+                    # Extract RAW reward from info
+                    if "final_info" in infos and infos["final_info"][i] is not None:
+                        eval_total_raw_rewards.append(infos["final_info"][i]["episode"]["r"])
+                    elif "episode" in infos and infos["_episode"][i]:
+                        eval_total_raw_rewards.append(infos["episode"]["r"][i])
+                        
                     if len(eval_total_rewards) >= args.eval_episodes:
                         break
             
@@ -323,9 +331,17 @@ def main():
                 break
         
         avg_reward = np.mean(eval_total_rewards[:args.eval_episodes])
-        print(f"Interval 0 Eval Reward (Shaped): {avg_reward}")
+        avg_raw_reward = np.mean(eval_total_raw_rewards[:args.eval_episodes])
+        print(f"Interval 0 Eval Reward (Shaped): {avg_reward:.2f} | Raw: {avg_raw_reward:.2f}")
         writer.add_scalar("charts/eval_return", avg_reward, 0)
-        interval_results.append({"interval": 0, "data_limit": 0, "avg_reward": float(avg_reward), "step": 0})
+        writer.add_scalar("charts/eval_raw_return", avg_raw_reward, 0)
+        interval_results.append({
+            "interval": 0, 
+            "data_limit": 0, 
+            "avg_reward": float(avg_reward), 
+            "avg_raw_reward": float(avg_raw_reward),
+            "step": 0
+        })
         eval_env.close()
 
     # rewards actually used to train modes
@@ -630,6 +646,7 @@ def main():
             eval_env = VectorizedNudgeBaseEnv.from_name(args.env_name, n_envs=n_eval_envs, mode=args.algorithm, seed=args.seed + 100)
             
             eval_total_rewards = []
+            eval_total_raw_rewards = []
             eval_cumulative_rewards = np.zeros(n_eval_envs)
             e_logic_obs, e_obs = eval_env.reset()
             e_obs = torch.Tensor(e_obs).to(device)
@@ -648,6 +665,12 @@ def main():
                     if terminations[i] or truncations[i]:
                         eval_total_rewards.append(eval_cumulative_rewards[i])
                         eval_cumulative_rewards[i] = 0
+                        
+                        if "final_info" in infos and infos["final_info"][i] is not None:
+                            eval_total_raw_rewards.append(infos["final_info"][i]["episode"]["r"])
+                        elif "episode" in infos and infos["_episode"][i]:
+                            eval_total_raw_rewards.append(infos["episode"]["r"][i])
+                            
                         if len(eval_total_rewards) >= args.eval_episodes:
                             break
                 
@@ -655,8 +678,31 @@ def main():
                     break
             
             avg_reward = np.mean(eval_total_rewards[:args.eval_episodes])
-            print(f"Interval {interval_idx} Eval Reward (Shaped): {avg_reward}")
+            avg_raw_reward = np.mean(eval_total_raw_rewards[:args.eval_episodes])
+            print(f"Interval {interval_idx} Eval Reward (Shaped): {avg_reward:.2f} | Raw: {avg_raw_reward:.2f}")
             writer.add_scalar("charts/eval_return", avg_reward, global_step)
+            writer.add_scalar("charts/eval_raw_return", avg_raw_reward, global_step)
+            
+            if avg_reward >= best_eval_reward:
+                best_eval_reward = avg_reward
+                checkpoint_path = checkpoint_dir / "best_model.pth"
+                agent.save(checkpoint_path, checkpoint_dir, [], [], [])
+                print(f"New best model saved with reward {avg_reward:.2f}")
+                
+                # save hyper params
+                save_hyperparams(
+                    args=args,
+                    save_path=experiment_dir / "config.yaml",
+                    print_summary=False,
+                )
+            
+            interval_results.append({
+                "interval": interval_idx,
+                "data_limit": int(interval_idx * eval_step_freq),
+                "avg_reward": float(avg_reward),
+                "avg_raw_reward": float(avg_raw_reward),
+                "step": global_step
+            })
             
             if avg_reward >= best_eval_reward:
                 best_eval_reward = avg_reward
