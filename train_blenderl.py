@@ -316,15 +316,16 @@ def main():
             
             for i in range(n_eval_envs):
                 if terminations[i] or truncations[i]:
+                    raw_reward = 0.0
+                    if "final_info" in infos and infos["final_info"][i] is not None:
+                        raw_reward = infos["final_info"][i].get("episode", {}).get("r", 0.0)
+                    elif "episode" in infos and infos["_episode"][i]:
+                        raw_reward = infos["episode"]["r"][i]
+                    
                     eval_total_rewards.append(eval_cumulative_rewards[i])
+                    eval_total_raw_rewards.append(raw_reward)
                     eval_cumulative_rewards[i] = 0
                     
-                    # Extract RAW reward from info
-                    if "final_info" in infos and infos["final_info"][i] is not None:
-                        eval_total_raw_rewards.append(infos["final_info"][i]["episode"]["r"])
-                    elif "episode" in infos and infos["_episode"][i]:
-                        eval_total_raw_rewards.append(infos["episode"]["r"][i])
-                        
                     if len(eval_total_rewards) >= args.eval_episodes:
                         break
             
@@ -640,8 +641,8 @@ def main():
         blend_entropies.append(blend_entropy_loss.item())
 
         # Interval evaluation - Strictly step-based trigger
-        while global_step >= (len(interval_results) * eval_step_freq) and len(interval_results) < args.intervals:
-            interval_idx = len(interval_results)
+        interval_idx = len(interval_results)
+        if global_step >= (interval_idx * eval_step_freq) and interval_idx < args.intervals:
             print(f"--- Evaluating Interval {interval_idx} at Global Step {global_step} (Target: {interval_idx * eval_step_freq:.0f}) ---")
             
             # Create a separate eval env
@@ -666,14 +667,16 @@ def main():
                 
                 for i in range(n_eval_envs):
                     if terminations[i] or truncations[i]:
+                        raw_reward = 0.0
+                        if "final_info" in infos and infos["final_info"][i] is not None:
+                            raw_reward = infos["final_info"][i].get("episode", {}).get("r", 0.0)
+                        elif "episode" in infos and infos["_episode"][i]:
+                            raw_reward = infos["episode"]["r"][i]
+                        
                         eval_total_rewards.append(eval_cumulative_rewards[i])
+                        eval_total_raw_rewards.append(raw_reward)
                         eval_cumulative_rewards[i] = 0
                         
-                        if "final_info" in infos and infos["final_info"][i] is not None:
-                            eval_total_raw_rewards.append(infos["final_info"][i]["episode"]["r"])
-                        elif "episode" in infos and infos["_episode"][i]:
-                            eval_total_raw_rewards.append(infos["episode"]["r"][i])
-                            
                         if len(eval_total_rewards) >= args.eval_episodes:
                             break
                 
