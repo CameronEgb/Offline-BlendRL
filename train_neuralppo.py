@@ -385,13 +385,6 @@ def main():
             truncations = np.array(truncations)
             real_next_done = np.logical_or(terminations, truncations)
             
-            # --- DEBUGGING EPISODE LOGGING ---
-            if np.any(real_next_done):
-                for i, (term, trunc) in enumerate(zip(terminations, truncations)):
-                    if term or trunc:
-                        print(f"DEBUG: Env {i} terminated/truncated. infos[{i}]: {infos}")
-            # --- END DEBUG ---
-            
             if dataset_writer is not None:
                 dataset_writer.batch_add(
                     obs=next_obs,
@@ -412,19 +405,24 @@ def main():
 
             episodic_game_returns += torch.tensor(reward).to(device).view(-1)
 
-            if "final_info" in infos:
-                for k, info in enumerate(infos["final_info"]):
-                    if info is not None and "episode" in info:
+            # --- Episode Logging Fix ---
+            if "_episode" in infos: # Check for the _episode mask
+                for k in range(args.num_envs): # Iterate through all environments
+                    if infos["_episode"][k]: # If this environment completed an episode
+                        episode_r = infos["episode"]["r"][k]
+                        episode_l = infos["episode"]["l"][k]
+                        
                         if episode_log_count < 20:
-                            print(f"env={k}, global_step={global_step}, episodic_return={info['episode']['r']}, episodic_length={info['episode']['l']}")
-                        writer.add_scalar("charts/episodic_return", info["episode"]["r"], global_step)
-                        writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
-                        episodic_returns.append(info["episode"]["r"])
-                        episodic_raw_returns.append(info["episode"]["r"]) # For PPO, raw and shaped might be identical unless env wrapper changes them
-                        episodic_lengths.append(info["episode"]["l"])
+                            print(f"env={k}, global_step={global_step}, episodic_return={episode_r}, episodic_length={episode_l}")
+                        writer.add_scalar("charts/episodic_return", episode_r, global_step)
+                        writer.add_scalar("charts/episodic_length", episode_l, global_step)
+                        episodic_returns.append(episode_r)
+                        episodic_raw_returns.append(episode_r) # For PPO, raw and shaped might be identical unless env wrapper changes them
+                        episodic_lengths.append(episode_l)
                         episodic_game_returns[k] = 0
                         episode_log_count += 1
-                        print(f"Iteration {iteration} | env {k} finished episode: return={info['episode']['r']}, length={info['episode']['l']}")
+                        print(f"Iteration {iteration} | env {k} finished episode: return={episode_r}, length={episode_l}")
+            # --- End Episode Logging Fix ---
               
             # Save training log every iteration
             training_log = (episodic_returns, episodic_lengths, value_losses, policy_losses, entropies, blend_entropies, episodic_raw_returns)

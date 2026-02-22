@@ -495,7 +495,8 @@ def main():
                         episodic_game_returns[k] = 0
                         
                         episode_log_count += 1
-                        print(f"Iteration {iteration} | env {k} finished episode: return={info['episode']['r']}, length={info['episode']['l']}")
+                        print(f"Iteration {iteration} | env {k} finished episode: return={episode_r}, length={episode_l}")
+            # --- End Episode Logging Fix ---
 
             # Save training log every iteration for reliable plotting
             training_log = (
