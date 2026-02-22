@@ -130,6 +130,10 @@ class SeaquestDatasetReader:
         self.limit = len(self.obs)
         print(f"Dataset loaded: {self.limit} transitions (logic data: {'YES' if self.has_logic else 'NO'}).")
 
+    def set_limit(self, limit):
+        self.limit = min(limit, len(self.obs))
+        print(f"Dataset limit set to {self.limit} transitions.")
+
     def sample(self, batch_size):
         idxs = np.random.randint(0, self.limit, size=batch_size)
         
