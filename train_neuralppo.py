@@ -276,7 +276,7 @@ def main():
         
         # --- Step 0 Evaluation (Only if not recovering) ---
         print(f"--- Evaluating Interval 0 at Global Step 0 ---")
-        n_eval_envs = args.num_envs
+        n_eval_envs = 10
         eval_env = VectorizedNudgeBaseEnv.from_name(args.env_name, n_envs=n_eval_envs, mode=args.algorithm, seed=args.seed + 100)
         eval_total_rewards = []
         _, e_obs = eval_env.reset()
@@ -288,12 +288,19 @@ def main():
             (e_logic_obs, e_obs), reward, terminations, truncations, infos = eval_env.step(action.cpu().numpy())
             e_obs = torch.Tensor(e_obs).to(device)
             
+            # Robust info extraction for both Sync and Async vector envs
             if "final_info" in infos:
                 for info in infos["final_info"]:
                     if info is not None and "episode" in info:
                         eval_total_rewards.append(info["episode"]["r"])
-                        if len(eval_total_rewards) >= args.eval_episodes:
-                            break
+            elif "episode" in infos:
+                # Handle cases where 'episode' is a dict of arrays (Gymnasium style)
+                for i in range(n_eval_envs):
+                    if infos["_episode"][i]:
+                        eval_total_rewards.append(infos["episode"]["r"][i])
+            
+            if len(eval_total_rewards) >= args.eval_episodes:
+                break
         
         avg_reward = np.mean(eval_total_rewards[:args.eval_episodes])
         print(f"Interval 0 Eval Reward: {avg_reward}")
@@ -499,7 +506,7 @@ def main():
             interval_idx = len(interval_results)
             print(f"--- Evaluating Interval {interval_idx} at Global Step {global_step} (Target: {interval_idx * eval_step_freq:.0f}) ---")
             
-            n_eval_envs = args.num_envs
+            n_eval_envs = 10
             eval_env = VectorizedNudgeBaseEnv.from_name(args.env_name, n_envs=n_eval_envs, mode=args.algorithm, seed=args.seed + 100)
             eval_total_rewards = []
             _, e_obs = eval_env.reset()
@@ -515,8 +522,13 @@ def main():
                     for info in infos["final_info"]:
                         if info is not None and "episode" in info:
                             eval_total_rewards.append(info["episode"]["r"])
-                            if len(eval_total_rewards) >= args.eval_episodes:
-                                break
+                elif "episode" in infos:
+                    for i in range(n_eval_envs):
+                        if infos["_episode"][i]:
+                            eval_total_rewards.append(infos["episode"]["r"][i])
+                
+                if len(eval_total_rewards) >= args.eval_episodes:
+                    break
             
             avg_reward = np.mean(eval_total_rewards[:args.eval_episodes])
             print(f"Interval {interval_idx} Eval Reward: {avg_reward}")

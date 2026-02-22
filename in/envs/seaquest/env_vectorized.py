@@ -5,7 +5,7 @@ import torch as th
 from ocatari.ram.seaquest import MAX_NB_OBJECTS
 import gymnasium as gym
 from hackatari.core import HackAtari
-from gymnasium.vector import AsyncVectorEnv
+from gymnasium.vector import AsyncVectorEnv, SyncVectorEnv
 
 class VectorizedNudgeEnv(VectorizedNudgeBaseEnv):
     name = "seaquest"
@@ -48,7 +48,11 @@ class VectorizedNudgeEnv(VectorizedNudgeBaseEnv):
                 return env
             return _thunk
 
-        self.venv = AsyncVectorEnv([make_hackatari_env(i) for i in range(n_envs)])
+        # Use SyncVectorEnv for small number of envs (like evaluation) to save resources
+        if n_envs <= 10:
+            self.venv = SyncVectorEnv([make_hackatari_env(i) for i in range(n_envs)])
+        else:
+            self.venv = AsyncVectorEnv([make_hackatari_env(i) for i in range(n_envs)])
         
         self.n_actions = 6
         self.n_raw_actions = 18
