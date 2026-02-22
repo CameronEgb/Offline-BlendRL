@@ -23,11 +23,15 @@ if [ -z "$EXP_ID" ]; then
     exit 1
 fi
 
-if [ "$LOCAL_MODE" = true ]; then
-    echo "Killing local processes for experiment $EXP_ID..."
-    pkill -f "$EXP_ID"
-else
-    echo "Canceling SLURM jobs for experiment $EXP_ID..."
+echo "--- Killing all processes for experiment: $EXP_ID ---"
+
+# 1. Kill Local Processes
+echo "Killing local processes..."
+pkill -f "$EXP_ID" 2>/dev/null
+
+# 2. Cancel Slurm Jobs (if on a cluster)
+if command -v scancel &> /dev/null; then
+    echo "Slurm detected. Canceling jobs..."
     
     # Precise cancellation using job IDs from out/runs/EXP_ID/jobids.txt
     JOBIDS_FILE="out/runs/$EXP_ID/jobids.txt"
@@ -35,15 +39,16 @@ else
         echo "Reading job IDs from $JOBIDS_FILE..."
         while read -r jid; do
             if [ -n "$jid" ]; then
-                echo "Canceling job $jid..."
-                scancel "$jid"
+                echo "Canceling Slurm job $jid..."
+                scancel "$jid" 2>/dev/null
             fi
         done < "$JOBIDS_FILE"
-    else
-        echo "Warning: $JOBIDS_FILE not found. Using fallback name-based cancellation."
-        # Fallback to name-based matching
-        scancel --name="*$EXP_ID*"
     fi
+    
+    # Fallback/Safety: Kill anything with the name matching the ID
+    scancel --name="*$EXP_ID*" 2>/dev/null
+else
+    echo "Slurm not detected, skipping scancel."
 fi
 
 echo "Removing data for experiment $EXP_ID..."
