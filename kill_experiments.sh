@@ -25,9 +25,11 @@ fi
 
 echo "--- Killing all processes for experiment: $EXP_ID ---"
 
-# 1. Kill Local Processes
+# 1. Kill Local Processes (Target only Python scripts related to this experiment)
 echo "Killing local processes..."
-pkill -f "$EXP_ID" 2>/dev/null
+# -u $USER ensures you only kill your own processes
+# -f matches against the full command line
+pkill -u "$USER" -f "python.*$EXP_ID" 2>/dev/null
 
 # 2. Cancel Slurm Jobs (if on a cluster)
 if command -v scancel &> /dev/null; then
