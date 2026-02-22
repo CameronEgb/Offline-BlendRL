@@ -232,6 +232,7 @@ def main():
 
         print(f"Evaluating after Interval {interval}...")
         n_eval_envs = 10
+        envs = VectorizedNudgeBaseEnv.from_name(args.env_name, n_envs=n_eval_envs, mode=args.algorithm, seed=args.seed + 100)
         eval_total_rewards = []
         eval_total_raw_rewards = []
         eval_cumulative_rewards = np.zeros(n_eval_envs)
@@ -268,6 +269,7 @@ def main():
         writer.add_scalar("charts/eval_return", avg_reward, global_step)
         writer.add_scalar("charts/eval_raw_return", avg_raw_reward, global_step)
         
+        envs.close()
         save_path = experiment_dir / "checkpoints"
         save_path.mkdir(parents=True, exist_ok=True)
         if avg_reward >= best_eval_reward:

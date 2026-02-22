@@ -326,16 +326,17 @@ def main():
         # End of Interval Eval
         print(f"Evaluating after Interval {interval}...")
         n_eval_envs = 10
+        eval_envs_obj = VectorizedNudgeBaseEnv.from_name(args.env_name, n_envs=n_eval_envs, mode=args.algorithm, seed=args.seed + 100)
         eval_total_rewards = []
         eval_total_raw_rewards = []
         eval_cumulative_rewards = np.zeros(n_eval_envs)
-        next_logic_obs, next_obs = eval_envs.reset()
+        _, next_obs = eval_envs_obj.reset()
         next_obs = torch.Tensor(next_obs).to(device)
         
         while len(eval_total_rewards) < args.eval_episodes:
             with torch.no_grad():
                 action, _, _, _ = actor.get_action_and_value(next_obs)
-            (next_logic_obs, next_obs), reward, terminations, truncations, infos = eval_envs.step(action.cpu().numpy())
+            (next_logic_obs, next_obs), reward, terminations, truncations, infos = eval_envs_obj.step(action.cpu().numpy())
             next_obs = torch.Tensor(next_obs).to(device)
             
             eval_cumulative_rewards += np.array(reward)
@@ -352,6 +353,9 @@ def main():
                         
                     if len(eval_total_rewards) >= args.eval_episodes:
                         break
+            
+            if len(eval_total_rewards) >= args.eval_episodes:
+                break
         
         avg_reward = np.mean(eval_total_rewards[:args.eval_episodes])
         avg_raw_reward = np.mean(eval_total_raw_rewards[:args.eval_episodes])
@@ -359,6 +363,7 @@ def main():
         writer.add_scalar("charts/eval_return", avg_reward, global_step)
         writer.add_scalar("charts/eval_raw_return", avg_raw_reward, global_step)
         
+        eval_envs_obj.close()
         save_path = experiment_dir / "checkpoints"
         save_path.mkdir(parents=True, exist_ok=True)
         if avg_reward >= best_eval_reward:
@@ -366,18 +371,25 @@ def main():
             torch.save(actor.state_dict(), save_path / "best_model.pth")
             print(f"New best model saved with reward {avg_reward:.2f}")
 
-        interval_results.append({"interval": interval, "data_limit": current_limit, "avg_reward": float(avg_reward), "step": global_step})
+        interval_results.append({
+            "interval": interval, 
+            "data_limit": current_limit, 
+            "avg_reward": float(avg_reward), 
+            "avg_raw_reward": float(avg_raw_reward),
+            "step": global_step
+        })
         with open(experiment_dir / "results.json", "w") as f:
             json.dump(interval_results, f, indent=4)
 
     torch.save(actor.state_dict(), save_path / "best_model.pth")
-    eval_envs.close()
     writer.close()
     
     end_time = time.time()
     duration = end_time - start_time
     import datetime
     runtime_data = {"runtime_seconds": duration, "runtime_formatted": str(datetime.timedelta(seconds=int(duration)))}
+    with open(experiment_dir / "runtime.json", "w") as f:
+        json.dump(runtime_data, f, indent=4)
     with open(experiment_dir / "runtime.json", "w") as f:
         json.dump(runtime_data, f, indent=4)
 
