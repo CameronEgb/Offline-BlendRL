@@ -98,7 +98,15 @@ class SeaquestDatasetReader:
                     all_logic_obs.append(t["logic_obs"])
                     all_actions.append(t["action"])
                     all_rewards.append(t["reward"])
-                    all_next_obs_new.append(t["next_obs_new"])
+                    
+                    # BACKWARD COMPATIBILITY CHECK
+                    if "next_obs_new" in t:
+                        all_next_obs_new.append(t["next_obs_new"])
+                    else:
+                        # Old format had the full 4-frame stack in 'next_obs'
+                        # We take only the latest frame [1, 84, 84] to match our optimized format
+                        all_next_obs_new.append(t["next_obs"][-1:])
+                        
                     all_next_logic_obs.append(t["next_logic_obs"])
                     all_dones.append(t["done"])
 
