@@ -128,8 +128,12 @@ class SeaquestDatasetReader:
         for f in self.files:
             with open(f, "rb") as fh:
                 chunk_data = pickle.load(fh)
-                metadata = chunk_data.get("metadata", {})
-                total_transitions += metadata.get("num_transitions", len(chunk_data["data"]) if "data" in chunk_data else len(chunk_data))
+                if isinstance(chunk_data, dict):
+                    metadata = chunk_data.get("metadata", {})
+                    total_transitions += metadata.get("num_transitions", len(chunk_data["data"]) if "data" in chunk_data else len(chunk_data))
+                else: # Legacy list format
+                    metadata = {}
+                    total_transitions += len(chunk_data)
                 
                 if metadata: # Use metadata from a chunk if available
                     obs_shape = metadata.get("obs_shape", obs_shape)
@@ -171,7 +175,10 @@ class SeaquestDatasetReader:
         for f in self.files:
             with open(f, "rb") as fh:
                 chunk_data = pickle.load(fh)
-                transitions = chunk_data.get("data", chunk_data) # handle old format if no 'data' key
+                if isinstance(chunk_data, dict):
+                    transitions = chunk_data.get("data", [])
+                else: # Legacy list format
+                    transitions = chunk_data
                 
                 num_transitions_in_chunk = len(transitions)
                 end_idx = current_idx + num_transitions_in_chunk
