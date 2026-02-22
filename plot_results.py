@@ -109,10 +109,12 @@ def plot_results(experiment_id, runs_dir="out/runs", output_dir="plots", num_env
     else:
         # Produce BOTH step-based and episode-based graphs
         for x_axis in ["steps", "episodes"]:
-            plt.figure(figsize=(12, 5))
+            fig, axes = plt.subplots(1, 2, figsize=(15, 6))
             
             # Subplot 1: Shaped Returns
-            plt.subplot(1, 2, 1)
+            ax1 = axes[0]
+            lines = []
+            labels = []
             for method, returns in online_shaped.items():
                 if x_axis == "steps":
                     x = np.cumsum(online_lengths[method]) / float(num_envs)
@@ -123,11 +125,14 @@ def plot_results(experiment_id, runs_dir="out/runs", output_dir="plots", num_env
                 
                 n_smooth = min(20, max(1, len(returns)//10))
                 y = moving_average(returns, n=n_smooth)
-                plt.plot(x, y, label=method)
-            plt.xlabel(label_x); plt.ylabel("Return (Shaped)"); plt.title(f"Continuous Training (Shaped, x={x_axis})"); plt.legend(); plt.grid(True)
+                line, = ax1.plot(x, y, label=method)
+                if method not in labels:
+                    lines.append(line)
+                    labels.append(method)
+            ax1.set_xlabel(label_x); ax1.set_ylabel("Return (Shaped)"); ax1.set_title(f"Continuous Training (Shaped)"); ax1.grid(True)
 
             # Subplot 2: Raw Returns
-            plt.subplot(1, 2, 2)
+            ax2 = axes[1]
             if online_raw:
                 for method, returns in online_raw.items():
                     if x_axis == "steps":
@@ -137,35 +142,52 @@ def plot_results(experiment_id, runs_dir="out/runs", output_dir="plots", num_env
                     
                     n_smooth = min(20, max(1, len(returns)//10))
                     y = moving_average(returns, n=n_smooth)
-                    plt.plot(x, y, label=method)
-                plt.xlabel(label_x); plt.ylabel("Atari Score"); plt.title(f"Continuous Training (Raw, x={x_axis})"); plt.legend(); plt.grid(True)
+                    ax2.plot(x, y, label=method)
+                ax2.set_xlabel(label_x); ax2.set_ylabel("Atari Score"); ax2.set_title(f"Continuous Training (Raw)"); ax2.grid(True)
             else:
-                plt.text(0.5, 0.5, "No raw data in pkl", ha='center')
+                ax2.text(0.5, 0.5, "No raw data in pkl", ha='center')
             
-            plt.tight_layout()
-            plt.savefig(output_path / f"online_performance_{x_axis}.png")
+            # Shared legend for continuous training
+            fig.legend(lines, labels, loc='lower center', ncol=min(len(labels), 4), bbox_to_anchor=(0.5, -0.05))
+            plt.tight_layout(rect=[0, 0.05, 1, 1])
+            plt.savefig(output_path / f"online_performance_{x_axis}.png", bbox_inches='tight')
             print(f"Saved online performance plot to {output_path / f'online_performance_{x_axis}.png'}")
 
-    # FIGURE 2: Eval Comparison (Shaped)
+    # COMBINED FIGURE: Eval Comparison (Shaped and Raw)
     if eval_shaped:
-        plt.figure(figsize=(10, 6))
+        fig, axes = plt.subplots(1, 2, figsize=(15, 6))
+        lines = []
+        labels = []
+        
+        # Subplot 1: Shaped Eval
+        ax1 = axes[0]
         for label, rewards in eval_shaped.items():
-            # For eval, we usually plot against total data_limit (steps)
             x = np.array(eval_limits[label])
-            plt.plot(x, rewards, marker='o', label=label)
-        plt.xlabel("Total Training Steps / Dataset Size"); plt.ylabel("Avg Eval Return (Shaped)")
-        plt.title(f"Evaluation Comparison - Shaped Rewards ({experiment_id})")
-        plt.legend(); plt.grid(True); plt.savefig(output_path / "eval_shaped.png")
+            line, = ax1.plot(x, rewards, marker='o', label=label)
+            if label not in labels:
+                lines.append(line)
+                labels.append(label)
+        ax1.set_xlabel("Total Training Steps / Dataset Size"); ax1.set_ylabel("Avg Eval Return (Shaped)")
+        ax1.set_title(f"Evaluation Comparison - Shaped Rewards")
+        ax1.grid(True)
 
-    # FIGURE 3: Eval Comparison (Raw)
-    if eval_raw:
-        plt.figure(figsize=(10, 6))
-        for label, rewards in eval_raw.items():
-            x = np.array(eval_limits[label])
-            plt.plot(x, rewards, marker='s', linestyle='--', label=label)
-        plt.xlabel("Total Training Steps / Dataset Size"); plt.ylabel("Avg Atari Score")
-        plt.title(f"Evaluation Comparison - Raw Atari Score ({experiment_id})")
-        plt.legend(); plt.grid(True); plt.savefig(output_path / "eval_raw.png")
+        # Subplot 2: Raw Eval
+        ax2 = axes[1]
+        if eval_raw:
+            for label, rewards in eval_raw.items():
+                x = np.array(eval_limits[label])
+                ax2.plot(x, rewards, marker='s', linestyle='--', label=label)
+            ax2.set_xlabel("Total Training Steps / Dataset Size"); ax2.set_ylabel("Avg Atari Score")
+            ax2.set_title(f"Evaluation Comparison - Raw Atari Score")
+            ax2.grid(True)
+        else:
+            ax2.text(0.5, 0.5, "No raw eval data", ha='center')
+
+        # Shared legend for eval comparison
+        fig.legend(lines, labels, loc='lower center', ncol=min(len(labels), 3), bbox_to_anchor=(0.5, -0.05))
+        plt.tight_layout(rect=[0, 0.05, 1, 1])
+        plt.savefig(output_path / "eval_comparison.png", bbox_inches='tight')
+        print(f"Saved combined evaluation plot to {output_path / 'eval_comparison.png'}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

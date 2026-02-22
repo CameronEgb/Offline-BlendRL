@@ -452,15 +452,30 @@ def main():
             real_next_done = np.logical_or(terminations, truncations)
             
             if dataset_writer is not None:
-                dataset_writer.batch_add(
-                    obs=next_obs,
-                    logic_obs=next_logic_obs,
-                    action=action,
-                    reward=reward,
-                    next_obs=real_next_obs,
-                    next_logic_obs=real_next_logic_obs,
-                    done=real_next_done
-                )
+                # Cap the dataset at exactly args.total_timesteps
+                current_count = global_step - args.num_envs
+                if current_count < args.total_timesteps:
+                    to_add = min(args.num_envs, args.total_timesteps - current_count)
+                    if to_add == args.num_envs:
+                        dataset_writer.batch_add(
+                            obs=next_obs,
+                            logic_obs=next_logic_obs,
+                            action=action,
+                            reward=reward,
+                            next_obs=real_next_obs,
+                            next_logic_obs=real_next_logic_obs,
+                            done=real_next_done
+                        )
+                    else:
+                        dataset_writer.batch_add(
+                            obs=next_obs[:to_add],
+                            logic_obs=next_logic_obs[:to_add],
+                            action=action[:to_add],
+                            reward=reward[:to_add],
+                            next_obs=real_next_obs[:to_add],
+                            next_logic_obs=real_next_logic_obs[:to_add],
+                            done=real_next_done[:to_add]
+                        )
 
             rewards[step] = torch.tensor(reward).to(device).view(-1)
             next_obs, next_logic_obs, next_done = (
@@ -786,7 +801,7 @@ def main():
         writer.add_scalar("charts/eval_raw_return", avg_raw_reward, global_step)
         
         interval_results.append({
-            "interval": interval_idx, "data_limit": int(global_step), 
+            "interval": interval_idx, "data_limit": int(args.total_timesteps), 
             "avg_reward": float(avg_reward), "avg_raw_reward": float(avg_raw_reward), "step": global_step
         })
         with open(experiment_dir / "results.json", "w") as f: json.dump(interval_results, f, indent=4)
