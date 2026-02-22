@@ -72,8 +72,10 @@ def plot_results(experiment_id, runs_dir="out/runs", output_dir="plots"):
                     label = clean_method if is_offline else f"{clean_method} (Online)"
                     eval_limits[label] = [d["data_limit"] for d in data]
                     eval_shaped[label] = [d["avg_reward"] for d in data]
-                    if "avg_raw_reward" in data[0]:
-                        eval_raw[label] = [d["avg_raw_reward"] for d in data]
+                    
+                    # Always capture raw rewards, even if they are 0.0
+                    raw_vals = [d.get("avg_raw_reward", 0.0) for d in data]
+                    eval_raw[label] = raw_vals
             except: pass
 
     # --- FIGURE 1: Online Continuous Performance ---
