@@ -282,7 +282,7 @@ def main():
             script = "train_iql.py" if off_method == "iql" else "train_blendrl_iql.py"
             dependency = online_job_ids.get(data_source)
 
-            cmd = f"{python_cmd} {script} --env_name {env_name} --dataset_path {dataset_base_path} --dataset_run_name {dataset_run_id} --intervals {args.intervals_count} --epochs_per_interval {args.offline_epochs} --seed {args.seed} --run_id {run_name} --exp_id {experiment_id} --eval_episodes {args.eval_episodes} --learning_rate {args.offline_lr} --gamma {args.gamma} --tau {args.iql_tau} --beta {args.iql_beta} --batch_size {args.batch_size} --algorithm {args.algorithm} --blender_mode {args.blender_mode} --blend_function {args.blend_function} --actor_mode {args.actor_mode} --rules {args.rules} --reasoner {args.reasoner}"
+            cmd = f"{python_cmd} {script} --env_name {env_name} --total_timesteps {args.online_steps} --dataset_path {dataset_base_path} --dataset_run_name {dataset_run_id} --intervals {args.intervals_count} --epochs_per_interval {args.offline_epochs} --seed {args.seed} --run_id {run_name} --exp_id {experiment_id} --eval_episodes {args.eval_episodes} --learning_rate {args.offline_lr} --gamma {args.gamma} --tau {args.iql_tau} --beta {args.iql_beta} --batch_size {args.batch_size} --algorithm {args.algorithm} --blender_mode {args.blender_mode} --blend_function {args.blend_function} --actor_mode {args.actor_mode} --rules {args.rules} --reasoner {args.reasoner}"
             jid = submit_job(cmd, f"off_{off_method}_{data_source}_{experiment_id}", dependency=dependency, local=args.local, log_dir=f"logs/{experiment_id}")
             if jid and not args.local:
                 jobids_file.write(f"{jid}\n")

@@ -51,6 +51,7 @@ def plot_results(experiment_id, runs_dir="out/runs", output_dir="plots", num_env
     online_shaped = {} 
     online_raw = {}
     online_lengths = {}
+    online_num_envs = {} # Store num_envs per method
     eval_shaped = {}
     eval_raw = {}
     eval_limits = {}
@@ -67,6 +68,33 @@ def plot_results(experiment_id, runs_dir="out/runs", output_dir="plots", num_env
         is_offline = folder_name.startswith("off_")
         clean_method = folder_name.replace(f"_{experiment_id}", "").replace("Seaquest-v4_", "").replace("seaquest_", "")
         
+        # Better labels for offline: "iql (on ppo)"
+        if is_offline:
+            parts = clean_method.split("_")
+            if len(parts) >= 2:
+                # off_method_datasource -> "method (on datasource)"
+                # parts[0] is 'off', parts[1] is method, parts[2] is datasource
+                # Wait, clean_method already had 'off_'? No, folder_name has it.
+                # Let's re-parse from folder_name for safety
+                raw_parts = folder_name.split("_")
+                if len(raw_parts) >= 3:
+                    method = raw_parts[1]
+                    source = raw_parts[2]
+                    clean_method = f"{method} (on {source})"
+        
+        # Try to find specific num_envs for this run in config.yaml
+        run_num_envs = num_envs
+        import yaml
+        config_path = run_folder / "config.yaml"
+        if config_path.exists():
+            try:
+                with open(config_path, "r") as f:
+                    config = yaml.safe_load(f)
+                    if config and "num_envs" in config:
+                        run_num_envs = int(config["num_envs"])
+            except: pass
+        online_num_envs[clean_method] = run_num_envs
+
         # 1. Load Continuous Training Data (training_log.pkl)
         pkl_path = run_folder / "checkpoints" / "training_log.pkl"
         if pkl_path.exists():
@@ -117,8 +145,8 @@ def plot_results(experiment_id, runs_dir="out/runs", output_dir="plots", num_env
             labels = []
             for method, returns in online_shaped.items():
                 if x_axis == "steps":
-                    x = np.cumsum(online_lengths[method]) / float(num_envs)
-                    label_x = f"Steps (per Env, total/{num_envs})"
+                    x = np.cumsum(online_lengths[method])
+                    label_x = f"Total Steps (Aggregate across Envs)"
                 else:
                     x = np.arange(len(returns))
                     label_x = "Completed Episodes"
@@ -136,7 +164,7 @@ def plot_results(experiment_id, runs_dir="out/runs", output_dir="plots", num_env
             if online_raw:
                 for method, returns in online_raw.items():
                     if x_axis == "steps":
-                        x = np.cumsum(online_lengths[method]) / float(num_envs)
+                        x = np.cumsum(online_lengths[method])
                     else:
                         x = np.arange(len(returns))
                     

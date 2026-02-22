@@ -60,4 +60,11 @@ find out/runs -name "*$EXP_ID*" -exec rm -rf {} + 2>/dev/null
 find out/tensorboard -name "*$EXP_ID*" -exec rm -rf {} + 2>/dev/null
 find offline_dataset -name "*$EXP_ID*" -exec rm -rf {} + 2>/dev/null
 
+# Also clean up the large dataset path
+LARGE_DATASET_PATH="/mnt/beegfs/cegbert/offlineDatasets"
+if [ -d "$LARGE_DATASET_PATH/$EXP_ID" ]; then
+    echo "Deleting large dataset at $LARGE_DATASET_PATH/$EXP_ID..."
+    rm -rf "$LARGE_DATASET_PATH/$EXP_ID"
+fi
+
 echo "Done."

@@ -243,14 +243,15 @@ def main():
     interval_results = []
     best_eval_reward = -float('inf')
     
-    # Segment the data
+    # Segment the data using idealized intervals to match online scripts
     if args.intervals > 1:
-        interval_step_size = total_transitions // (args.intervals - 1)
+        ideal_step_size = args.total_timesteps // (args.intervals - 1)
     else:
-        interval_step_size = total_transitions
+        ideal_step_size = args.total_timesteps
 
     for interval in range(0, args.intervals):
-        current_limit = min(interval * interval_step_size, total_transitions)
+        # Calculate current_limit based on idealized intervals but capped by actual data
+        current_limit = min(interval * ideal_step_size, total_transitions)
         if interval == args.intervals - 1:
             current_limit = total_transitions
             
@@ -371,9 +372,13 @@ def main():
             torch.save(actor.state_dict(), save_path / "best_model.pth")
             print(f"New best model saved with reward {avg_reward:.2f}")
 
+        idealized_limit = interval * ideal_step_size
+        if interval == args.intervals - 1:
+            idealized_limit = args.total_timesteps
+
         interval_results.append({
             "interval": interval, 
-            "data_limit": current_limit, 
+            "data_limit": int(idealized_limit), 
             "avg_reward": float(avg_reward), 
             "avg_raw_reward": float(avg_raw_reward),
             "step": global_step

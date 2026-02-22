@@ -432,6 +432,70 @@ def main():
 
             episodic_game_returns += torch.tensor(reward).to(device).view(-1)
 
+            # --- Precise Evaluation Trigger ---
+            interval_idx = len(interval_results)
+            if global_step >= (interval_idx * eval_step_freq) and interval_idx < args.intervals:
+                print(f"--- Evaluating Interval {interval_idx} at Global Step {global_step} (Target: {interval_idx * eval_step_freq:.0f}) ---")
+                
+                n_eval_envs = 10
+                eval_env = VectorizedNudgeBaseEnv.from_name(args.env_name, n_envs=n_eval_envs, mode=args.algorithm, seed=args.seed + 100)
+                eval_total_rewards = []
+                eval_total_raw_rewards = []
+                eval_cumulative_rewards = np.zeros(n_eval_envs)
+                _, e_obs = eval_env.reset()
+                e_obs = torch.Tensor(e_obs).to(device)
+                
+                while len(eval_total_rewards) < args.eval_episodes:
+                    with torch.no_grad():
+                        action, _, _, _ = agent.get_action_and_value(e_obs)
+                    (e_logic_obs, e_obs), reward_eval, terminations_eval, truncations_eval, infos_eval = eval_env.step(action.cpu().numpy())
+                    e_obs = torch.Tensor(e_obs).to(device)
+                    
+                    eval_cumulative_rewards += np.array(reward_eval)
+                    
+                    for i in range(n_eval_envs):
+                        if terminations_eval[i] or truncations_eval[i]:
+                            raw_reward = 0.0
+                            if "final_info" in infos_eval and infos_eval["final_info"][i] is not None:
+                                raw_reward = infos_eval["final_info"][i].get("episode", {}).get("r", 0.0)
+                            elif "episode" in infos_eval and infos_eval["_episode"][i]:
+                                raw_reward = infos_eval["episode"]["r"][i]
+                            
+                            eval_total_rewards.append(eval_cumulative_rewards[i])
+                            eval_total_raw_rewards.append(raw_reward)
+                            eval_cumulative_rewards[i] = 0
+                            
+                            if len(eval_total_rewards) >= args.eval_episodes:
+                                break
+                    if len(eval_total_rewards) >= args.eval_episodes:
+                        break
+                
+                avg_reward = np.mean(eval_total_rewards[:args.eval_episodes]) if eval_total_rewards else 0.0
+                avg_raw_reward = np.mean(eval_total_raw_rewards[:args.eval_episodes]) if eval_total_raw_rewards else 0.0
+                print(f"Interval {interval_idx} Eval Reward (Shaped): {avg_reward:.2f} | Raw: {avg_raw_reward:.2f}")
+                writer.add_scalar("charts/eval_return", avg_reward, global_step)
+                writer.add_scalar("charts/eval_raw_return", avg_raw_reward, global_step)
+                
+                if avg_reward >= best_eval_reward:
+                    best_eval_reward = avg_reward
+                    checkpoint_path = checkpoint_dir / "best_model.pth"
+                    torch.save(agent.state_dict(), checkpoint_path)
+                    print(f"New best model saved with reward {avg_reward:.2f}")
+                
+                interval_results.append({
+                    "interval": interval_idx,
+                    "data_limit": int(interval_idx * eval_step_freq),
+                    "avg_reward": float(avg_reward),
+                    "avg_raw_reward": float(avg_raw_reward),
+                    "step": global_step
+                })
+                with open(experiment_dir / "results.json", "w") as f:
+                    import json
+                    json.dump(interval_results, f, indent=4)
+                
+                eval_env.close()
+            # --- End Precise Evaluation Trigger ---
+
             # --- Episode Logging Fix ---
             # Try multiple ways to detect completed episodes in vector environments
             found_episodes = []
@@ -456,7 +520,6 @@ def main():
                 episodic_lengths.append(episode_l)
                 episodic_game_returns[k] = 0
                 episode_log_count += 1
-                print(f"Iteration {iteration} | env {k} finished episode: return={episode_r}, length={episode_l}")
             # --- End Episode Logging Fix ---
               
         # Save training log every iteration (outside the step loop for efficiency)
@@ -549,7 +612,7 @@ def main():
         writer.add_scalar("losses/clipfrac", np.mean(clipfracs) if clipfracs else 0.0, global_step)
         writer.add_scalar("losses/explained_variance", explained_var, global_step)
         
-        if iteration % 1 == 0:
+        if iteration % 50 == 0:
             sps = int(global_step / (time.time() - start_time))
             print(f"Iteration: {iteration}/{args.num_iterations}, Global Step: {global_step}, SPS: {sps}")
             writer.add_scalar("charts/SPS", sps, global_step)
@@ -557,74 +620,6 @@ def main():
         value_losses.append(v_loss.item())
         policy_losses.append(pg_loss.item())
         entropies.append(entropy_loss.item())
-        
-        # Interval evaluation - Strictly step-based trigger
-        interval_idx = len(interval_results)
-        if global_step >= (interval_idx * eval_step_freq) and interval_idx < args.intervals:
-            print(f"--- Evaluating Interval {interval_idx} at Global Step {global_step} (Target: {interval_idx * eval_step_freq:.0f}) ---")
-            
-            n_eval_envs = 10
-            eval_env = VectorizedNudgeBaseEnv.from_name(args.env_name, n_envs=n_eval_envs, mode=args.algorithm, seed=args.seed + 100)
-            eval_total_rewards = []
-            eval_total_raw_rewards = []
-            eval_cumulative_rewards = np.zeros(n_eval_envs)
-            _, e_obs = eval_env.reset()
-            e_obs = torch.Tensor(e_obs).to(device)
-            
-            while len(eval_total_rewards) < args.eval_episodes:
-                with torch.no_grad():
-                    action, _, _, _ = agent.get_action_and_value(e_obs)
-                (e_logic_obs, e_obs), reward, terminations, truncations, infos = eval_env.step(action.cpu().numpy())
-                e_obs = torch.Tensor(e_obs).to(device)
-                
-                eval_cumulative_rewards += np.array(reward)
-                
-                for i in range(n_eval_envs):
-                    if terminations[i] or truncations[i]:
-                        raw_reward = 0.0
-                        if "final_info" in infos and infos["final_info"][i] is not None:
-                            raw_reward = infos["final_info"][i].get("episode", {}).get("r", 0.0)
-                        elif "episode" in infos and infos["_episode"][i]:
-                            raw_reward = infos["episode"]["r"][i]
-                        
-                        eval_total_rewards.append(eval_cumulative_rewards[i])
-                        eval_total_raw_rewards.append(raw_reward)
-                        eval_cumulative_rewards[i] = 0
-                        
-                        if len(eval_total_rewards) >= args.eval_episodes:
-                            break
-                
-                if len(eval_total_rewards) >= args.eval_episodes:
-                    break
-            
-            avg_reward = np.mean(eval_total_rewards[:args.eval_episodes]) if eval_total_rewards else 0.0
-            avg_raw_reward = np.mean(eval_total_raw_rewards[:args.eval_episodes]) if eval_total_raw_rewards else 0.0
-            print(f"Interval {interval_idx} Eval Reward (Shaped): {avg_reward:.2f} | Raw: {avg_raw_reward:.2f}")
-            writer.add_scalar("charts/eval_return", avg_reward, global_step)
-            writer.add_scalar("charts/eval_raw_return", avg_raw_reward, global_step)
-            
-            if avg_reward >= best_eval_reward:
-                best_eval_reward = avg_reward
-                checkpoint_path = checkpoint_dir / "best_model.pth"
-                torch.save(agent.state_dict(), checkpoint_path)
-                print(f"New best model saved with reward {avg_reward:.2f}")
-                save_hyperparams(args=args, save_path=experiment_dir / "config.yaml", print_summary=False)
-            
-            interval_results.append({
-                "interval": interval_idx,
-                "data_limit": int(interval_idx * eval_step_freq),
-                "avg_reward": float(avg_reward),
-                "avg_raw_reward": float(avg_raw_reward),
-                "step": global_step
-            })
-            with open(experiment_dir / "results.json", "w") as f:
-                import json
-                json.dump(interval_results, f, indent=4)
-            
-            training_log = (episodic_returns, episodic_lengths, value_losses, policy_losses, entropies, blend_entropies, episodic_raw_returns)
-            with open(checkpoint_dir / "training_log.pkl", "wb") as f:
-                pickle.dump(training_log, f)
-            eval_env.close()
 
     # Final Evaluation (if not already captured by the last interval)
     if len(interval_results) < args.intervals:
