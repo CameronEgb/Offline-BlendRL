@@ -307,8 +307,8 @@ def main():
                     if len(eval_total_rewards) >= args.eval_episodes:
                         break
         
-        avg_reward = np.mean(eval_total_rewards[:args.eval_episodes])
-        avg_raw_reward = np.mean(eval_total_raw_rewards[:args.eval_episodes])
+        avg_reward = np.mean(eval_total_rewards[:args.eval_episodes]) if eval_total_rewards else 0.0
+        avg_raw_reward = np.mean(eval_total_raw_rewards[:args.eval_episodes]) if eval_total_raw_rewards else 0.0
         print(f"Interval 0 Eval Reward (Shaped): {avg_reward:.2f} | Raw: {avg_raw_reward:.2f}")
         writer.add_scalar("charts/eval_return", avg_reward, 0)
         writer.add_scalar("charts/eval_raw_return", avg_raw_reward, 0)
@@ -551,8 +551,8 @@ def main():
                 if len(eval_total_rewards) >= args.eval_episodes:
                     break
             
-            avg_reward = np.mean(eval_total_rewards[:args.eval_episodes])
-            avg_raw_reward = np.mean(eval_total_raw_rewards[:args.eval_episodes])
+            avg_reward = np.mean(eval_total_rewards[:args.eval_episodes]) if eval_total_rewards else 0.0
+            avg_raw_reward = np.mean(eval_total_raw_rewards[:args.eval_episodes]) if eval_total_raw_rewards else 0.0
             print(f"Interval {interval_idx} Eval Reward (Shaped): {avg_reward:.2f} | Raw: {avg_raw_reward:.2f}")
             writer.add_scalar("charts/eval_return", avg_reward, global_step)
             writer.add_scalar("charts/eval_raw_return", avg_raw_reward, global_step)
