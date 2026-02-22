@@ -385,6 +385,13 @@ def main():
             truncations = np.array(truncations)
             real_next_done = np.logical_or(terminations, truncations)
             
+            # --- DEBUGGING EPISODE LOGGING ---
+            if np.any(real_next_done):
+                for i, (term, trunc) in enumerate(zip(terminations, truncations)):
+                    if term or trunc:
+                        print(f"DEBUG: Env {i} terminated/truncated. infos[{i}]: {infos}")
+            # --- END DEBUG ---
+            
             if dataset_writer is not None:
                 dataset_writer.batch_add(
                     obs=next_obs,
