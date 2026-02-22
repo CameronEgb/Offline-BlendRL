@@ -176,17 +176,37 @@ class SeaquestDatasetReader:
             with open(f, "rb") as fh:
                 chunk_data = pickle.load(fh)
                 if isinstance(chunk_data, dict):
+                    metadata = chunk_data.get("metadata", {})
                     transitions = chunk_data.get("data", [])
                 else: # Legacy list format
+                    metadata = {}
                     transitions = chunk_data
                 
                 num_transitions_in_chunk = len(transitions)
                 end_idx = current_idx + num_transitions_in_chunk
+                
+                compression = metadata.get("compression", None)
 
                 # Decompress and store
                 for i, t in enumerate(transitions):
-                    self.obs[current_idx + i] = np.frombuffer(lz4.frame.decompress(t["obs"]), dtype=np.uint8).reshape(obs_shape)
-                    self.next_obs_new[current_idx + i] = np.frombuffer(lz4.frame.decompress(t["next_obs_new"]), dtype=np.uint8).reshape(next_obs_new_shape)
+                    obs_data = t["obs"]
+                    next_obs_data = t["next_obs_new"]
+                    
+                    if compression == "lz4":
+                        self.obs[current_idx + i] = np.frombuffer(lz4.frame.decompress(obs_data), dtype=np.uint8).reshape(obs_shape)
+                        self.next_obs_new[current_idx + i] = np.frombuffer(lz4.frame.decompress(next_obs_data), dtype=np.uint8).reshape(next_obs_new_shape)
+                    else:
+                        # Assume already decompressed / raw array or bytes
+                        if isinstance(obs_data, bytes):
+                            self.obs[current_idx + i] = np.frombuffer(obs_data, dtype=np.uint8).reshape(obs_shape)
+                        else:
+                            self.obs[current_idx + i] = obs_data
+                        
+                        if isinstance(next_obs_data, bytes):
+                            self.next_obs_new[current_idx + i] = np.frombuffer(next_obs_data, dtype=np.uint8).reshape(next_obs_new_shape)
+                        else:
+                            self.next_obs_new[current_idx + i] = next_obs_data
+                            
                     self.actions[current_idx + i] = t["action"]
                     self.rewards[current_idx + i] = t["reward"]
                     self.dones[current_idx + i] = t["done"]
