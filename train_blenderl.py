@@ -286,6 +286,7 @@ def main():
                     best_eval_reward = max([d["avg_reward"] for d in interval_results])
     else:
         episodic_returns = []
+        episodic_raw_returns = [] # NEW: actual Atari score
         episodic_lengths = []
         value_losses = []
         policy_losses = []
@@ -475,6 +476,7 @@ def main():
                             "charts/episodic_length", info["episode"]["l"], global_step
                         )
                         episodic_returns.append(info["episode"]["r"])
+                        episodic_raw_returns.append(info["episode"]["r"])
                         episodic_lengths.append(info["episode"]["l"])
 
                         # save the game reward and reset
@@ -502,6 +504,7 @@ def main():
                     policy_losses,
                     entropies,
                     blend_entropies,
+                    episodic_raw_returns,
                 )
                 with open(checkpoint_dir / "training_log.pkl", "wb") as f:
                     pickle.dump(training_log, f)
@@ -716,6 +719,7 @@ def main():
                 policy_losses,
                 entropies,
                 blend_entropies,
+                episodic_raw_returns,
             )
             with open(checkpoint_dir / "training_log.pkl", "wb") as f:
                 pickle.dump(training_log, f)
@@ -783,6 +787,7 @@ def main():
         policy_losses,
         entropies,
         blend_entropies,
+        episodic_raw_returns,
     )
     with open(checkpoint_dir / "training_log.pkl", "wb") as f:
         pickle.dump(training_log, f)

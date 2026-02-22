@@ -268,6 +268,7 @@ def main():
                     best_eval_reward = max([d["avg_reward"] for d in interval_results])
     else:
         episodic_returns = []
+        episodic_raw_returns = [] # NEW: actual Atari score
         episodic_lengths = []
         value_losses = []
         policy_losses = []
@@ -410,13 +411,14 @@ def main():
                         writer.add_scalar("charts/episodic_return", info["episode"]["r"], global_step)
                         writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
                         episodic_returns.append(info["episode"]["r"])
+                        episodic_raw_returns.append(info["episode"]["r"]) # For PPO, raw and shaped might be identical unless env wrapper changes them
                         episodic_lengths.append(info["episode"]["l"])
                         episodic_game_returns[k] = 0
                         episode_log_count += 1
               
             # Periodic Progress Report
             if global_step % (args.num_envs * 100) == 0:
-                training_log = (episodic_returns, episodic_lengths, value_losses, policy_losses, entropies, blend_entropies)
+                training_log = (episodic_returns, episodic_lengths, value_losses, policy_losses, entropies, blend_entropies, episodic_raw_returns)
                 with open(checkpoint_dir / "training_log.pkl", "wb") as f:
                     pickle.dump(training_log, f)
                 
@@ -571,11 +573,11 @@ def main():
                 "avg_raw_reward": float(avg_raw_reward),
                 "step": global_step
             })
-            with open(experiment_dir / "results.json", "w") as f:
+            with open(checkpoint_dir / "results.json", "w") as f:
                 import json
                 json.dump(interval_results, f, indent=4)
             
-            training_log = (episodic_returns, episodic_lengths, value_losses, policy_losses, entropies, blend_entropies)
+            training_log = (episodic_returns, episodic_lengths, value_losses, policy_losses, entropies, blend_entropies, episodic_raw_returns)
             with open(checkpoint_dir / "training_log.pkl", "wb") as f:
                 pickle.dump(training_log, f)
             eval_env.close()
@@ -628,7 +630,7 @@ def main():
     torch.save(agent.state_dict(), checkpoint_path)
     print(f"Final agent has been saved to {checkpoint_path}")
 
-    training_log = (episodic_returns, episodic_lengths, value_losses, policy_losses, entropies, blend_entropies)
+    training_log = (episodic_returns, episodic_lengths, value_losses, policy_losses, entropies, blend_entropies, episodic_raw_returns)
     with open(checkpoint_dir / "training_log.pkl", "wb") as f:
         pickle.dump(training_log, f)
 
