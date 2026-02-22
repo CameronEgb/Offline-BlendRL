@@ -279,6 +279,7 @@ def main():
         n_eval_envs = 10
         eval_env = VectorizedNudgeBaseEnv.from_name(args.env_name, n_envs=n_eval_envs, mode=args.algorithm, seed=args.seed + 100)
         eval_total_rewards = []
+        eval_cumulative_rewards = np.zeros(n_eval_envs)
         _, e_obs = eval_env.reset()
         e_obs = torch.Tensor(e_obs).to(device)
         
@@ -288,22 +289,18 @@ def main():
             (e_logic_obs, e_obs), reward, terminations, truncations, infos = eval_env.step(action.cpu().numpy())
             e_obs = torch.Tensor(e_obs).to(device)
             
-            # Robust info extraction for both Sync and Async vector envs
-            if "final_info" in infos:
-                for info in infos["final_info"]:
-                    if info is not None and "episode" in info:
-                        eval_total_rewards.append(info["episode"]["r"])
-            elif "episode" in infos:
-                # Handle cases where 'episode' is a dict of arrays (Gymnasium style)
-                for i in range(n_eval_envs):
-                    if infos["_episode"][i]:
-                        eval_total_rewards.append(infos["episode"]["r"][i])
+            # Manually track the SHAPED reward (returned directly by step)
+            eval_cumulative_rewards += np.array(reward)
             
-            if len(eval_total_rewards) >= args.eval_episodes:
-                break
+            for i in range(n_eval_envs):
+                if terminations[i] or truncations[i]:
+                    eval_total_rewards.append(eval_cumulative_rewards[i])
+                    eval_cumulative_rewards[i] = 0 # Reset for next episode in this slot
+                    if len(eval_total_rewards) >= args.eval_episodes:
+                        break
         
         avg_reward = np.mean(eval_total_rewards[:args.eval_episodes])
-        print(f"Interval 0 Eval Reward: {avg_reward}")
+        print(f"Interval 0 Eval Reward (Shaped): {avg_reward}")
         writer.add_scalar("charts/eval_return", avg_reward, 0)
         interval_results.append({"interval": 0, "data_limit": 0, "avg_reward": float(avg_reward), "step": 0})
         eval_env.close()
@@ -509,6 +506,7 @@ def main():
             n_eval_envs = 10
             eval_env = VectorizedNudgeBaseEnv.from_name(args.env_name, n_envs=n_eval_envs, mode=args.algorithm, seed=args.seed + 100)
             eval_total_rewards = []
+            eval_cumulative_rewards = np.zeros(n_eval_envs)
             _, e_obs = eval_env.reset()
             e_obs = torch.Tensor(e_obs).to(device)
             
@@ -518,20 +516,20 @@ def main():
                 (e_logic_obs, e_obs), reward, terminations, truncations, infos = eval_env.step(action.cpu().numpy())
                 e_obs = torch.Tensor(e_obs).to(device)
                 
-                if "final_info" in infos:
-                    for info in infos["final_info"]:
-                        if info is not None and "episode" in info:
-                            eval_total_rewards.append(info["episode"]["r"])
-                elif "episode" in infos:
-                    for i in range(n_eval_envs):
-                        if infos["_episode"][i]:
-                            eval_total_rewards.append(infos["episode"]["r"][i])
+                eval_cumulative_rewards += np.array(reward)
+                
+                for i in range(n_eval_envs):
+                    if terminations[i] or truncations[i]:
+                        eval_total_rewards.append(eval_cumulative_rewards[i])
+                        eval_cumulative_rewards[i] = 0
+                        if len(eval_total_rewards) >= args.eval_episodes:
+                            break
                 
                 if len(eval_total_rewards) >= args.eval_episodes:
                     break
             
             avg_reward = np.mean(eval_total_rewards[:args.eval_episodes])
-            print(f"Interval {interval_idx} Eval Reward: {avg_reward}")
+            print(f"Interval {interval_idx} Eval Reward (Shaped): {avg_reward}")
             writer.add_scalar("charts/eval_return", avg_reward, global_step)
             
             if avg_reward >= best_eval_reward:
