@@ -77,7 +77,7 @@ class SeaquestDatasetWriter:
             "logic_obs_shape": self.buffer[0]["logic_obs"].shape if "logic_obs" in self.buffer[0] and self.buffer[0]["logic_obs"] is not None else None,
             "action_dtype": "uint8",
             "reward_dtype": "float32",
-            "done_dtype": "bool",
+            "done_dtype": "bool_",
             "compression": "lz4"
         }
         
