@@ -1,14 +1,14 @@
 #!/bin/bash
 # --- Configuration Section ---
-EXPERIMENT_ID="seaquest_test_demo"
+EXPERIMENT_ID="seaquest_speed_test"
 ENVIRONMENT="seaquest"
-ONLINE_METHODS="" # Leave empty to skip online and run ONLY offline
-ONLINE_STEPS=30000
+ONLINE_METHODS="ppo,blendrl_ppo"
+ONLINE_STEPS=5000
 OFFLINE_METHODS="iql,blendrl_iql"
 OFFLINE_DATASETS="blendrl_ppo,ppo"
-OFFLINE_EPOCHS=50
-INTERVALS_COUNT=5
-EVAL_EPISODES=100
+OFFLINE_EPOCHS=5
+INTERVALS_COUNT=3
+EVAL_EPISODES=10
 # -----------------------------
 USE_LARGE_DATASET_PATH=true
 LARGE_DATASET_PATH="/mnt/beegfs/cegbert/offlineDatasets"
