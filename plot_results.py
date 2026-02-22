@@ -17,12 +17,17 @@ def plot_results(experiment_id, runs_dir="out/runs", output_dir="plots"):
     # Each experiment now has its own subdirectory in out/runs
     exp_path = Path(runs_dir) / experiment_id
     if not exp_path.exists():
-        alt_path = Path(runs_dir) / f"exp_{experiment_id}"
+        # Try -remote suffix
+        alt_path = Path(runs_dir) / f"{experiment_id}-remote"
         if alt_path.exists():
             exp_path = alt_path
         else:
-            print(f"Warning: Experiment directory {exp_path} not found.")
-            exp_path = Path(runs_dir)
+            alt_path = Path(runs_dir) / f"exp_{experiment_id}"
+            if alt_path.exists():
+                exp_path = alt_path
+            else:
+                print(f"Warning: Experiment directory {exp_path} not found.")
+                exp_path = Path(runs_dir)
         
     output_path = Path(output_dir) / experiment_id
     output_path.mkdir(parents=True, exist_ok=True)
@@ -33,6 +38,13 @@ def plot_results(experiment_id, runs_dir="out/runs", output_dir="plots"):
     eval_data = {}   # method -> (limits, rewards) - shaped
     eval_raw_data = {} # method -> (limits, rewards) - raw
     
+    # Common suffix/prefix cleaning
+    def clean_name(name):
+        n = name.replace(f"_{experiment_id}", "")
+        n = n.replace(f"-remote", "")
+        n = n.replace("Seaquest-v4_", "").replace("seaquest_", "")
+        return n
+
     for run_folder in exp_path.glob(f"*{experiment_id}*"):
         if not run_folder.is_dir():
             continue
@@ -41,9 +53,7 @@ def plot_results(experiment_id, runs_dir="out/runs", output_dir="plots"):
         print(f"Found run: {folder_name}")
         is_offline = folder_name.startswith("off_")
         
-        # Heuristic to clean method name
-        clean_method = folder_name.replace(f"_{experiment_id}", "")
-        clean_method = clean_method.replace("Seaquest-v4_", "").replace("seaquest_", "")
+        clean_method = clean_name(folder_name)
         
         # Online Data
         pkl_path = run_folder / "checkpoints" / "training_log.pkl"
