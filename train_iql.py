@@ -325,27 +325,39 @@ def main():
 
         # End of Interval Eval
         print(f"Evaluating after Interval {interval}...")
-        total_rewards = []
+        n_eval_envs = 10
+        eval_total_rewards = []
+        eval_total_raw_rewards = []
+        eval_cumulative_rewards = np.zeros(n_eval_envs)
         next_logic_obs, next_obs = eval_envs.reset()
         next_obs = torch.Tensor(next_obs).to(device)
-        current_rewards = np.zeros(1)
-        episodes_completed = 0
-        while episodes_completed < args.eval_episodes:
+        
+        while len(eval_total_rewards) < args.eval_episodes:
             with torch.no_grad():
                 action, _, _, _ = actor.get_action_and_value(next_obs)
             (next_logic_obs, next_obs), reward, terminations, truncations, infos = eval_envs.step(action.cpu().numpy())
             next_obs = torch.Tensor(next_obs).to(device)
-            current_rewards += reward
-            if terminations[0] or truncations[0]:
-                total_rewards.append(current_rewards[0])
-                current_rewards = np.zeros(1)
-                episodes_completed += 1
-                next_logic_obs, next_obs = eval_envs.reset()
-                next_obs = torch.Tensor(next_obs).to(device)
+            
+            eval_cumulative_rewards += np.array(reward)
+            
+            for i in range(n_eval_envs):
+                if terminations[i] or truncations[i]:
+                    eval_total_rewards.append(eval_cumulative_rewards[i])
+                    eval_cumulative_rewards[i] = 0
+                    
+                    if "final_info" in infos and infos["final_info"][i] is not None:
+                        eval_total_raw_rewards.append(infos["final_info"][i]["episode"]["r"])
+                    elif "episode" in infos and infos["_episode"][i]:
+                        eval_total_raw_rewards.append(infos["episode"]["r"][i])
+                        
+                    if len(eval_total_rewards) >= args.eval_episodes:
+                        break
         
-        avg_reward = np.mean(total_rewards)
-        print(f"Interval {interval} Eval Reward: {avg_reward}")
+        avg_reward = np.mean(eval_total_rewards[:args.eval_episodes])
+        avg_raw_reward = np.mean(eval_total_raw_rewards[:args.eval_episodes])
+        print(f"Interval {interval} Eval Reward (Shaped): {avg_reward:.2f} | Raw: {avg_raw_reward:.2f}")
         writer.add_scalar("charts/eval_return", avg_reward, global_step)
+        writer.add_scalar("charts/eval_raw_return", avg_raw_reward, global_step)
         
         save_path = experiment_dir / "checkpoints"
         save_path.mkdir(parents=True, exist_ok=True)
