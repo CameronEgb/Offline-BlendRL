@@ -704,26 +704,6 @@ def main():
                 "step": global_step
             })
             
-            if avg_reward >= best_eval_reward:
-                best_eval_reward = avg_reward
-                checkpoint_path = checkpoint_dir / "best_model.pth"
-                agent.save(checkpoint_path, checkpoint_dir, [], [], [])
-                print(f"New best model saved with reward {avg_reward:.2f}")
-                
-                # save hyper params
-                save_hyperparams(
-                    args=args,
-                    save_path=experiment_dir / "config.yaml",
-                    print_summary=False,
-                )
-            
-            interval_results.append({
-                "interval": interval_idx,
-                "data_limit": int(interval_idx * eval_step_freq),
-                "avg_reward": float(avg_reward),
-                "step": global_step
-            })
-            
             with open(experiment_dir / "results.json", "w") as f:
                 import json
                 json.dump(interval_results, f, indent=4)
@@ -744,6 +724,48 @@ def main():
 
         # print current agent information
         agent._print()
+
+    # Final Evaluation (if not already captured by the last interval)
+    if len(interval_results) < args.intervals:
+        interval_idx = len(interval_results)
+        print(f"--- Final Evaluation at Global Step {global_step} ---")
+        n_eval_envs = 10
+        eval_env = VectorizedNudgeBaseEnv.from_name(args.env_name, n_envs=n_eval_envs, mode=args.algorithm, seed=args.seed + 100)
+        eval_total_rewards = []
+        eval_total_raw_rewards = []
+        eval_cumulative_rewards = np.zeros(n_eval_envs)
+        e_logic_obs, e_obs = eval_env.reset()
+        e_obs = torch.Tensor(e_obs).to(device)
+        e_logic_obs = e_logic_obs.to(device)
+        
+        while len(eval_total_rewards) < args.eval_episodes:
+            with torch.no_grad():
+                action, _, _, _, _ = agent.get_action_and_value(e_obs, e_logic_obs)
+            (e_logic_obs, e_obs), reward, terminations, truncations, infos = eval_env.step(action.cpu().numpy())
+            e_obs = torch.Tensor(e_obs).to(device); e_logic_obs = torch.Tensor(e_logic_obs).to(device)
+            eval_cumulative_rewards += np.array(reward)
+            for i in range(n_eval_envs):
+                if terminations[i] or truncations[i]:
+                    eval_total_rewards.append(eval_cumulative_rewards[i]); eval_cumulative_rewards[i] = 0
+                    if "final_info" in infos and infos["final_info"][i] is not None:
+                        eval_total_raw_rewards.append(infos["final_info"][i]["episode"]["r"])
+                    elif "episode" in infos and infos["_episode"][i]:
+                        eval_total_raw_rewards.append(infos["episode"]["r"][i])
+                    if len(eval_total_rewards) >= args.eval_episodes: break
+            if len(eval_total_rewards) >= args.eval_episodes: break
+        
+        avg_reward = np.mean(eval_total_rewards[:args.eval_episodes]) if eval_total_rewards else 0.0
+        avg_raw_reward = np.mean(eval_total_raw_rewards[:args.eval_episodes]) if eval_total_raw_rewards else 0.0
+        print(f"Final Eval Reward (Shaped): {avg_reward:.2f} | Raw: {avg_raw_reward:.2f}")
+        writer.add_scalar("charts/eval_return", avg_reward, global_step)
+        writer.add_scalar("charts/eval_raw_return", avg_raw_reward, global_step)
+        
+        interval_results.append({
+            "interval": interval_idx, "data_limit": int(global_step), 
+            "avg_reward": float(avg_reward), "avg_raw_reward": float(avg_raw_reward), "step": global_step
+        })
+        with open(experiment_dir / "results.json", "w") as f: json.dump(interval_results, f, indent=4)
+        eval_env.close()
 
     if dataset_writer is not None:
         dataset_writer.close()
