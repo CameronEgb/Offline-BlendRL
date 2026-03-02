@@ -352,14 +352,7 @@ def main():
             
             for i in range(n_eval_envs):
                 if terminations[i] or truncations[i]:
-                    raw_reward = 0.0
-                    if "final_info" in infos and infos["final_info"][i] is not None:
-                        raw_reward = infos["final_info"][i].get("episode", {}).get("r", 0.0)
-                    elif "episode" in infos and infos["_episode"][i]:
-                        raw_reward = infos["episode"]["r"][i]
-                    
                     eval_total_rewards.append(eval_cumulative_rewards[i])
-                    eval_total_raw_rewards.append(raw_reward)
                     eval_max_positions.append(eval_current_max_pos[i])
                     eval_cumulative_rewards[i] = 0
                     eval_current_max_pos[i] = -1.2
@@ -371,17 +364,14 @@ def main():
                 break
         
         avg_reward = np.mean(eval_total_rewards[:args.eval_episodes]) if eval_total_rewards else 0.0
-        avg_raw_reward = np.mean(eval_total_raw_rewards[:args.eval_episodes]) if eval_total_raw_rewards else 0.0
         avg_max_pos = np.mean(eval_max_positions[:args.eval_episodes]) if eval_max_positions else -1.2
-        print(f"Interval 0 Eval Reward (Shaped): {avg_reward:.2f} | Raw: {avg_raw_reward:.2f} | Max Pos: {avg_max_pos:.4f}")
+        print(f"Interval 0 Eval Reward: {avg_reward:.2f} | Max Pos: {avg_max_pos:.4f}")
         writer.add_scalar("charts/eval_return", avg_reward, 0)
-        writer.add_scalar("charts/eval_raw_return", avg_raw_reward, 0)
         writer.add_scalar("charts/eval_max_pos", avg_max_pos, 0)
         interval_results.append({
             "interval": 0, 
             "data_limit": 0, 
             "avg_reward": float(avg_reward), 
-            "avg_raw_reward": float(avg_raw_reward),
             "avg_max_pos": float(avg_max_pos),
             "step": 0
         })
@@ -566,14 +556,7 @@ def main():
                     
                     for i in range(n_eval_envs):
                         if terminations_eval[i] or truncations_eval[i]:
-                            raw_reward = 0.0
-                            if "final_info" in infos_eval and infos_eval["final_info"][i] is not None:
-                                raw_reward = infos_eval["final_info"][i].get("episode", {}).get("r", 0.0)
-                            elif "episode" in infos_eval and infos_eval["_episode"][i]:
-                                raw_reward = infos_eval["episode"]["r"][i]
-                            
                             eval_total_rewards.append(eval_cumulative_rewards[i])
-                            eval_total_raw_rewards.append(raw_reward)
                             eval_max_positions.append(eval_current_max_pos[i])
                             eval_cumulative_rewards[i] = 0
                             eval_current_max_pos[i] = -1.2
@@ -584,11 +567,9 @@ def main():
                         break
                 
                 avg_reward = np.mean(eval_total_rewards[:args.eval_episodes]) if eval_total_rewards else 0.0
-                avg_raw_reward = np.mean(eval_total_raw_rewards[:args.eval_episodes]) if eval_total_raw_rewards else 0.0
                 avg_max_pos = np.mean(eval_max_positions[:args.eval_episodes]) if eval_max_positions else -1.2
-                print(f"Interval {interval_idx} Eval Reward (Shaped): {avg_reward:.2f} | Raw: {avg_raw_reward:.2f} | Max Pos: {avg_max_pos:.4f}")
+                print(f"Interval {interval_idx} Eval Reward: {avg_reward:.2f} | Max Pos: {avg_max_pos:.4f}")
                 writer.add_scalar("charts/eval_return", avg_reward, global_step)
-                writer.add_scalar("charts/eval_raw_return", avg_raw_reward, global_step)
                 writer.add_scalar("charts/eval_max_pos", avg_max_pos, global_step)
                 
                 if avg_reward >= best_eval_reward:
@@ -602,7 +583,6 @@ def main():
                     "interval": interval_idx,
                     "data_limit": int(interval_idx * eval_step_freq),
                     "avg_reward": float(avg_reward),
-                    "avg_raw_reward": float(avg_raw_reward),
                     "avg_max_pos": float(avg_max_pos),
                     "step": global_step
                 })
@@ -639,7 +619,6 @@ def main():
                             "charts/episodic_length", episode_l, global_step
                         )
                         episodic_returns.append(episodic_game_returns[k].item())
-                        episodic_raw_returns.append(episode_r)
                         episodic_lengths.append(episode_l)
 
                         # save the game reward and reset
@@ -665,12 +644,11 @@ def main():
                         found_episodes = [k for k in range(len(infos["episode"]["r"])) if infos["episode"]["r"][k] != 0 or infos["episode"]["l"][k] != 0]
 
                 for k in found_episodes:
-                    episode_r = infos["episode"]["r"][k]
                     episode_l = infos["episode"]["l"][k]
 
                     if episode_log_count < 20:
                         print(
-                            f"env={k}, global_step={global_step}, episodic_game_return={np.round(episodic_game_returns[k].detach().cpu().numpy(), 2)}, episodic_return={episode_r}, episodic_length={episode_l}"
+                            f"env={k}, global_step={global_step}, episodic_game_return={np.round(episodic_game_returns[k].detach().cpu().numpy(), 2)}, episodic_return={episodic_game_returns[k].item()}, episodic_length={episode_l}"
                         )
                     writer.add_scalar(
                         "charts/episodic_return", episodic_game_returns[k], global_step
@@ -679,7 +657,6 @@ def main():
                         "charts/episodic_length", episode_l, global_step
                     )
                     episodic_returns.append(episodic_game_returns[k].item())
-                    episodic_raw_returns.append(episode_r)
                     episodic_lengths.append(episode_l)
 
                     # save the game reward and reset
@@ -705,7 +682,6 @@ def main():
             policy_losses,
             entropies,
             blend_entropies,
-            episodic_raw_returns,
         )
         with open(checkpoint_dir / "training_log.pkl", "wb") as f:
             pickle.dump(training_log, f)
@@ -878,24 +854,18 @@ def main():
                 if terminations[i] or truncations[i]:
                     eval_total_rewards.append(eval_cumulative_rewards[i]); eval_cumulative_rewards[i] = 0
                     eval_max_positions.append(eval_current_max_pos[i]); eval_current_max_pos[i] = -1.2
-                    if "final_info" in infos and infos["final_info"][i] is not None:
-                        eval_total_raw_rewards.append(infos["final_info"][i]["episode"]["r"])
-                    elif "episode" in infos and infos["_episode"][i]:
-                        eval_total_raw_rewards.append(infos["episode"]["r"][i])
                     if len(eval_total_rewards) >= args.eval_episodes: break
             if len(eval_total_rewards) >= args.eval_episodes: break
         
         avg_reward = np.mean(eval_total_rewards[:args.eval_episodes]) if eval_total_rewards else 0.0
-        avg_raw_reward = np.mean(eval_total_raw_rewards[:args.eval_episodes]) if eval_total_raw_rewards else 0.0
         avg_max_pos = np.mean(eval_max_positions[:args.eval_episodes]) if eval_max_positions else -1.2
-        print(f"Final Eval Reward (Shaped): {avg_reward:.2f} | Raw: {avg_raw_reward:.2f} | Max Pos: {avg_max_pos:.4f}")
+        print(f"Final Eval Reward: {avg_reward:.2f} | Max Pos: {avg_max_pos:.4f}")
         writer.add_scalar("charts/eval_return", avg_reward, global_step)
-        writer.add_scalar("charts/eval_raw_return", avg_raw_reward, global_step)
         writer.add_scalar("charts/eval_max_pos", avg_max_pos, global_step)
         
         interval_results.append({
             "interval": interval_idx, "data_limit": int(args.total_timesteps), 
-            "avg_reward": float(avg_reward), "avg_raw_reward": float(avg_raw_reward), 
+            "avg_reward": float(avg_reward), 
             "avg_max_pos": float(avg_max_pos), "step": global_step
         })
         with open(experiment_dir / "results.json", "w") as f: json.dump(interval_results, f, indent=4)
@@ -917,7 +887,6 @@ def main():
         policy_losses,
         entropies,
         blend_entropies,
-        episodic_raw_returns,
     )
     with open(checkpoint_dir / "training_log.pkl", "wb") as f:
         pickle.dump(training_log, f)

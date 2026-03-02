@@ -1,8 +1,8 @@
 #!/bin/bash
 # --- Configuration Section ---
-EXPERIMENT_ID="seaquest_20m"
-ENVIRONMENT="seaquest"
-ONLINE_METHODS="ppo,blendrl_ppo"
+EXPERIMENT_ID="mountaincar_batch_17"
+ENVIRONMENT="mountaincar"
+ONLINE_METHODS="blendrl_ppo"
 ONLINE_STEPS=20000000
 OFFLINE_METHODS=""
 OFFLINE_DATASETS="ppo"
