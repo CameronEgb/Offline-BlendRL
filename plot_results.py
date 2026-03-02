@@ -17,7 +17,7 @@ def moving_average(a, n=10):
     ret[n:] = ret[n:] - ret[:-n]
     return ret[n - 1:] / n
 
-def plot_results(experiment_id, runs_dir="out/runs", output_dir="plots", num_envs_override=None):
+def plot_results(experiment_id, runs_dir="out/runs", output_dir="plots", num_envs_override=None, smooth_window=None):
     # Target directory for this experiment
     exp_path = Path(runs_dir) / experiment_id
     if not exp_path.exists():
@@ -153,7 +153,11 @@ def plot_results(experiment_id, runs_dir="out/runs", output_dir="plots", num_env
                     x = np.arange(len(returns))
                     label_x = "Completed Episodes"
                 
-                n_smooth = min(20, max(1, len(returns)//10))
+                if smooth_window is not None:
+                    n_smooth = smooth_window
+                else:
+                    n_smooth = min(50, max(1, len(returns)//20))
+                
                 y = moving_average(returns, n=n_smooth)
                 line, = ax1.plot(x, y, label=method)
                 if method not in labels:
@@ -195,5 +199,6 @@ if __name__ == "__main__":
     parser.add_argument("--runs_dir", type=str, default="out/runs")
     parser.add_argument("--output_dir", type=str, default="plots")
     parser.add_argument("--num_envs", type=int, default=None)
+    parser.add_argument("--smooth", type=int, default=None, help="Window size for moving average smoothing")
     args = parser.parse_args()
-    plot_results(args.experimentid, args.runs_dir, args.output_dir, args.num_envs)
+    plot_results(args.experimentid, args.runs_dir, args.output_dir, args.num_envs, smooth_window=args.smooth)
