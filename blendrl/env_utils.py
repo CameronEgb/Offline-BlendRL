@@ -9,14 +9,15 @@ from stable_baselines3.common.atari_wrappers import (  # isort:skip
 )
 
 
-def make_env(env):
+def make_env(env, clip_rewards=True):
     env = gym.wrappers.RecordEpisodeStatistics(env)
     env = NoopResetEnv(env, noop_max=30)
     env = MaxAndSkipEnv(env, skip=4)
     env = EpisodicLifeEnv(env)
     if "FIRE" in env.unwrapped.get_action_meanings():
         env = FireResetEnv(env)
-    env = ClipRewardEnv(env)
+    if clip_rewards:
+        env = ClipRewardEnv(env)
     env = gym.wrappers.ResizeObservation(env, (84, 84))
     env = gym.wrappers.GrayscaleObservation(env)
     env = gym.wrappers.FrameStackObservation(env, 4)

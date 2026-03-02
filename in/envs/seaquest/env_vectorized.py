@@ -25,6 +25,7 @@ class VectorizedNudgeEnv(VectorizedNudgeBaseEnv):
         render_mode="rgb_array",
         render_oc_overlay=False,
         seed=None,
+        clip_rewards=False,
     ):
         super().__init__(mode)
         self.n_envs = n_envs
@@ -40,7 +41,7 @@ class VectorizedNudgeEnv(VectorizedNudgeBaseEnv):
                     render_mode=render_mode,
                     render_oc_overlay=render_oc_overlay,
                 )
-                env._env = make_env(env._env)
+                env._env = make_env(env._env, clip_rewards=clip_rewards)
                 # Ensure the top-level observation space matches the wrapped internal space
                 env.observation_space = env._env.observation_space
                 if seed is not None:
