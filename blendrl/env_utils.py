@@ -9,7 +9,7 @@ from stable_baselines3.common.atari_wrappers import (  # isort:skip
 )
 
 
-def make_env(env, clip_rewards=True):
+def make_env(env, clip_rewards=False):
     env = NoopResetEnv(env, noop_max=30)
     env = MaxAndSkipEnv(env, skip=4)
     env = EpisodicLifeEnv(env)
