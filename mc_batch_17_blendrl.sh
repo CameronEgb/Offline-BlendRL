@@ -5,12 +5,13 @@ ENVIRONMENT="mountaincar"
 STEPS=5000000 
 INTERVALS=10
 EVAL_EPISODES=100
-EXP_ID="mc_batch_17_blendrl"
+EXP_ID="mountaincar_batch_17"
 
-echo "Launching BlendeRL Comparison for B17: (Ent 0.08, Envs 4, Steps 1024)"
+echo "Launching BlendeRL Comparison INSIDE $EXP_ID: (Ent 0.08, Envs 4, Steps 1024)"
 mkdir -p logs/$EXP_ID
 
 # Run using blendrl_ppo instead of ppo
+# We use --no_overwrite so we don't accidentally touch the PPO data
 nohup python3.11 run_full_cycle.py \
     --experimentid $EXP_ID \
     --environment $ENVIRONMENT \
@@ -31,4 +32,4 @@ nohup python3.11 run_full_cycle.py \
     --eval_episodes $EVAL_EPISODES \
     --no_overwrite > /dev/null 2>&1 &
 
-echo "BlendeRL comparison (mc_batch_17_blendrl) triggered for 5M steps."
+echo "BlendeRL comparison (mountaincar_batch_17) triggered for 5M steps."
