@@ -66,6 +66,10 @@ class Args:
 
 def main():
     start_time = time.time()
+    interval_start_time = time.time()
+    # Wall-clock timing
+    training_times = []
+    evaluation_times = []
     args = tyro.cli(Args)
 
     print(f"--- Hyperparameters Verified for {args.exp_id} ---")
@@ -195,10 +199,6 @@ def main():
             batch = dataset.sample(args.batch_size)
             obs, logic_obs, actions, rewards, next_obs, dones = batch["obs"], batch["logic_obs"], batch["action"], batch["reward"], batch["next_obs"], batch["done"]
 
-            if args.env_name == "mountaincar":
-                shaping = torch.abs(next_obs[:, 1]) * 100.0
-                rewards = rewards + shaping
-
             with torch.no_grad():
                 next_v = value_network(next_obs).view(-1)
                 q_target = rewards + args.gamma * next_v * (1 - dones)
@@ -233,6 +233,8 @@ def main():
                 writer.add_scalar("losses/actor_loss", actor_loss.item(), global_step)
 
         print(f"Evaluating after Interval {interval}...")
+        training_times.append(time.time() - interval_start_time)
+        eval_start = time.time()
         n_eval_envs = 10
         envs = VectorizedNudgeBaseEnv.from_name(args.env_name, n_envs=n_eval_envs, mode=args.algorithm, seed=args.seed + 100)
         eval_total_rewards = []
@@ -272,6 +274,8 @@ def main():
         writer.add_scalar("charts/eval_raw_return", avg_raw_reward, global_step)
         
         envs.close()
+        evaluation_times.append(time.time() - eval_start)
+        interval_start_time = time.time()
         save_path = experiment_dir / "checkpoints"
         save_path.mkdir(parents=True, exist_ok=True)
         if avg_reward >= best_eval_reward:
@@ -295,7 +299,14 @@ def main():
     envs.close(); writer.close()
     end_time = time.time(); duration = end_time - start_time
     import datetime
-    runtime_data = {"runtime_seconds": duration, "runtime_formatted": str(datetime.timedelta(seconds=int(duration)))}
+    runtime_data = {
+        "runtime_seconds": duration,
+        "runtime_formatted": str(datetime.timedelta(seconds=int(duration))),
+        "avg_train_time_per_interval": np.mean(training_times) if training_times else 0,
+        "avg_eval_time_per_interval": np.mean(evaluation_times) if evaluation_times else 0,
+        "total_train_time": np.sum(training_times) if training_times else 0,
+        "total_eval_time": np.sum(evaluation_times) if evaluation_times else 0
+    }
     with open(experiment_dir / "runtime.json", "w") as f: json.dump(runtime_data, f, indent=4)
 
 if __name__ == "__main__":

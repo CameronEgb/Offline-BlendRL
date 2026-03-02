@@ -66,21 +66,25 @@ def plot_results(experiment_id, runs_dir="out/runs", output_dir="plots", num_env
         folder_name = run_folder.name
         
         is_offline = folder_name.startswith("off_")
-        clean_method = folder_name.replace(f"_{experiment_id}", "").replace("Seaquest-v4_", "").replace("seaquest_", "")
         
         # Better labels for offline: "iql (on ppo)"
         if is_offline:
-            parts = clean_method.split("_")
-            if len(parts) >= 2:
-                # off_method_datasource -> "method (on datasource)"
-                # parts[0] is 'off', parts[1] is method, parts[2] is datasource
-                # Wait, clean_method already had 'off_'? No, folder_name has it.
-                # Let's re-parse from folder_name for safety
-                raw_parts = folder_name.split("_")
-                if len(raw_parts) >= 3:
-                    method = raw_parts[1]
-                    source = raw_parts[2]
-                    clean_method = f"{method} (on {source})"
+            # online_methods are "ppo,blendrl_ppo"
+            source = None
+            if "blendrl_ppo" in folder_name:
+                source = "blendrl_ppo"
+            elif "_ppo_" in folder_name:
+                source = "ppo"
+            
+            if source:
+                start_idx = folder_name.find("off_") + 4
+                end_idx = folder_name.find(f"_{source}_")
+                method = folder_name[start_idx:end_idx]
+                clean_method = f"{method} (on {source})"
+            else:
+                clean_method = folder_name.replace(f"_{experiment_id}", "")
+        else:
+            clean_method = folder_name.replace(f"_{experiment_id}", "").replace("Seaquest-v4_", "").replace("seaquest_", "")
         
         # Try to find specific num_envs for this run in config.yaml
         run_num_envs = num_envs

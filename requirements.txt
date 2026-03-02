@@ -13,3 +13,4 @@ wandb
 gymnasium[atari, accept-rom-license]
 torch==2.4.0
 lz4
+tabulate

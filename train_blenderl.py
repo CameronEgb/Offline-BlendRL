@@ -153,20 +153,41 @@ def main():
 
     args = tyro.cli(Args)
     
+    # Force fine-tuning for MountainCar
+    if args.env_name == "mountaincar":
+        args.num_envs = 1 # Single env to match SB3 exactly
+        args.num_steps = 2048 # SB3 n_steps
+        args.learning_rate = 3e-4
+        args.ent_coef = 0.02
+        args.update_epochs = 10
+        args.clip_coef = 0.2
+        args.num_minibatches = 32 # 2048 / 32 = 64 batch_size
+            
     # Use num_blend_envs if specified, otherwise use num_envs
     if args.num_blend_envs > 0:
         args.num_envs = args.num_blend_envs
     elif args.num_envs == 0:
         args.num_envs = int(os.getenv("NUM_ENVS", "20"))
+    if args.num_steps == 0:
+        args.num_steps = int(os.getenv("NUM_STEPS", "128"))
+    if args.ent_coef == -1.0:
+        args.ent_coef = 0.01
+    if args.learning_rate == 0.0:
+        args.learning_rate = 2.5e-4
     
     print(f"--- Hyperparameters Verified for {args.exp_id} ---")
     print(f"Total Steps: {args.total_timesteps} | Intervals: {args.intervals}")
+    print(f"Full Args: {args}")
 
     # Evaluation settings initialized early
     interval_results = []
     best_eval_reward = -float('inf')
     eval_step_freq = args.total_timesteps // (args.intervals - 1) if args.intervals > 1 else args.total_timesteps + 1
 
+    # Wall-clock timing
+    training_times = []
+    evaluation_times = []
+    
     rtpt = RTPT(
         name_initials="HS",
         experiment_name="BlendeRL",
@@ -302,11 +323,14 @@ def main():
         
         # --- Step 0 Evaluation (Only if not recovering) ---
         print(f"--- Evaluating Interval 0 at Global Step 0 ---")
+        eval_start = time.time()
         n_eval_envs = 10
         eval_env = VectorizedNudgeBaseEnv.from_name(args.env_name, n_envs=n_eval_envs, mode=args.algorithm, seed=args.seed + 100)
         eval_total_rewards = []
         eval_total_raw_rewards = []
+        eval_max_positions = []
         eval_cumulative_rewards = np.zeros(n_eval_envs)
+        eval_current_max_pos = np.full(n_eval_envs, -1.2)
         e_logic_obs, e_obs = eval_env.reset()
         e_obs = torch.Tensor(e_obs).to(device)
         e_logic_obs = e_logic_obs.to(device)
@@ -318,6 +342,11 @@ def main():
             e_obs = torch.Tensor(e_obs).to(device)
             e_logic_obs = torch.Tensor(e_logic_obs).to(device)
             
+            # Track max position for signal
+            if args.env_name == "mountaincar":
+                current_positions = e_logic_obs[:, 0, 0].cpu().numpy()
+                eval_current_max_pos = np.maximum(eval_current_max_pos, current_positions)
+
             # Manually track the SHAPED reward
             eval_cumulative_rewards += np.array(reward)
             
@@ -331,7 +360,9 @@ def main():
                     
                     eval_total_rewards.append(eval_cumulative_rewards[i])
                     eval_total_raw_rewards.append(raw_reward)
+                    eval_max_positions.append(eval_current_max_pos[i])
                     eval_cumulative_rewards[i] = 0
+                    eval_current_max_pos[i] = -1.2
                     
                     if len(eval_total_rewards) >= args.eval_episodes:
                         break
@@ -341,17 +372,21 @@ def main():
         
         avg_reward = np.mean(eval_total_rewards[:args.eval_episodes]) if eval_total_rewards else 0.0
         avg_raw_reward = np.mean(eval_total_raw_rewards[:args.eval_episodes]) if eval_total_raw_rewards else 0.0
-        print(f"Interval 0 Eval Reward (Shaped): {avg_reward:.2f} | Raw: {avg_raw_reward:.2f}")
+        avg_max_pos = np.mean(eval_max_positions[:args.eval_episodes]) if eval_max_positions else -1.2
+        print(f"Interval 0 Eval Reward (Shaped): {avg_reward:.2f} | Raw: {avg_raw_reward:.2f} | Max Pos: {avg_max_pos:.4f}")
         writer.add_scalar("charts/eval_return", avg_reward, 0)
         writer.add_scalar("charts/eval_raw_return", avg_raw_reward, 0)
+        writer.add_scalar("charts/eval_max_pos", avg_max_pos, 0)
         interval_results.append({
             "interval": 0, 
             "data_limit": 0, 
             "avg_reward": float(avg_reward), 
             "avg_raw_reward": float(avg_raw_reward),
+            "avg_max_pos": float(avg_max_pos),
             "step": 0
         })
         eval_env.close()
+        evaluation_times.append(time.time() - eval_start)
 
     # rewards actually used to train modes
     episodic_game_returns = torch.zeros((args.num_envs)).to(device)
@@ -392,6 +427,7 @@ def main():
         global_step = most_recent_step
         save_step_bar = most_recent_step
     start_time = time.time()
+    interval_start_time = time.time()
     next_logic_obs, next_obs = envs.reset()  # (seed=seed)
     print("Environments reset and training started.")
     
@@ -421,6 +457,8 @@ def main():
             lrnow = frac * args.learning_rate
             optimizer.param_groups[0]["lr"] = lrnow
 
+        training_max_pos = -1.2
+
         for step in range(0, args.num_steps):
             # update rtpt
             global_step += args.num_envs
@@ -446,6 +484,10 @@ def main():
                 envs.step(action.cpu().numpy())
             )
             real_next_logic_obs = real_next_logic_obs.float()
+            
+            # Track training max pos
+            if args.env_name == "mountaincar":
+                training_max_pos = max(training_max_pos, real_next_logic_obs[:, 0, 0].max().item())
             
             terminations = np.array(terminations)
             truncations = np.array(truncations)
@@ -489,7 +531,11 @@ def main():
             # --- Precise Evaluation Trigger ---
             interval_idx = len(interval_results)
             if global_step >= (interval_idx * eval_step_freq) and interval_idx < args.intervals:
+                # Record training time for this interval
+                training_times.append(time.time() - interval_start_time)
+                
                 print(f"--- Evaluating Interval {interval_idx} at Global Step {global_step} (Target: {interval_idx * eval_step_freq:.0f}) ---")
+                eval_start = time.time()
                 
                 # Create a separate eval env
                 n_eval_envs = 10
@@ -497,7 +543,9 @@ def main():
                 
                 eval_total_rewards = []
                 eval_total_raw_rewards = []
+                eval_max_positions = []
                 eval_cumulative_rewards = np.zeros(n_eval_envs)
+                eval_current_max_pos = np.full(n_eval_envs, -1.2)
                 e_logic_obs_eval, e_obs_eval = eval_env.reset()
                 e_obs_eval = torch.Tensor(e_obs_eval).to(device)
                 e_logic_obs_eval = e_logic_obs_eval.to(device)
@@ -509,6 +557,11 @@ def main():
                     e_obs_eval = torch.Tensor(e_obs_eval).to(device)
                     e_logic_obs_eval = torch.Tensor(e_logic_obs_eval).to(device)
                     
+                    # Track max position for signal
+                    if args.env_name == "mountaincar":
+                        current_positions = e_logic_obs_eval[:, 0, 0].cpu().numpy()
+                        eval_current_max_pos = np.maximum(eval_current_max_pos, current_positions)
+
                     eval_cumulative_rewards += np.array(reward_eval)
                     
                     for i in range(n_eval_envs):
@@ -521,7 +574,9 @@ def main():
                             
                             eval_total_rewards.append(eval_cumulative_rewards[i])
                             eval_total_raw_rewards.append(raw_reward)
+                            eval_max_positions.append(eval_current_max_pos[i])
                             eval_cumulative_rewards[i] = 0
+                            eval_current_max_pos[i] = -1.2
                             
                             if len(eval_total_rewards) >= args.eval_episodes:
                                 break
@@ -530,9 +585,11 @@ def main():
                 
                 avg_reward = np.mean(eval_total_rewards[:args.eval_episodes]) if eval_total_rewards else 0.0
                 avg_raw_reward = np.mean(eval_total_raw_rewards[:args.eval_episodes]) if eval_total_raw_rewards else 0.0
-                print(f"Interval {interval_idx} Eval Reward (Shaped): {avg_reward:.2f} | Raw: {avg_raw_reward:.2f}")
+                avg_max_pos = np.mean(eval_max_positions[:args.eval_episodes]) if eval_max_positions else -1.2
+                print(f"Interval {interval_idx} Eval Reward (Shaped): {avg_reward:.2f} | Raw: {avg_raw_reward:.2f} | Max Pos: {avg_max_pos:.4f}")
                 writer.add_scalar("charts/eval_return", avg_reward, global_step)
                 writer.add_scalar("charts/eval_raw_return", avg_raw_reward, global_step)
+                writer.add_scalar("charts/eval_max_pos", avg_max_pos, global_step)
                 
                 if avg_reward >= best_eval_reward:
                     best_eval_reward = avg_reward
@@ -546,6 +603,7 @@ def main():
                     "data_limit": int(interval_idx * eval_step_freq),
                     "avg_reward": float(avg_reward),
                     "avg_raw_reward": float(avg_raw_reward),
+                    "avg_max_pos": float(avg_max_pos),
                     "step": global_step
                 })
                 with open(experiment_dir / "results.json", "w") as f:
@@ -553,6 +611,9 @@ def main():
                     json.dump(interval_results, f, indent=4)
                 
                 eval_env.close()
+                evaluation_times.append(time.time() - eval_start)
+                # Restart interval timer
+                interval_start_time = time.time()
             # --- End Precise Evaluation Trigger ---
 
             # --- Episode Logging Fix ---
@@ -728,11 +789,15 @@ def main():
         writer.add_scalar("losses/approx_kl", approx_kl.item(), global_step)
         writer.add_scalar("losses/clipfrac", np.mean(clipfracs) if clipfracs else 0.0, global_step)
         writer.add_scalar("losses/explained_variance", explained_var, global_step)
+        if args.env_name == "mountaincar":
+            writer.add_scalar("charts/training_max_pos", training_max_pos, global_step)
 
         # Periodic progress report
         if iteration % 50 == 0:
             sps = int(global_step / (time.time() - start_time))
             print(f"Iteration: {iteration}/{args.num_iterations}, Global Step: {global_step}, SPS: {sps}")
+            if args.env_name == "mountaincar":
+                print(f"  Training Max Pos: {training_max_pos:.4f}")
             writer.add_scalar("charts/SPS", sps, global_step)
 
         # save training data
@@ -752,7 +817,9 @@ def main():
         eval_env = VectorizedNudgeBaseEnv.from_name(args.env_name, n_envs=n_eval_envs, mode=args.algorithm, seed=args.seed + 100)
         eval_total_rewards = []
         eval_total_raw_rewards = []
+        eval_max_positions = []
         eval_cumulative_rewards = np.zeros(n_eval_envs)
+        eval_current_max_pos = np.full(n_eval_envs, -1.2)
         e_logic_obs, e_obs = eval_env.reset()
         e_obs = torch.Tensor(e_obs).to(device)
         e_logic_obs = e_logic_obs.to(device)
@@ -762,10 +829,17 @@ def main():
                 action, _, _, _, _ = agent.get_action_and_value(e_obs, e_logic_obs)
             (e_logic_obs, e_obs), reward, terminations, truncations, infos = eval_env.step(action.cpu().numpy())
             e_obs = torch.Tensor(e_obs).to(device); e_logic_obs = torch.Tensor(e_logic_obs).to(device)
+            
+            # Track max position for signal
+            if args.env_name == "mountaincar":
+                current_positions = e_logic_obs[:, 0, 0].cpu().numpy()
+                eval_current_max_pos = np.maximum(eval_current_max_pos, current_positions)
+
             eval_cumulative_rewards += np.array(reward)
             for i in range(n_eval_envs):
                 if terminations[i] or truncations[i]:
                     eval_total_rewards.append(eval_cumulative_rewards[i]); eval_cumulative_rewards[i] = 0
+                    eval_max_positions.append(eval_current_max_pos[i]); eval_current_max_pos[i] = -1.2
                     if "final_info" in infos and infos["final_info"][i] is not None:
                         eval_total_raw_rewards.append(infos["final_info"][i]["episode"]["r"])
                     elif "episode" in infos and infos["_episode"][i]:
@@ -775,13 +849,16 @@ def main():
         
         avg_reward = np.mean(eval_total_rewards[:args.eval_episodes]) if eval_total_rewards else 0.0
         avg_raw_reward = np.mean(eval_total_raw_rewards[:args.eval_episodes]) if eval_total_raw_rewards else 0.0
-        print(f"Final Eval Reward (Shaped): {avg_reward:.2f} | Raw: {avg_raw_reward:.2f}")
+        avg_max_pos = np.mean(eval_max_positions[:args.eval_episodes]) if eval_max_positions else -1.2
+        print(f"Final Eval Reward (Shaped): {avg_reward:.2f} | Raw: {avg_raw_reward:.2f} | Max Pos: {avg_max_pos:.4f}")
         writer.add_scalar("charts/eval_return", avg_reward, global_step)
         writer.add_scalar("charts/eval_raw_return", avg_raw_reward, global_step)
+        writer.add_scalar("charts/eval_max_pos", avg_max_pos, global_step)
         
         interval_results.append({
             "interval": interval_idx, "data_limit": int(args.total_timesteps), 
-            "avg_reward": float(avg_reward), "avg_raw_reward": float(avg_raw_reward), "step": global_step
+            "avg_reward": float(avg_reward), "avg_raw_reward": float(avg_raw_reward), 
+            "avg_max_pos": float(avg_max_pos), "step": global_step
         })
         with open(experiment_dir / "results.json", "w") as f: json.dump(interval_results, f, indent=4)
         eval_env.close()
@@ -812,11 +889,19 @@ def main():
     
     # Record total runtime
     end_time = time.time()
+    # If the last interval didn't trigger an evaluation, record training time
+    if interval_start_time > 0:
+        training_times.append(time.time() - interval_start_time)
+
     duration = end_time - start_time
     import datetime
     runtime_data = {
         "runtime_seconds": duration,
-        "runtime_formatted": str(datetime.timedelta(seconds=int(duration)))
+        "runtime_formatted": str(datetime.timedelta(seconds=int(duration))),
+        "avg_train_time_per_interval": np.mean(training_times) if training_times else 0,
+        "avg_eval_time_per_interval": np.mean(evaluation_times) if evaluation_times else 0,
+        "total_train_time": np.sum(training_times) if training_times else 0,
+        "total_eval_time": np.sum(evaluation_times) if evaluation_times else 0
     }
     with open(experiment_dir / "runtime.json", "w") as f:
         import json

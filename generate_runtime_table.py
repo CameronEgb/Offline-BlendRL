@@ -2,10 +2,18 @@ import argparse
 import json
 import os
 from pathlib import Path
-from tabulate import tabize # Not available, using simple formatting
+try:
+    from tabulate import tabulate
+    HAS_TABULATE = True
+except ImportError:
+    HAS_TABULATE = False
 
 def format_table(data, headers):
-    # Simple table formatter
+    if HAS_TABULATE:
+        print(tabulate(data, headers=headers, tablefmt="github"))
+        return
+
+    # Simple table formatter fallback
     widths = [max(len(str(row[i])) for row in data + [headers]) for i in range(len(headers))]
     
     line = "+-" + "-+-".join("-" * w for w in widths) + "-+"
@@ -52,7 +60,17 @@ def generate_table(experiment_id, runs_dir="out/runs"):
                     data = json.load(f)
                     method_name = run_folder.name.replace(f"_{experiment_id}", "").replace(f"_{experiment_id.replace('exp_', '')}", "")
                     method_name = method_name.replace("Seaquest-v4_", "").replace("seaquest_", "")
-                    runtimes.append([method_name, int(data["runtime_seconds"]), data["runtime_formatted"]])
+                    
+                    avg_train = f"{data.get('avg_train_time_per_interval', 0):.2f}s"
+                    avg_eval = f"{data.get('avg_eval_time_per_interval', 0):.2f}s"
+                    
+                    runtimes.append([
+                        method_name, 
+                        int(data["runtime_seconds"]), 
+                        data["runtime_formatted"],
+                        avg_train,
+                        avg_eval
+                    ])
             except Exception as e:
                 print(f"Error reading {runtime_file}: {e}")
     
@@ -63,7 +81,7 @@ def generate_table(experiment_id, runs_dir="out/runs"):
     # Sort by runtime
     runtimes.sort(key=lambda x: x[1])
     
-    headers = ["Method", "Seconds", "Formatted (HH:MM:SS)"]
+    headers = ["Method", "Seconds", "Formatted (HH:MM:SS)", "Avg Train/Int", "Avg Eval/Int"]
     format_table(runtimes, headers)
     
     # Save to file

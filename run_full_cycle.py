@@ -31,7 +31,9 @@ def parse_args():
     parser.add_argument("--blender_lr", type=float, default=float(os.getenv("BLENDER_LR", "2.5e-4")))
     parser.add_argument("--offline_lr", type=float, default=float(os.getenv("OFFLINE_LR", "3e-4")))
     parser.add_argument("--gamma", type=float, default=float(os.getenv("GAMMA", "0.99")))
+    parser.add_argument("--gae_lambda", type=float, default=float(os.getenv("GAE_LAMBDA", "0.95")))
     parser.add_argument("--ppo_epochs", type=int, default=int(os.getenv("PPO_EPOCHS", "4")))
+    parser.add_argument("--num_minibatches", type=int, default=int(os.getenv("NUM_MINIBATCHES", "4")))
     parser.add_argument("--ent_coef", type=float, default=float(os.getenv("ENT_COEF", "0.01")))
     parser.add_argument("--blend_ent_coef", type=float, default=float(os.getenv("BLEND_ENT_COEF", "0.01")))
     parser.add_argument("--iql_tau", type=float, default=float(os.getenv("IQL_TAU", "0.7")))
@@ -55,6 +57,8 @@ def parse_args():
     parser.add_argument("--large_dataset_path", type=str, default=os.getenv("LARGE_DATASET_PATH", ""))
     
     parser.add_argument("--local", action="store_true", help="Run experiments locally instead of submitting to cluster")
+    parser.add_argument("--recover", action="store_true", help="Recover training from last checkpoint")
+    parser.add_argument("--no_overwrite", action="store_true", help="Automatically overwrite existing data without asking")
     
     parser.add_argument("--seed", type=int, default=int(os.getenv("SEED", "1")))
     return parser.parse_args()
@@ -62,7 +66,9 @@ def parse_args():
 def check_experiment_exists(path):
     return os.path.exists(path)
 
-def ask_user_overwrite(run_name):
+def ask_user_overwrite(run_name, no_overwrite=False):
+    if no_overwrite:
+        return True
     while True:
         choice = input(f"Run '{run_name}' already exists. Overwrite/Rerun? (y/n): ").lower()
         if choice in ['y', 'n']:
@@ -201,7 +207,7 @@ def main():
         
         # Check if this specific run already has data
         if check_experiment_exists(run_path):
-            if ask_user_overwrite(run_name):
+            if ask_user_overwrite(run_name, no_overwrite=args.no_overwrite):
                 print(f"Clearing old run data: {run_path}")
                 import shutil
                 shutil.rmtree(run_path, ignore_errors=True)
@@ -237,11 +243,12 @@ def main():
         cmd = f"{python_cmd} {script_name} --env_name {env_name} --total_timesteps {args.online_steps} --seed {args.seed} --save_dataset --dataset_path {dataset_base_path} --run_id {run_name} --exp_id {experiment_id} --intervals {args.intervals_count} --eval_episodes {args.eval_episodes} --learning_rate {args.lr} --gamma {args.gamma} --ent_coef {args.ent_coef} --num_envs {args.num_envs} --num_steps {args.num_steps} --reasoner {args.reasoner} --algorithm {args.algorithm} --blender_mode {args.blender_mode} --blend_function {args.blend_function} --actor_mode {args.actor_mode} --rules {args.rules}"
         if args.pretrained: cmd += " --pretrained"
         if args.joint_training: cmd += " --joint_training"
+        if args.recover: cmd += " --recover"
             
         if method == "ppo":
-            cmd += f" --update_epochs {args.ppo_epochs}"
+            cmd += f" --update_epochs {args.ppo_epochs} --num_minibatches {args.num_minibatches} --gae_lambda {args.gae_lambda}"
         elif method == "blendrl_ppo":
-            cmd += f" --logic_learning_rate {args.logic_lr} --blender_learning_rate {args.blender_lr} --blend_ent_coef {args.blend_ent_coef} --num_blend_envs {args.num_blend_envs}"
+            cmd += f" --logic_learning_rate {args.logic_lr} --blender_learning_rate {args.blender_lr} --blend_ent_coef {args.blend_ent_coef} --num_blend_envs {args.num_blend_envs} --num_minibatches {args.num_minibatches} --gae_lambda {args.gae_lambda}"
         
         jid = submit_job(cmd, f"on_{method}_{experiment_id}", local=args.local, log_dir=f"logs/{experiment_id}")
         if jid: 

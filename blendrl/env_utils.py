@@ -10,7 +10,6 @@ from stable_baselines3.common.atari_wrappers import (  # isort:skip
 
 
 def make_env(env, clip_rewards=True):
-    env = gym.wrappers.RecordEpisodeStatistics(env)
     env = NoopResetEnv(env, noop_max=30)
     env = MaxAndSkipEnv(env, skip=4)
     env = EpisodicLifeEnv(env)
@@ -21,6 +20,7 @@ def make_env(env, clip_rewards=True):
     env = gym.wrappers.ResizeObservation(env, (84, 84))
     env = gym.wrappers.GrayscaleObservation(env)
     env = gym.wrappers.FrameStackObservation(env, 4)
+    env = gym.wrappers.RecordEpisodeStatistics(env)
     return env
 
 
