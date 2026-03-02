@@ -565,27 +565,46 @@ def main():
             # --- Episode Logging Fix ---
             # Try multiple ways to detect completed episodes in vector environments
             found_episodes = []
-            if "_episode" in infos:
-                found_episodes = [k for k in range(args.num_envs) if infos["_episode"][k]]
-            elif "episode" in infos and isinstance(infos["episode"], dict):
-                # Some gymnasium versions or wrappers might not have _episode but have episode dict
-                # If it's a dict with 'r', it's likely a VectorRecordEpisodeStatistics output
-                if "r" in infos["episode"]:
-                    found_episodes = [k for k in range(len(infos["episode"]["r"])) if infos["episode"]["r"][k] != 0 or infos["episode"]["l"][k] != 0]
+            
+            if isinstance(infos, list):
+                # Format: [info_0, info_1, ...] (MountainCar custom vectorized env)
+                for k, info in enumerate(infos):
+                    if "episode" in info:
+                        episode_r = info["episode"]["r"]
+                        episode_l = info["episode"]["l"]
+                        
+                        if episode_log_count < 20:
+                            print(f"env={k}, global_step={global_step}, episodic_return={episodic_game_returns[k].item()}, episodic_raw_return={episode_r}, episodic_length={episode_l}")
+                        
+                        writer.add_scalar("charts/episodic_return", episodic_game_returns[k], global_step)
+                        writer.add_scalar("charts/episodic_length", episode_l, global_step)
+                        episodic_returns.append(episodic_game_returns[k].item())
+                        episodic_raw_returns.append(episode_r)
+                        episodic_lengths.append(episode_l)
+                        episodic_game_returns[k] = 0
+                        episode_log_count += 1
+            else:
+                # Format: {"_episode": [True, ...], "episode": {"r": [...], "l": [...]}} (Atari Sync/AsyncVectorEnv)
+                if "_episode" in infos:
+                    found_episodes = [k for k in range(args.num_envs) if infos["_episode"][k]]
+                elif "episode" in infos and isinstance(infos["episode"], dict):
+                    if "r" in infos["episode"]:
+                        found_episodes = [k for k in range(len(infos["episode"]["r"])) if infos["episode"]["r"][k] != 0 or infos["episode"]["l"][k] != 0]
 
-            for k in found_episodes:
-                episode_r = infos["episode"]["r"][k]
-                episode_l = infos["episode"]["l"][k]
-                
-                if episode_log_count < 20:
-                    print(f"env={k}, global_step={global_step}, episodic_return={episodic_game_returns[k].item()}, episodic_raw_return={episode_r}, episodic_length={episode_l}")
-                writer.add_scalar("charts/episodic_return", episodic_game_returns[k], global_step)
-                writer.add_scalar("charts/episodic_length", episode_l, global_step)
-                episodic_returns.append(episodic_game_returns[k].item())
-                episodic_raw_returns.append(episode_r)
-                episodic_lengths.append(episode_l)
-                episodic_game_returns[k] = 0
-                episode_log_count += 1
+                for k in found_episodes:
+                    episode_r = infos["episode"]["r"][k]
+                    episode_l = infos["episode"]["l"][k]
+                    
+                    if episode_log_count < 20:
+                        print(f"env={k}, global_step={global_step}, episodic_return={episodic_game_returns[k].item()}, episodic_raw_return={episode_r}, episodic_length={episode_l}")
+                    
+                    writer.add_scalar("charts/episodic_return", episodic_game_returns[k], global_step)
+                    writer.add_scalar("charts/episodic_length", episode_l, global_step)
+                    episodic_returns.append(episodic_game_returns[k].item())
+                    episodic_raw_returns.append(episode_r)
+                    episodic_lengths.append(episode_l)
+                    episodic_game_returns[k] = 0
+                    episode_log_count += 1
             # --- End Episode Logging Fix ---
               
         # Save training log every iteration (outside the step loop for efficiency)
