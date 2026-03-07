@@ -339,7 +339,7 @@ def main():
             # Ad-hoc reward tracking (Raw Atari for Seaquest)
             for k in range(n_eval_envs):
                 r_val = reward_eval[k]
-                if args.env_name == "seaquest" and "all_rewards" in infos:
+                if args.env_name == "seaquest" and "all_rewards" in infos and infos["all_rewards"][k] is not None:
                      r_val = sum(infos["all_rewards"][k])
                 eval_cumulative_rewards[k] += r_val
 
@@ -514,7 +514,7 @@ def main():
                     # Ad-hoc reward tracking
                     for k in range(n_eval_envs):
                         r_val = reward_eval[k]
-                        if args.env_name == "seaquest" and "all_rewards" in infos_eval:
+                        if args.env_name == "seaquest" and "all_rewards" in infos_eval and infos_eval["all_rewards"][k] is not None:
                              r_val = sum(infos_eval["all_rewards"][k])
                         eval_cumulative_rewards[k] += r_val
 
@@ -571,7 +571,7 @@ def main():
                 if "lives" in infos:
                     for k in range(args.num_envs):
                         current_step_reward = reward[k]
-                        if "all_rewards" in infos and len(infos["all_rewards"]) > k:
+                        if "all_rewards" in infos and len(infos["all_rewards"]) > k and infos["all_rewards"][k] is not None:
                              current_step_reward = sum(infos["all_rewards"][k])
                         
                         full_episodic_returns[k] += current_step_reward
@@ -765,7 +765,7 @@ def main():
             # Ad-hoc reward tracking
             for k in range(n_eval_envs):
                 r_val = reward_final[k]
-                if args.env_name == "seaquest" and "all_rewards" in infos_final:
+                if args.env_name == "seaquest" and "all_rewards" in infos_final and infos_final["all_rewards"][k] is not None:
                      r_val = sum(infos_final["all_rewards"][k])
                 eval_cumulative_rewards[k] += r_val
 

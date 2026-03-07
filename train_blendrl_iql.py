@@ -251,7 +251,7 @@ def main():
             # Ad-hoc reward tracking
             for k in range(n_eval_envs):
                 r_val = reward[k]
-                if args.env_name == "seaquest" and "all_rewards" in infos:
+                if args.env_name == "seaquest" and "all_rewards" in infos and infos["all_rewards"][k] is not None:
                      r_val = sum(infos["all_rewards"][k])
                 eval_cumulative_rewards[k] += r_val
             
