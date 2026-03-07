@@ -326,7 +326,7 @@ def main():
         while len(eval_total_rewards) < args.eval_episodes:
             with torch.no_grad():
                 action, _, _, _ = agent.get_action_and_value(e_obs)
-            (e_logic_obs, e_obs), reward, terminations, truncations, infos = eval_env.step(action.cpu().numpy())
+            (e_logic_obs, e_obs), reward_eval, terminations, truncations, infos = eval_env.step(action.cpu().numpy())
             e_obs = torch.Tensor(e_obs).to(device)
             
             # Track max position for signal
@@ -336,18 +336,28 @@ def main():
                 current_positions = e_logic_obs[:, 0, 0].cpu().numpy()
                 eval_current_max_pos = np.maximum(eval_current_max_pos, current_positions)
 
-            # Manually track the SHAPED reward
-            eval_cumulative_rewards += np.array(reward)
-            
+            # Ad-hoc reward tracking (Raw Atari for Seaquest)
+            for k in range(n_eval_envs):
+                r_val = reward_eval[k]
+                if args.env_name == "seaquest" and "all_rewards" in infos:
+                     r_val = sum(infos["all_rewards"][k])
+                eval_cumulative_rewards[k] += r_val
+
             for i in range(n_eval_envs):
                 if terminations[i] or truncations[i]:
-                    eval_total_rewards.append(eval_cumulative_rewards[i])
-                    eval_max_positions.append(eval_current_max_pos[i])
-                    eval_cumulative_rewards[i] = 0 
-                    eval_current_max_pos[i] = -1.2
+                    is_full_episode = True
+                    if args.env_name == "seaquest" and "lives" in infos:
+                        if infos["lives"][i] > 0:
+                            is_full_episode = False
                     
-                    if len(eval_total_rewards) >= args.eval_episodes:
-                        break
+                    if is_full_episode:
+                        eval_total_rewards.append(eval_cumulative_rewards[i])
+                        eval_max_positions.append(eval_current_max_pos[i])
+                        eval_cumulative_rewards[i] = 0 
+                        eval_current_max_pos[i] = -1.2
+                        
+                        if len(eval_total_rewards) >= args.eval_episodes:
+                            break
         
         avg_reward = np.mean(eval_total_rewards[:args.eval_episodes]) if eval_total_rewards else 0.0
         avg_max_pos = np.mean(eval_max_positions[:args.eval_episodes]) if eval_max_positions else -1.2
@@ -391,6 +401,10 @@ def main():
     rewards = torch.zeros((args.num_steps, args.num_envs)).to(device)
     dones = torch.zeros((args.num_steps, args.num_envs)).to(device)
     values = torch.zeros((args.num_steps, args.num_envs)).to(device)
+    
+    # Ad-hoc tracking for full episodes (Seaquest)
+    full_episodic_returns = np.zeros(args.num_envs)
+    full_episodic_lengths = np.zeros(args.num_envs)
     
     next_obs = torch.Tensor(next_obs).to(device)
     next_done = torch.zeros(args.num_envs).to(device)
@@ -497,17 +511,28 @@ def main():
                         current_positions = e_logic_obs[:, 0, 0].cpu().numpy()
                         eval_current_max_pos = np.maximum(eval_current_max_pos, current_positions)
 
-                    eval_cumulative_rewards += np.array(reward_eval)
-                    
+                    # Ad-hoc reward tracking
+                    for k in range(n_eval_envs):
+                        r_val = reward_eval[k]
+                        if args.env_name == "seaquest" and "all_rewards" in infos_eval:
+                             r_val = sum(infos_eval["all_rewards"][k])
+                        eval_cumulative_rewards[k] += r_val
+
                     for i in range(n_eval_envs):
                         if terminations_eval[i] or truncations_eval[i]:
-                            eval_total_rewards.append(eval_cumulative_rewards[i])
-                            eval_max_positions.append(eval_current_max_pos[i])
-                            eval_cumulative_rewards[i] = 0
-                            eval_current_max_pos[i] = -1.2
+                            is_full_episode = True
+                            if args.env_name == "seaquest" and "lives" in infos_eval:
+                                if infos_eval["lives"][i] > 0:
+                                    is_full_episode = False
                             
-                            if len(eval_total_rewards) >= args.eval_episodes:
-                                break
+                            if is_full_episode:
+                                eval_total_rewards.append(eval_cumulative_rewards[i])
+                                eval_max_positions.append(eval_current_max_pos[i])
+                                eval_cumulative_rewards[i] = 0
+                                eval_current_max_pos[i] = -1.2
+                                
+                                if len(eval_total_rewards) >= args.eval_episodes:
+                                    break
                     if len(eval_total_rewards) >= args.eval_episodes:
                         break
                 
@@ -541,15 +566,63 @@ def main():
             # --- End Precise Evaluation Trigger ---
 
             # --- Episode Logging Fix ---
-            # Try multiple ways to detect completed episodes in vector environments
-            found_episodes = []
-            
-            if isinstance(infos, list):
-                # Format: [info_0, info_1, ...] (MountainCar custom vectorized env)
-                for k, info in enumerate(infos):
-                    if "episode" in info:
-                        episode_r = info["episode"]["r"]
-                        episode_l = info["episode"]["l"]
+            if args.env_name == "seaquest":
+                # Manual tracking for full episodes (across lives)
+                if "lives" in infos:
+                    for k in range(args.num_envs):
+                        current_step_reward = reward[k]
+                        if "all_rewards" in infos and len(infos["all_rewards"]) > k:
+                             current_step_reward = sum(infos["all_rewards"][k])
+                        
+                        full_episodic_returns[k] += current_step_reward
+                        full_episodic_lengths[k] += 1
+                        
+                        if infos["lives"][k] == 0:
+                            # GAME OVER: Record full episode
+                            recorded_len = int(full_episodic_lengths[k] / 4)
+                            recorded_ret = full_episodic_returns[k]
+                            
+                            if episode_log_count < 20:
+                                print(f"FULL EPISODE env={k}, step={global_step}, return={recorded_ret}, length={recorded_len}")
+                            
+                            writer.add_scalar("charts/episodic_return", recorded_ret, global_step)
+                            writer.add_scalar("charts/episodic_length", recorded_len, global_step)
+                            episodic_returns.append(recorded_ret)
+                            episodic_lengths.append(recorded_len)
+                            
+                            full_episodic_returns[k] = 0
+                            full_episodic_lengths[k] = 0
+                            episode_log_count += 1
+            else:
+                # Try multiple ways to detect completed episodes in vector environments
+                found_episodes = []
+                
+                if isinstance(infos, list):
+                    # Format: [info_0, info_1, ...] (MountainCar custom vectorized env)
+                    for k, info in enumerate(infos):
+                        if "episode" in info:
+                            episode_r = info["episode"]["r"]
+                            episode_l = info["episode"]["l"]
+                            
+                            if episode_log_count < 20:
+                                print(f"env={k}, global_step={global_step}, episodic_return={episodic_game_returns[k].item()}, episodic_length={episode_l}")
+                            
+                            writer.add_scalar("charts/episodic_return", episodic_game_returns[k], global_step)
+                            writer.add_scalar("charts/episodic_length", episode_l, global_step)
+                            episodic_returns.append(episodic_game_returns[k].item())
+                            episodic_lengths.append(episode_l)
+                            episodic_game_returns[k] = 0
+                            episode_log_count += 1
+                else:
+                    # Format: {"_episode": [True, ...], "episode": {"r": [...], "l": [...]}} (Atari Sync/AsyncVectorEnv)
+                    if "_episode" in infos:
+                        found_episodes = [k for k in range(args.num_envs) if infos["_episode"][k]]
+                    elif "episode" in infos and isinstance(infos["episode"], dict):
+                        if "r" in infos["episode"]:
+                            found_episodes = [k for k in range(len(infos["episode"]["r"])) if infos["episode"]["r"][k] != 0 or infos["episode"]["l"][k] != 0]
+
+                    for k in found_episodes:
+                        episode_l = infos["episode"]["l"][k]
                         
                         if episode_log_count < 20:
                             print(f"env={k}, global_step={global_step}, episodic_return={episodic_game_returns[k].item()}, episodic_length={episode_l}")
@@ -560,26 +633,6 @@ def main():
                         episodic_lengths.append(episode_l)
                         episodic_game_returns[k] = 0
                         episode_log_count += 1
-            else:
-                # Format: {"_episode": [True, ...], "episode": {"r": [...], "l": [...]}} (Atari Sync/AsyncVectorEnv)
-                if "_episode" in infos:
-                    found_episodes = [k for k in range(args.num_envs) if infos["_episode"][k]]
-                elif "episode" in infos and isinstance(infos["episode"], dict):
-                    if "r" in infos["episode"]:
-                        found_episodes = [k for k in range(len(infos["episode"]["r"])) if infos["episode"]["r"][k] != 0 or infos["episode"]["l"][k] != 0]
-
-                for k in found_episodes:
-                    episode_l = infos["episode"]["l"][k]
-                    
-                    if episode_log_count < 20:
-                        print(f"env={k}, global_step={global_step}, episodic_return={episodic_game_returns[k].item()}, episodic_length={episode_l}")
-                    
-                    writer.add_scalar("charts/episodic_return", episodic_game_returns[k], global_step)
-                    writer.add_scalar("charts/episodic_length", episode_l, global_step)
-                    episodic_returns.append(episodic_game_returns[k].item())
-                    episodic_lengths.append(episode_l)
-                    episodic_game_returns[k] = 0
-                    episode_log_count += 1
             # --- End Episode Logging Fix ---
               
         # Save training log every iteration (outside the step loop for efficiency)
@@ -695,26 +748,40 @@ def main():
         eval_max_positions = []
         eval_cumulative_rewards = np.zeros(n_eval_envs)
         eval_current_max_pos = np.full(n_eval_envs, -1.2)
-        _, e_obs = eval_env.reset()
-        e_obs = torch.Tensor(e_obs).to(device)
+        _, e_obs_final = eval_env.reset()
+        e_obs_final = torch.Tensor(e_obs_final).to(device)
         
         while len(eval_total_rewards) < args.eval_episodes:
             with torch.no_grad():
-                action, _, _, _ = agent.get_action_and_value(e_obs)
-            (e_logic_obs, e_obs), reward, terminations, truncations, infos = eval_env.step(action.cpu().numpy())
-            e_obs = torch.Tensor(e_obs).to(device)
+                action, _, _, _ = agent.get_action_and_value(e_obs_final)
+            (e_logic_obs_final, e_obs_final), reward_final, terminations_final, truncations_final, infos_final = eval_env.step(action.cpu().numpy())
+            e_obs_final = torch.Tensor(e_obs_final).to(device)
             
             # Track max position for signal
             if args.env_name == "mountaincar":
-                current_positions = e_logic_obs[:, 0, 0].cpu().numpy()
+                current_positions = e_logic_obs_final[:, 0, 0].cpu().numpy()
                 eval_current_max_pos = np.maximum(eval_current_max_pos, current_positions)
 
-            eval_cumulative_rewards += np.array(reward)
+            # Ad-hoc reward tracking
+            for k in range(n_eval_envs):
+                r_val = reward_final[k]
+                if args.env_name == "seaquest" and "all_rewards" in infos_final:
+                     r_val = sum(infos_final["all_rewards"][k])
+                eval_cumulative_rewards[k] += r_val
+
             for i in range(n_eval_envs):
-                if terminations[i] or truncations[i]:
-                    eval_total_rewards.append(eval_cumulative_rewards[i]); eval_cumulative_rewards[i] = 0
-                    eval_max_positions.append(eval_current_max_pos[i]); eval_current_max_pos[i] = -1.2
-                    if len(eval_total_rewards) >= args.eval_episodes: break
+                if terminations_final[i] or truncations_final[i]:
+                    is_full_episode = True
+                    if args.env_name == "seaquest" and "lives" in infos_final:
+                        if infos_final["lives"][i] > 0:
+                            is_full_episode = False
+                    
+                    if is_full_episode:
+                        eval_total_rewards.append(eval_cumulative_rewards[i])
+                        eval_max_positions.append(eval_current_max_pos[i])
+                        eval_cumulative_rewards[i] = 0
+                        eval_current_max_pos[i] = -1.2
+                        if len(eval_total_rewards) >= args.eval_episodes: break
             if len(eval_total_rewards) >= args.eval_episodes: break
         
         avg_reward = np.mean(eval_total_rewards[:args.eval_episodes]) if eval_total_rewards else 0.0

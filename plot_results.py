@@ -148,7 +148,7 @@ def plot_results(experiment_id, runs_dir="out/runs", output_dir="plots", num_env
             for method, returns in online_shaped.items():
                 if x_axis == "steps":
                     x = np.cumsum(online_lengths[method])
-                    label_x = f"Total Steps (Aggregate across Envs)"
+                    label_x = f"Total Agent Steps"
                 else:
                     x = np.arange(len(returns))
                     label_x = "Completed Episodes"
@@ -163,7 +163,7 @@ def plot_results(experiment_id, runs_dir="out/runs", output_dir="plots", num_env
                 if method not in labels:
                     lines.append(line)
                     labels.append(method)
-            ax1.set_xlabel(label_x); ax1.set_ylabel("Return (Recorded)"); ax1.set_title(f"Continuous Training Performance"); ax1.grid(True)
+            ax1.set_xlabel(label_x); ax1.set_ylabel("Return (Raw Atari)"); ax1.set_title(f"Continuous Training Performance"); ax1.grid(True)
             
             # Shared legend for continuous training
             fig.legend(lines, labels, loc='lower center', ncol=min(len(labels), 4), bbox_to_anchor=(0.5, -0.05))
@@ -183,7 +183,7 @@ def plot_results(experiment_id, runs_dir="out/runs", output_dir="plots", num_env
             if label not in labels:
                 lines.append(line)
                 labels.append(label)
-        ax1.set_xlabel("Total Training Steps / Dataset Size"); ax1.set_ylabel("Avg Eval Return")
+        ax1.set_xlabel("Total Training Steps / Dataset Size"); ax1.set_ylabel("Avg Eval Return (Raw Atari)")
         ax1.set_title(f"Evaluation Comparison")
         ax1.grid(True)
 

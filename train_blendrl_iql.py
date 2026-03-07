@@ -238,7 +238,6 @@ def main():
         n_eval_envs = 10
         envs = VectorizedNudgeBaseEnv.from_name(args.env_name, n_envs=n_eval_envs, mode=args.algorithm, seed=args.seed + 100)
         eval_total_rewards = []
-        eval_total_raw_rewards = []
         eval_cumulative_rewards = np.zeros(n_eval_envs)
         next_logic_obs, next_obs = envs.reset()
         next_obs, next_logic_obs = torch.Tensor(next_obs).to(device), next_logic_obs.to(device)
@@ -249,29 +248,33 @@ def main():
             (next_logic_obs, next_obs), reward, terminations, truncations, infos = envs.step(action.cpu().numpy())
             next_obs, next_logic_obs = torch.Tensor(next_obs).to(device), torch.Tensor(next_logic_obs).to(device)
             
-            eval_cumulative_rewards += np.array(reward)
+            # Ad-hoc reward tracking
+            for k in range(n_eval_envs):
+                r_val = reward[k]
+                if args.env_name == "seaquest" and "all_rewards" in infos:
+                     r_val = sum(infos["all_rewards"][k])
+                eval_cumulative_rewards[k] += r_val
             
             for i in range(n_eval_envs):
                 if terminations[i] or truncations[i]:
-                    eval_total_rewards.append(eval_cumulative_rewards[i])
-                    eval_cumulative_rewards[i] = 0
+                    is_full_episode = True
+                    if args.env_name == "seaquest" and "lives" in infos:
+                        if infos["lives"][i] > 0:
+                            is_full_episode = False
                     
-                    if "final_info" in infos and infos["final_info"][i] is not None:
-                        eval_total_raw_rewards.append(infos["final_info"][i]["episode"]["r"])
-                    elif "episode" in infos and infos["_episode"][i]:
-                        eval_total_raw_rewards.append(infos["episode"]["r"][i])
+                    if is_full_episode:
+                        eval_total_rewards.append(eval_cumulative_rewards[i])
+                        eval_cumulative_rewards[i] = 0
                         
-                    if len(eval_total_rewards) >= args.eval_episodes:
-                        break
+                        if len(eval_total_rewards) >= args.eval_episodes:
+                            break
             
             if len(eval_total_rewards) >= args.eval_episodes:
                 break
         
         avg_reward = np.mean(eval_total_rewards[:args.eval_episodes])
-        avg_raw_reward = np.mean(eval_total_raw_rewards[:args.eval_episodes])
-        print(f"Interval {interval} Eval Reward (Shaped): {avg_reward:.2f} | Raw: {avg_raw_reward:.2f}")
+        print(f"Interval {interval} Eval Reward: {avg_reward:.2f}")
         writer.add_scalar("charts/eval_return", avg_reward, global_step)
-        writer.add_scalar("charts/eval_raw_return", avg_raw_reward, global_step)
         
         envs.close()
         evaluation_times.append(time.time() - eval_start)
@@ -285,12 +288,16 @@ def main():
         idealized_limit = interval * ideal_step_size
         if interval == args.intervals - 1:
             idealized_limit = args.total_timesteps
+        
+        # Ad-hoc step limit fix for Seaquest x-axis
+        recorded_limit = idealized_limit
+        if args.env_name == "seaquest":
+            recorded_limit = idealized_limit // 4
 
         interval_results.append({
             "interval": interval, 
-            "data_limit": int(idealized_limit), 
+            "data_limit": int(recorded_limit), 
             "avg_reward": float(avg_reward), 
-            "avg_raw_reward": float(avg_raw_reward),
             "step": global_step
         })
         with open(experiment_dir / "results.json", "w") as f: json.dump(interval_results, f, indent=4)
