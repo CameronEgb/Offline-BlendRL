@@ -86,9 +86,9 @@ def parse_args():
     parser.add_argument("--use_large_dataset_path", action="store_true", default=get_default("use_large_dataset_path", True))
     parser.add_argument("--large_dataset_path", type=str, default=get_default("large_dataset_path", DEFAULT_LARGE_DATASET_PATH))
     
-    parser.add_argument("--local", action="store_true", help="Run experiments locally instead of submitting to cluster")
-    parser.add_argument("--recover", action="store_true", help="Recover training from last checkpoint")
-    parser.add_argument("--no_overwrite", action="store_true", help="Automatically overwrite existing data without asking")
+    parser.add_argument("--local", action="store_true", default=get_default("local", False), help="Run experiments locally instead of submitting to cluster")
+    parser.add_argument("--recover", action="store_true", default=get_default("recover", False), help="Recover training from last checkpoint")
+    parser.add_argument("--no_overwrite", action="store_true", default=get_default("no_overwrite", False), help="Automatically overwrite existing data without asking")
     
     parser.add_argument("--group", type=str, default=get_default("group", ""), help="Optional group name to organize results (e.g., results/experiments/group/exp_id)")
     parser.add_argument("--seed", type=int, default=get_default("seed", 1))

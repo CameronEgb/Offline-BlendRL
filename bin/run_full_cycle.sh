@@ -8,8 +8,16 @@ CONFIGS=(
 )
 
 # Global flags that apply to all configs in this run
-LOCAL=true
+LOCAL=false
 NO_OVERWRITE=true
+
+# Check for --local in the arguments
+for arg in "$@"; do
+    if [ "$arg" == "--local" ]; then
+        LOCAL=true
+        break
+    fi
+done
 # -----------------------------
 
 if [ -d "venv" ]; then
