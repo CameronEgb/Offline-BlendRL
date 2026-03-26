@@ -61,10 +61,27 @@ if [ -n "$1" ]; then
         elif [[ "$INPUT_ARG" == *"/"* ]]; then
             # 4. Support listName/expID format (Surgical Rerun)
             GROUP_NAME="${INPUT_ARG%/*}"
-            EXP_ID="${INPUT_ARG##*/}"
+            RAW_EXP_ID="${INPUT_ARG##*/}"
+            # Remove .yaml extension if present for the ID
+            EXP_ID="${RAW_EXP_ID%.yaml}"
+            
+            # Try to find the matching config file to respect its parameters
+            ACTUAL_CFG="in/config/$RAW_EXP_ID"
+            if [ ! -f "$ACTUAL_CFG" ] && [ -f "in/config/$RAW_EXP_ID.yaml" ]; then
+                ACTUAL_CFG="in/config/$RAW_EXP_ID.yaml"
+            fi
+
             echo "Surgical rerun for experiment: $EXP_ID in group: $GROUP_NAME"
-            CONFIGS=("SINGLE_EXP_RERUN")
-            shift
+            echo "Using config: $ACTUAL_CFG"
+            
+            python3 run_full_cycle.py \
+                --config "$ACTUAL_CFG" \
+                --experimentid "$EXP_ID" \
+                --group "$GROUP_NAME" \
+                $( [ "$LOCAL" = true ] && echo "--local" ) \
+                $( [ "$NO_OVERWRITE" = true ] && echo "--no_overwrite" ) \
+                "$@"
+            exit 0
         else
             echo "Error: Argument '$INPUT_ARG' not found as config file or config list."
             exit 1
