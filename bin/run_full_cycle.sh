@@ -74,6 +74,7 @@ if [ -n "$1" ]; then
             echo "Surgical rerun for experiment: $EXP_ID in group: $GROUP_NAME"
             echo "Using config: $ACTUAL_CFG"
             
+            shift
             python3 run_full_cycle.py \
                 --config "$ACTUAL_CFG" \
                 --experimentid "$EXP_ID" \
