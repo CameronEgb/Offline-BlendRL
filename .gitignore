@@ -9,6 +9,7 @@ venv/
 .env
 
 # Large Data & Logs
+results/
 out/
 logs/
 plots/

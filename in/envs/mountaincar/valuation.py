@@ -18,6 +18,16 @@ def moving(env_obj: th.Tensor) -> th.Tensor:
     result = th.abs(vel) > 1e-4
     return bool_to_probs(result)
 
+def not_moving_right(env_obj: th.Tensor) -> th.Tensor:
+    vel = env_obj[..., 1]
+    result = vel <= 1e-4
+    return bool_to_probs(result)
+
+def not_moving_left(env_obj: th.Tensor) -> th.Tensor:
+    vel = env_obj[..., 1]
+    result = vel >= -1e-4
+    return bool_to_probs(result)
+
 def not_moving(env_obj: th.Tensor) -> th.Tensor:
     vel = env_obj[..., 1]
     result = th.abs(vel) <= 1e-4

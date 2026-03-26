@@ -31,7 +31,7 @@ from nudge.utils import load_model_train
 # Log in to your W&B account
 import wandb
 
-OUT_PATH = Path("out/")
+OUT_PATH = Path("results/experiments/")
 IN_PATH = Path("in/")
 
 torch.set_num_threads(5)
@@ -135,7 +135,7 @@ class Args:
     # added for offline dataset generation
     save_dataset: bool = False
     """whether to save the dataset for offline training"""
-    dataset_path: str = "offline_dataset"
+    dataset_path: str = "results/datasets"
     """path to save the dataset"""
     
     # added for orchestration
@@ -152,16 +152,6 @@ class Args:
 def main():
 
     args = tyro.cli(Args)
-    
-    # Force fine-tuning for MountainCar
-    if args.env_name == "mountaincar":
-        args.num_envs = 1 # Single env to match SB3 exactly
-        args.num_steps = 2048 # SB3 n_steps
-        args.learning_rate = 3e-4
-        args.ent_coef = 0.02
-        args.update_epochs = 10
-        args.clip_coef = 0.2
-        args.num_minibatches = 32 # 2048 / 32 = 64 batch_size
             
     # Use num_blend_envs if specified, otherwise use num_envs
     if args.num_blend_envs > 0:
@@ -219,10 +209,9 @@ def main():
     # for logging and model saving
     exp_subdir = args.exp_id
     
-    experiment_dir = OUT_PATH / "runs" / exp_subdir / run_name 
+    experiment_dir = OUT_PATH / exp_subdir / run_name 
     checkpoint_dir = experiment_dir / "checkpoints"
-    writer_base_dir = OUT_PATH / "tensorboard" / exp_subdir
-    writer_dir = writer_base_dir / run_name
+    writer_dir = experiment_dir / "tensorboard"
     image_dir = experiment_dir / "images"
     os.makedirs(checkpoint_dir, exist_ok=True)
     os.makedirs(image_dir, exist_ok=True)
@@ -231,21 +220,12 @@ def main():
     # Dataset writer initialization
     dataset_writer = None
     if args.save_dataset:
+        dataset_save_dir = Path(args.dataset_path)
         if args.env_name == "seaquest":
             from optimized_dataset_utils import SeaquestDatasetWriter
-            if args.dataset_path == "offline_dataset":
-                dataset_save_dir = experiment_dir / "offline_dataset"
-            else:
-                dataset_save_dir = Path(args.dataset_path) / exp_subdir / run_name
             dataset_writer = SeaquestDatasetWriter(save_dir=dataset_save_dir, env_name=args.env_name)
         else:
             from dataset_utils import DatasetWriter
-            if args.dataset_path == "offline_dataset":
-                # Save inside experiment directory
-                dataset_save_dir = experiment_dir / "offline_dataset"
-            else:
-                # Save in separate large dataset directory, grouped by exp_id
-                dataset_save_dir = Path(args.dataset_path) / exp_subdir / run_name
             dataset_writer = DatasetWriter(save_dir=dataset_save_dir, env_name=args.env_name)
 
     writer = SummaryWriter(writer_dir)
@@ -315,6 +295,7 @@ def main():
         policy_losses = []
         entropies = []
         blend_entropies = []
+        episodic_raw_returns = []
         
         # --- Step 0 Evaluation (Only if not recovering) ---
         print(f"--- Evaluating Interval 0 at Global Step 0 ---")
@@ -594,6 +575,7 @@ def main():
                 
                 if avg_reward >= best_eval_reward:
                     best_eval_reward = avg_reward
+                    os.makedirs(checkpoint_dir, exist_ok=True)
                     checkpoint_path = checkpoint_dir / "best_model.pth"
                     agent.save(checkpoint_path, checkpoint_dir, [], [], [])
                     print(f"New best model saved with reward {avg_reward:.2f}")
@@ -903,6 +885,7 @@ def main():
         dataset_writer.close()
 
     # Save the final model as best_model.pth
+    os.makedirs(checkpoint_dir, exist_ok=True)
     checkpoint_path = checkpoint_dir / "best_model.pth"
     agent.save(checkpoint_path, checkpoint_dir, [], [], [])
     print(f"\nFinal model saved at: {checkpoint_path}")

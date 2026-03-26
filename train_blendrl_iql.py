@@ -31,12 +31,15 @@ class Args:
     wandb_entity: str = None
     
     env_name: str = os.getenv("ENVIRONMENT", "")
-    dataset_path: str = os.getenv("DATASET_PATH", "offline_dataset")
+    dataset_path: str = os.getenv("DATASET_PATH", "results/datasets")
     dataset_run_name: str = ""
     
     total_timesteps: int = 1000000
     batch_size: int = int(os.getenv("BATCH_SIZE", "256"))
     learning_rate: float = float(os.getenv("OFFLINE_LR", "3e-4"))
+    logic_learning_rate: float = float(os.getenv("LOGIC_LR", "3e-4"))
+    blender_learning_rate: float = float(os.getenv("BLENDER_LR", "3e-4"))
+    blend_ent_coef: float = float(os.getenv("BLEND_ENT_COEF", "0.01"))
     
     # BlendRL specific
     algorithm: str = os.getenv("ALGORITHM", "blender")
@@ -81,7 +84,7 @@ def main():
         run_name = f"BlendRLIQL_{args.env_name}_{model_description}_{args.seed}_{int(time.time())}"
     
     exp_subdir = args.exp_id
-    experiment_dir = Path(f"out/runs/{exp_subdir}/{run_name}")
+    experiment_dir = Path(f"results/experiments/{exp_subdir}/{run_name}")
     experiment_dir.mkdir(parents=True, exist_ok=True)
 
     if args.track:
@@ -96,7 +99,8 @@ def main():
             save_code=True,
         )
         
-    writer = SummaryWriter(str(experiment_dir))
+    writer_dir = experiment_dir / "tensorboard"
+    writer = SummaryWriter(str(writer_dir))
     writer.add_text(
         "hyperparameters",
         "|param|value|\n|-|-|\n%s" % ("\n".join([f"|{key}|{value}|" for key, value in vars(args).items()])),
@@ -110,11 +114,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
 
     # Load Dataset
-    data_exp_id = args.exp_id
-    if args.dataset_path == "offline_dataset":
-        dataset_path = Path("out/runs") / data_exp_id / args.dataset_run_name / "offline_dataset"
-    else:
-        dataset_path = Path(args.dataset_path) / data_exp_id / args.dataset_run_name
+    dataset_path = Path(args.dataset_path)
     print(f"Loading dataset from {dataset_path}...")
     if args.env_name == "seaquest":
         from optimized_dataset_utils import SeaquestDatasetReader
@@ -165,11 +165,12 @@ def main():
     optimizer_actor = optim.Adam(
         [
             {"params": agent.visual_neural_actor.parameters(), "lr": args.learning_rate},
-            {"params": agent.logic_actor.parameters(), "lr": args.learning_rate},
-            {"params": agent.blender.parameters(), "lr": args.learning_rate},
+            {"params": agent.logic_actor.parameters(), "lr": args.logic_learning_rate},
+            {"params": agent.blender.parameters(), "lr": args.blender_learning_rate},
         ],
         lr=args.learning_rate
     )
+    agent.blender.ent_coef = args.blend_ent_coef
 
     print("Starting training...")
     global_step = 0
@@ -177,10 +178,12 @@ def main():
     best_eval_reward = -float('inf')
     
     # Segment the data using idealized intervals to match online scripts
+    # If the dataset is smaller than expected, use actual transitions to avoid hardcoded looking plots
+    reference_steps = min(args.total_timesteps, total_transitions)
     if args.intervals > 1:
-        ideal_step_size = args.total_timesteps // (args.intervals - 1)
+        ideal_step_size = reference_steps // (args.intervals - 1)
     else:
-        ideal_step_size = args.total_timesteps
+        ideal_step_size = reference_steps
 
     for interval in range(0, args.intervals):
         # Calculate current_limit based on idealized intervals but capped by actual data
@@ -302,6 +305,7 @@ def main():
         })
         with open(experiment_dir / "results.json", "w") as f: json.dump(interval_results, f, indent=4)
 
+    save_path.mkdir(parents=True, exist_ok=True)
     agent.save(save_path / "best_model.pth", save_path, [], [], [])
     envs.close(); writer.close()
     end_time = time.time(); duration = end_time - start_time

@@ -51,7 +51,7 @@ python train_blenderl.py --env-name seaquest --joint-training --num-steps 128 --
 The hyperparameters are configured inside `in/config/default.yaml` which is loaded as default. You can specify a different configuration by providing the corresponding YAML file path as an argument, e.g., `python train.py in/config/my_config.yaml`. A description of all hyperparameters can be found in `train.py`. -->
 
 ### The Logic
-Inside `in/envs/[env_name]/logic/[ruleset_name]/`, you find the logic rules that are used as a starting point for training. You can change them or create new rule sets. The ruleset to use is specified with the hyperparam `rules`.
+Inside `in/rules/[env_name]/[ruleset_name]/`, you find the logic rules that are used as a starting point for training. You can change them or create new rule sets. The ruleset to use is specified with the hyperparam `rules`.
 
 <!-- ### Install Locally
 If you want to use NUDGE within other projects, you can install NUDGE locally as follows:

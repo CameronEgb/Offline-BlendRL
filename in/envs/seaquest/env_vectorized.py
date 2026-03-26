@@ -41,9 +41,9 @@ class VectorizedNudgeEnv(VectorizedNudgeBaseEnv):
                     render_mode=render_mode,
                     render_oc_overlay=render_oc_overlay,
                 )
-                env._env = make_env(env._env, clip_rewards=clip_rewards)
+                env = make_env(env, clip_rewards=clip_rewards)
                 # Ensure the top-level observation space matches the wrapped internal space
-                env.observation_space = env._env.observation_space
+                # env.observation_space = env._env.observation_space # make_env already handles this
                 if seed is not None:
                     env.action_space.seed(seed + rank)
                 return env
@@ -53,7 +53,13 @@ class VectorizedNudgeEnv(VectorizedNudgeBaseEnv):
         if n_envs <= 10:
             self.venv = SyncVectorEnv([make_hackatari_env(i) for i in range(n_envs)])
         else:
-            self.venv = AsyncVectorEnv([make_hackatari_env(i) for i in range(n_envs)])
+            import multiprocessing
+            import sys
+            ctx = None
+            if sys.platform == "darwin":
+                # Fork is more reliable for inheriting redirected stdout on macOS
+                ctx = "fork"
+            self.venv = AsyncVectorEnv([make_hackatari_env(i) for i in range(n_envs)], context=ctx)
         
         self.n_actions = 6
         self.n_raw_actions = 18

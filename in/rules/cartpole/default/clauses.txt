@@ -1,0 +1,2 @@
+left(X):-leaning_left(A).
+right(X):-leaning_right(A).

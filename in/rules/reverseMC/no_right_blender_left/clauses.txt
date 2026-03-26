@@ -1,0 +1,2 @@
+right(X):-moving_left(A).
+noop(X):-not_moving(A).

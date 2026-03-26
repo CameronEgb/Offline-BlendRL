@@ -32,7 +32,7 @@ from utils import CNNActor
 # Log in to your W&B account
 import wandb
 
-OUT_PATH = Path("out/")
+OUT_PATH = Path("results/experiments/")
 IN_PATH = Path("in/")
 
 torch.set_num_threads(5)
@@ -134,7 +134,7 @@ class Args:
     # added for offline dataset generation
     save_dataset: bool = False
     """whether to save the dataset for offline training"""
-    dataset_path: str = "offline_dataset"
+    dataset_path: str = "results/datasets"
     """path to save the dataset"""
     
     # added for orchestration
@@ -151,16 +151,6 @@ class Args:
 def main():
         
     args = tyro.cli(Args)
-    
-    # MountainCar refined defaults (can be overridden by CLI)
-    if args.env_name == "mountaincar":
-        if args.num_envs == 20: args.num_envs = 1 
-        if args.num_steps == 128: args.num_steps = 2048 
-        if args.learning_rate == 2.5e-4: args.learning_rate = 3e-4
-        if args.ent_coef == 0.01: args.ent_coef = 0.02
-        if args.update_epochs == 4: args.update_epochs = 10
-        if args.clip_coef == 0.1: args.clip_coef = 0.2
-        if args.num_minibatches == 4: args.num_minibatches = 32
             
     # Set other defaults if not set
     if args.num_envs == 0:
@@ -214,33 +204,25 @@ def main():
     # for logging and model saving
     exp_subdir = args.exp_id
     
-    experiment_dir = OUT_PATH / "runs" / exp_subdir / run_name 
+    experiment_dir = OUT_PATH / exp_subdir / run_name 
     checkpoint_dir = experiment_dir / "checkpoints"
-    writer_base_dir = OUT_PATH / "tensorboard" / exp_subdir
-    writer_dir = writer_base_dir / run_name
+    writer_dir = experiment_dir / "tensorboard"
     image_dir = experiment_dir / "images"
     os.makedirs(checkpoint_dir, exist_ok=True)
     os.makedirs(image_dir, exist_ok=True)
     os.makedirs(writer_dir, exist_ok=True)
+
+    save_hyperparams(args=args, save_path=experiment_dir / "config.yaml", print_summary=False)
     
     # Dataset writer initialization
     dataset_writer = None
     if args.save_dataset:
+        dataset_save_dir = Path(args.dataset_path)
         if args.env_name == "seaquest":
             from optimized_dataset_utils import SeaquestDatasetWriter
-            if args.dataset_path == "offline_dataset":
-                dataset_save_dir = experiment_dir / "offline_dataset"
-            else:
-                dataset_save_dir = Path(args.dataset_path) / exp_subdir / run_name
             dataset_writer = SeaquestDatasetWriter(save_dir=dataset_save_dir, env_name=args.env_name)
         else:
             from dataset_utils import DatasetWriter
-            if args.dataset_path == "offline_dataset":
-                # Save inside experiment directory
-                dataset_save_dir = experiment_dir / "offline_dataset"
-            else:
-                # Save in separate large dataset directory, grouped by exp_id
-                dataset_save_dir = Path(args.dataset_path) / exp_subdir / run_name
             dataset_writer = DatasetWriter(save_dir=dataset_save_dir, env_name=args.env_name)
 
     writer = SummaryWriter(writer_dir)
@@ -310,6 +292,7 @@ def main():
         policy_losses = []
         entropies = []
         blend_entropies = []
+        episodic_raw_returns = []
         
         # --- Step 0 Evaluation (Only if not recovering) ---
         print(f"--- Evaluating Interval 0 at Global Step 0 ---")
@@ -544,6 +527,7 @@ def main():
                 
                 if avg_reward >= best_eval_reward:
                     best_eval_reward = avg_reward
+                    os.makedirs(checkpoint_dir, exist_ok=True)
                     checkpoint_path = checkpoint_dir / "best_model.pth"
                     torch.save(agent.state_dict(), checkpoint_path)
                     print(f"New best model saved with reward {avg_reward:.2f}")
@@ -801,6 +785,7 @@ def main():
     if dataset_writer is not None:
         dataset_writer.close()
 
+    os.makedirs(checkpoint_dir, exist_ok=True)
     checkpoint_path = checkpoint_dir / "best_model.pth"
     torch.save(agent.state_dict(), checkpoint_path)
     print(f"Final agent has been saved to {checkpoint_path}")

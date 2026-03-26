@@ -40,7 +40,7 @@ def format_table(data, headers):
     
     print(line)
 
-def generate_table(experiment_id, runs_dir="out/runs"):
+def generate_table(experiment_id, runs_dir="results/experiments"):
     exp_path = Path(runs_dir) / experiment_id
     if not exp_path.exists():
         exp_path = Path(runs_dir) # Fallback to root
@@ -49,30 +49,51 @@ def generate_table(experiment_id, runs_dir="out/runs"):
     
     runtimes = []
     
-    for run_folder in exp_path.rglob(f"*{experiment_id}*"):
-        if not run_folder.is_dir() or "checkpoints" in run_folder.parts:
+    # Robustly find all runtime.json files within the experiment/group directory
+    for runtime_file in exp_path.rglob("runtime.json"):
+        run_folder = runtime_file.parent
+        if "checkpoints" in run_folder.parts:
             continue
             
-        runtime_file = run_folder / "runtime.json"
-        if runtime_file.exists():
-            try:
-                with open(runtime_file, "r") as f:
-                    data = json.load(f)
-                    method_name = run_folder.name.replace(f"_{experiment_id}", "").replace(f"_{experiment_id.replace('exp_', '')}", "")
-                    method_name = method_name.replace("Seaquest-v4_", "").replace("seaquest_", "")
-                    
-                    avg_train = f"{data.get('avg_train_time_per_interval', 0):.2f}s"
-                    avg_eval = f"{data.get('avg_eval_time_per_interval', 0):.2f}s"
-                    
-                    runtimes.append([
-                        method_name, 
-                        int(data["runtime_seconds"]), 
-                        data["runtime_formatted"],
-                        avg_train,
-                        avg_eval
-                    ])
-            except Exception as e:
-                print(f"Error reading {runtime_file}: {e}")
+        try:
+            with open(runtime_file, "r") as f:
+                data = json.load(f)
+                # Extract descriptive method name from folder structure
+                # Handle group folders by including sub-parts if useful, but strip common suffixes
+                method_name = run_folder.name
+                for suffix in [f"_{experiment_id}", f"_{experiment_id.replace('exp_', '')}"]:
+                    if method_name.endswith(suffix):
+                        method_name = method_name[:-len(suffix)]
+                
+                # Strip environment prefixes
+                for env in ["Seaquest-v4_", "seaquest_", "mountaincar_", "cartpole_"]:
+                    if method_name.startswith(env):
+                        method_name = method_name[len(env):]
+                
+                # If in a hierarchical structure, prepend the ruleset
+                if "online" in run_folder.parts:
+                    idx = run_folder.parts.index("online")
+                    if idx + 1 < len(run_folder.parts) - 1:
+                        rs = run_folder.parts[idx+1]
+                        method_name = f"{rs}/{method_name}"
+                elif "offline" in run_folder.parts:
+                    idx = run_folder.parts.index("offline")
+                    if idx + 1 < len(run_folder.parts) - 1:
+                        rs = run_folder.parts[idx+1]
+                        method_name = f"{rs}/{method_name}"
+
+                avg_train = f"{data.get('avg_train_time_per_interval', 0):.2f}s"
+                avg_eval = f"{data.get('avg_eval_time_per_interval', 0):.2f}s"
+                
+                runtimes.append([
+                    method_name, 
+                    int(data.get("runtime_seconds", 0)), 
+                    data.get("runtime_formatted", "0:00:00"),
+                    avg_train,
+                    avg_eval
+                ])
+        except Exception as e:
+            print(f"Error reading {runtime_file}: {e}")
     
     if not runtimes:
         print("No runtime data found.")
@@ -85,9 +106,10 @@ def generate_table(experiment_id, runs_dir="out/runs"):
     format_table(runtimes, headers)
     
     # Save to file
-    output_dir = Path("plots") / experiment_id
+    output_dir = Path("results/plots") / experiment_id
     output_dir.mkdir(parents=True, exist_ok=True)
-    with open(output_dir / "runtimes.txt", "w") as f:
+    output_file = output_dir / "runtimes.txt"
+    with open(output_file, "w") as f:
         # Re-capture output to file
         import sys
         from io import StringIO
@@ -99,12 +121,37 @@ def generate_table(experiment_id, runs_dir="out/runs"):
         sys.stdout = old_stdout
         f.write(mystdout.getvalue())
     
-    print(f"Table saved to {output_dir / 'runtimes.txt'}")
+    print(f"Table saved to {output_file}")
 
 if __name__ == "__main__":
+    import yaml
     parser = argparse.ArgumentParser()
     parser.add_argument("experimentid", type=str)
-    parser.add_argument("--runs_dir", type=str, default="out/runs")
+    parser.add_argument("--runs_dir", type=str, default="results/experiments")
     args = parser.parse_args()
+
+    experiment_id = args.experimentid
     
-    generate_table(args.experimentid, args.runs_dir)
+    # 1. Check if the input is a configList or config name
+    list_path = f"in/config/configLists/{experiment_id}"
+    if os.path.isfile(list_path):
+        # If it's a configList, use the list name as experiment_id (which usually acts as the group folder)
+        print(f"Using configList '{experiment_id}' as the folder to scan.")
+    else:
+        config_path = None
+        if os.path.isfile(f"in/config/{experiment_id}"):
+            config_path = f"in/config/{experiment_id}"
+        elif os.path.isfile(f"in/config/{experiment_id}.yaml"):
+            config_path = f"in/config/{experiment_id}.yaml"
+        
+        if config_path:
+            try:
+                with open(config_path, "r") as f:
+                    cfg = yaml.safe_load(f)
+                    if cfg and "experimentid" in cfg:
+                        experiment_id = cfg["experimentid"]
+                        print(f"Resolved experiment_id '{experiment_id}' from config '{config_path}'")
+            except Exception as e:
+                print(f"Error reading config {config_path}: {e}")
+            
+    generate_table(experiment_id, args.runs_dir)

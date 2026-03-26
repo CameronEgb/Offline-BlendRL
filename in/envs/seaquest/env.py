@@ -42,8 +42,7 @@ class NudgeEnv(NudgeBaseEnv):
             render_mode=render_mode,
             render_oc_overlay=render_oc_overlay,
         )
-        # for learning script from cleanrl
-        self.env._env = make_env(self.env._env)
+        self.env = make_env(self.env)
         self.n_actions = 6
         self.n_raw_actions = 18
         self.n_objects = 43
@@ -60,7 +59,7 @@ class NudgeEnv(NudgeBaseEnv):
 
     def reset(self):
         obs, _ = self.env.reset(seed=self.seed)
-        state = self.env.objects
+        state = self.env.unwrapped.objects
         raw_state = obs  # self.env.dqn_obs
         logic_state, neural_state = self.extract_logic_state(
             state
@@ -71,7 +70,7 @@ class NudgeEnv(NudgeBaseEnv):
     def step(self, action, is_mapped: bool = False):
         obs, reward, truncations, done, infos = self.env.step(action)
 
-        state = self.env.objects
+        state = self.env.unwrapped.objects
         raw_state = obs  # self.env.dqn_obs
         logic_state, neural_state = self.convert_state(state, raw_state)
         logic_state = logic_state.unsqueeze(0)
