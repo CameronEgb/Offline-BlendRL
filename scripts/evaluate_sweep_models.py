@@ -88,7 +88,15 @@ def main():
                 probs = ag.get_action_probs(obs_t)
                 admin_probs = probs[:, 1].cpu().numpy()
                 pred_acts = ag.get_action(obs_t).cpu().numpy() if hasattr(ag, "get_action") else torch.argmax(probs, dim=-1).cpu().numpy()
-                weight_str = "Policy Contract"
+                weights = ag.get_blending_weights(obs_t) if hasattr(ag, "get_blending_weights") else None
+                if weights is not None and weights.shape[1] > 1:
+                    avg_logic_w = weights[:, 0].mean().item()
+                    avg_neural_w = weights[:, 1].mean().item()
+                    weight_str = f"L:{avg_logic_w:.2f} / N:{avg_neural_w:.2f}"
+                elif getattr(ag, "is_modular", False):
+                    weight_str = "Blended (Modular)"
+                else:
+                    weight_str = "Neural Only (1.0)"
             elif hasattr(ag, "is_modular") and ag.is_modular:
                 logic_obs = ag._prepare_logic_obs(obs_t) if hasattr(ag, "_prepare_logic_obs") else obs_t.unsqueeze(1).repeat(1, 2, 1)
                 if is_cql and not use_actor and hasattr(ag.model, "get_q_values"):
@@ -97,13 +105,19 @@ def main():
                     admin_probs = probs[:, 1].cpu().numpy()
                     pred_acts = torch.argmax(q_vals, dim=-1).cpu().numpy()
                     weight_str = "Blended Q-Values"
-                else:
+                elif use_actor and hasattr(ag.model, "actor"):
                     probs, weights = ag.model.actor(obs_t, logic_obs)
                     admin_probs = probs[:, 1].cpu().numpy()
                     pred_acts = torch.argmax(probs, dim=-1).cpu().numpy()
                     avg_logic_w = weights[:, 0].mean().item() if weights is not None and weights.shape[1] > 0 else 0.0
                     avg_neural_w = weights[:, 1].mean().item() if weights is not None and weights.shape[1] > 1 else 0.0
                     weight_str = f"L:{avg_logic_w:.2f} / N:{avg_neural_w:.2f}"
+                elif hasattr(ag.model, "get_q_values"):
+                    q_vals = ag.model.get_q_values(obs_t, logic_obs)
+                    probs = torch.softmax(q_vals, dim=-1)
+                    admin_probs = probs[:, 1].cpu().numpy()
+                    pred_acts = torch.argmax(q_vals, dim=-1).cpu().numpy()
+                    weight_str = "Blended Q-Values"
             else:
                 q_vals = ag.q_network(obs_t) if hasattr(ag, "q_network") else ag(obs_t)
                 probs = torch.softmax(q_vals, dim=-1)

@@ -48,8 +48,11 @@ class StandaloneProblemPolicy(torch.nn.Module):
     def __init__(self, agent):
         super().__init__()
         self.is_modular = getattr(agent, "is_modular", False)
+        self.use_actor = bool(agent.get_cfg("use_actor", False)) if hasattr(agent, "get_cfg") else getattr(agent, "use_actor", False)
         if self.is_modular:
-            self.actor = agent.model.actor
+            self.model = agent.model
+            if self.use_actor and hasattr(agent.model, "actor"):
+                self.actor = agent.model.actor
         elif hasattr(agent, "q_network"):
             self.q_network = agent.q_network
         else:
@@ -65,7 +68,11 @@ class StandaloneProblemPolicy(torch.nn.Module):
 
         if self.is_modular:
             logic_obs = obs_133.unsqueeze(1).repeat(1, 2, 1)
-            probs, _ = self.actor(obs_133, logic_obs)
+            if self.use_actor and hasattr(self, "actor"):
+                probs, _ = self.actor(obs_133, logic_obs)
+            else:
+                q = self.model.get_q_values(obs_133, logic_obs)
+                probs = torch.softmax(q, dim=-1)
         elif hasattr(self, "q_network"):
             q = self.q_network(obs_133)
             probs = torch.softmax(q, dim=-1)
@@ -82,8 +89,11 @@ class StandaloneStepPolicy(torch.nn.Module):
     def __init__(self, agent):
         super().__init__()
         self.is_modular = getattr(agent, "is_modular", False)
+        self.use_actor = bool(agent.get_cfg("use_actor", False)) if hasattr(agent, "get_cfg") else getattr(agent, "use_actor", False)
         if self.is_modular:
-            self.actor = agent.model.actor
+            self.model = agent.model
+            if self.use_actor and hasattr(agent.model, "actor"):
+                self.actor = agent.model.actor
         elif hasattr(agent, "q_network"):
             self.q_network = agent.q_network
         else:
@@ -99,7 +109,11 @@ class StandaloneStepPolicy(torch.nn.Module):
 
         if self.is_modular:
             logic_obs = obs_133.unsqueeze(1).repeat(1, 2, 1)
-            probs, _ = self.actor(obs_133, logic_obs)
+            if self.use_actor and hasattr(self, "actor"):
+                probs, _ = self.actor(obs_133, logic_obs)
+            else:
+                q = self.model.get_q_values(obs_133, logic_obs)
+                probs = torch.softmax(q, dim=-1)
         elif hasattr(self, "q_network"):
             q = self.q_network(obs_133)
             probs = torch.softmax(q, dim=-1)

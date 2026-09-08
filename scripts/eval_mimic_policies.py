@@ -89,12 +89,17 @@ def evaluate_mimic_policies(exp_id="mimic_test", group="mimic", dataset_path=Non
                 b_end = min(b_start + batch_size, total_steps)
                 obs_batch = torch.tensor(all_obs[b_start:b_end], dtype=torch.float32).to(device)
 
-                if hasattr(agent, "actor") and hasattr(agent.actor, "get_action_probs"):
-                    probs = agent.actor.get_action_probs(obs_batch)
+                if hasattr(agent, "get_action_probs"):
+                    probs = agent.get_action_probs(obs_batch)
+                    policy_acts = agent.get_action(obs_batch).cpu().numpy() if hasattr(agent, "get_action") else torch.argmax(probs, dim=-1).cpu().numpy()
+                    admin_probs = probs[:, 1].cpu().numpy()
+                elif hasattr(agent, "model") and hasattr(agent.model, "get_q_values"):
+                    q = agent.model.get_q_values(obs_batch)
+                    probs = torch.softmax(q, dim=-1)
                     policy_acts = torch.argmax(probs, dim=-1).cpu().numpy()
                     admin_probs = probs[:, 1].cpu().numpy()
-                elif hasattr(agent, "model"):
-                    q = agent.model.get_q_values(obs_batch, logic_state=None)
+                elif hasattr(agent, "q_network"):
+                    q = agent.q_network(obs_batch)
                     probs = torch.softmax(q, dim=-1)
                     policy_acts = torch.argmax(probs, dim=-1).cpu().numpy()
                     admin_probs = probs[:, 1].cpu().numpy()

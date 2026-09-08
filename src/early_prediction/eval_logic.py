@@ -197,17 +197,29 @@ def get_policy_actions(agent, agent_type, obs_tensor, device):
     Returns (actions, admin_probs) — both numpy arrays of shape (N,).
     """
     with torch.no_grad():
-        if agent_type == "cql":
-            probs = agent.actor.get_action_probs(obs_tensor)
-            actions = torch.argmax(probs, dim=-1).cpu().numpy()
+        if hasattr(agent, "get_action_probs"):
+            probs = agent.get_action_probs(obs_tensor)
+            if hasattr(agent, "get_action"):
+                actions = agent.get_action(obs_tensor).cpu().numpy()
+            else:
+                actions = torch.argmax(probs, dim=-1).cpu().numpy()
             admin_probs = probs[:, 1].cpu().numpy()
-        elif agent_type == "blendrl_cql":
-            q = agent.model.get_q_values(obs_tensor, logic_state=None)
+        elif hasattr(agent, "model") and hasattr(agent.model, "get_q_values"):
+            q = agent.model.get_q_values(obs_tensor)
             probs = torch.softmax(q, dim=-1)
             actions = torch.argmax(probs, dim=-1).cpu().numpy()
             admin_probs = probs[:, 1].cpu().numpy()
+        elif hasattr(agent, "q_network"):
+            q = agent.q_network(obs_tensor)
+            probs = torch.softmax(q, dim=-1)
+            actions = torch.argmax(probs, dim=-1).cpu().numpy()
+            admin_probs = probs[:, 1].cpu().numpy()
+        elif hasattr(agent, "actor") and hasattr(agent.actor, "get_action_probs"):
+            probs = agent.actor.get_action_probs(obs_tensor)
+            actions = torch.argmax(probs, dim=-1).cpu().numpy()
+            admin_probs = probs[:, 1].cpu().numpy()
         else:
-            raise ValueError(f"Unknown agent type: {agent_type}")
+            raise ValueError(f"Unknown or incompatible agent: {type(agent)}")
     return actions, admin_probs
 
 
@@ -704,7 +716,7 @@ def compute_ep_eval_data(checkpoint_root, dataset_path, ep_ckpt_root='results/ch
     if cql_ckpt_for_v:
         try:
             agent_v, agent_v_type = load_policy_agent(cql_ckpt_for_v, device)
-            if agent_v is not None and hasattr(agent_v, "q_network"):
+            if agent_v is not None and (hasattr(agent_v, "get_q_values") or hasattr(agent_v, "get_value") or hasattr(agent_v, "q_network") or hasattr(agent_v, "model")):
                 print(f"\nPre-computing V(s) from: {cql_ckpt_for_v}")
                 batch_sz = 128
                 with torch.no_grad():
@@ -713,13 +725,20 @@ def compute_ep_eval_data(checkpoint_root, dataset_path, ep_ckpt_root='results/ch
                                                   dtype=torch.float32, device=device)
                         B = batch_x.size(0)
                         flat_x = batch_x.view(-1, 46)
-                        flat_q = agent_v.q_network(flat_x)
+                        if hasattr(agent_v, "get_q_values"):
+                            flat_q = agent_v.get_q_values(flat_x)
+                        elif hasattr(agent_v, "model") and hasattr(agent_v.model, "get_q_values"):
+                            flat_q = agent_v.model.get_q_values(flat_x)
+                        elif hasattr(agent_v, "q_network"):
+                            flat_q = agent_v.q_network(flat_x)
+                        else:
+                            raise AttributeError("Agent does not have get_q_values or q_network.")
                         q_vals = flat_q.view(B, 240, -1)
                         v = torch.max(q_vals, dim=-1)[0].unsqueeze(-1).cpu().numpy()
                         v_vals_all[i:i+B] = v
                 print("V(s) pre-computation done.")
             else:
-                print("WARNING: Could not compute V(s) — agent has no q_network.")
+                print("WARNING: Could not compute V(s) — agent has no recognizable Q-network.")
         except Exception as e:
             print(f"WARNING: V(s) pre-computation failed: {e}")
 

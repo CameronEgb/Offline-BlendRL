@@ -337,13 +337,19 @@ class EPRewardShaper:
         with torch.no_grad():
             for i in range(0, n, batch_sz):
                 batch_obs = reader.obs[i:i+batch_sz].to(self.device)
-                if hasattr(agent, 'q_network'):
+                if hasattr(agent, "get_value"):
+                    v = agent.get_value(batch_obs).unsqueeze(-1).cpu().numpy()
+                elif hasattr(agent, "get_q_values"):
+                    q = agent.get_q_values(batch_obs)
+                    v = torch.max(q, dim=-1)[0].unsqueeze(-1).cpu().numpy()
+                elif hasattr(agent, "model") and hasattr(agent.model, "get_q_values"):
+                    q = agent.model.get_q_values(batch_obs)
+                    v = torch.max(q, dim=-1)[0].unsqueeze(-1).cpu().numpy()
+                elif hasattr(agent, "q_network"):
                     q = agent.q_network(batch_obs)
-                elif hasattr(agent, 'model'):
-                    q = agent.model.get_q_values(batch_obs, None)
+                    v = torch.max(q, dim=-1)[0].unsqueeze(-1).cpu().numpy()
                 else:
-                    raise AttributeError("CQL agent does not have a recognizable Q-network attribute ('q_network' or 'model').")
-                v = torch.max(q, dim=-1)[0].unsqueeze(-1).cpu().numpy()
+                    raise AttributeError("CQL agent does not implement get_value or recognized Q-network.")
                 v_vals[i:i+batch_obs.size(0)] = v
         
         print(f"  V(s) computed: mean={v_vals.mean():.4f}, std={v_vals.std():.4f}")

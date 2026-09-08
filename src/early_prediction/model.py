@@ -553,8 +553,15 @@ def main(cfg: DictConfig):
                 batch_x = torch.tensor(X[i:i+batch_sz, :, :46], dtype=torch.float32).to(device)
                 B_curr = batch_x.size(0)
                 flat_x = batch_x.view(-1, 46)
-                flat_q = cql_agent.q_network(flat_x)
-                q_vals = flat_q.view(B_curr, 240, 2)
+                if hasattr(cql_agent, "get_q_values"):
+                    flat_q = cql_agent.get_q_values(flat_x)
+                elif hasattr(cql_agent, "model") and hasattr(cql_agent.model, "get_q_values"):
+                    flat_q = cql_agent.model.get_q_values(flat_x)
+                elif hasattr(cql_agent, "q_network"):
+                    flat_q = cql_agent.q_network(flat_x)
+                else:
+                    raise AttributeError("CQL agent does not have get_q_values or q_network.")
+                q_vals = flat_q.view(B_curr, 240, -1)
                 v_vals = torch.max(q_vals, dim=-1)[0].unsqueeze(-1).cpu().numpy()
                 v_vals_all[i:i+batch_sz] = v_vals
         print("CQL V(s) pre-computation complete.")

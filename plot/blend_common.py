@@ -122,14 +122,22 @@ def extract_model_routing_data(discovered: dict, sample_size: int = 4000) -> dic
         logic_obs = obs_aug.unsqueeze(1).repeat(1, 2, 1)
 
         with torch.no_grad():
-            probs, weights = agent.model.actor(obs_aug, logic_obs)
+            if hasattr(agent, "get_blending_weights"):
+                weights = agent.get_blending_weights(obs_aug, logic_obs)
+            elif hasattr(agent.model, "actor") and hasattr(agent.model.actor, "to_blender_policy_distribution"):
+                weights = agent.model.actor.to_blender_policy_distribution(obs_aug, logic_obs)
+            else:
+                _, weights = agent.model.actor(obs_aug, logic_obs)
 
-        module_types = getattr(agent.model.actor, "module_types", ["logic", "neural"])
+        if weights is None:
+            continue
+
+        module_types = getattr(agent.model, "module_types", getattr(getattr(agent.model, "actor", None), "module_types", ["logic", "neural"]))
         logic_idx = module_types.index("logic") if "logic" in module_types else 0
         neural_idx = module_types.index("neural") if "neural" in module_types else (1 if len(module_types) > 1 else 0)
 
-        w_logic = weights[:, logic_idx].numpy()
-        w_neural = weights[:, neural_idx].numpy()
+        w_logic = weights[:, logic_idx].detach().cpu().numpy() if isinstance(weights, torch.Tensor) else weights[:, logic_idx]
+        w_neural = weights[:, neural_idx].detach().cpu().numpy() if isinstance(weights, torch.Tensor) else weights[:, neural_idx]
 
         gmm_path = Path(f"in/datasets/pyrenees/per_problem/{prob_name}/gmm_scaler.npz")
         if not gmm_path.exists():

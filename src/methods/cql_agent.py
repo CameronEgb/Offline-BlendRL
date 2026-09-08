@@ -156,13 +156,10 @@ class CQLAgent(OfflineAgentBase):
         return action, logprob, entropy, value
 
     def get_value(self, obs, logic_obs=None):
-        if self.is_modular:
+        if self.is_modular and self.get_cfg("use_actor", False):
             logic_obs = self._prepare_logic_obs(obs, logic_obs)
-            if self.get_cfg("use_actor", False):
-                return self.model.get_value(obs, logic_obs)
-            q_vals = self.model.get_q_values(obs, logic_obs)
-        else:
-            q_vals = self.q_network.get_q_values(obs)
+            return self.model.get_value(obs, logic_obs)
+        q_vals = self.get_q_values(obs, logic_obs)
         return q_vals.max(dim=-1)[0]
 
     def on_train_start(self):
@@ -342,9 +339,10 @@ class CQLAgent(OfflineAgentBase):
             "losses/q_loss": q_loss.item() if isinstance(q_loss, torch.Tensor) else q_loss,
             "losses/bellman_loss": bellman_loss.item() if isinstance(bellman_loss, torch.Tensor) else bellman_loss,
             "losses/cql_loss": cql_loss.item() if isinstance(cql_loss, torch.Tensor) else cql_loss,
-            "losses/actor_loss": actor_loss.item() if isinstance(actor_loss, torch.Tensor) else actor_loss,
             "losses/pos_action_weight": float(pos_weight.item()) if isinstance(pos_weight, torch.Tensor) else float(pos_weight),
         }
+        if bool(self.get_cfg("use_actor", False)):
+            log_data["losses/actor_loss"] = actor_loss.item() if isinstance(actor_loss, torch.Tensor) else actor_loss
         if self.is_modular and isinstance(blend_entropy, torch.Tensor):
             log_data["losses/blend_entropy"] = blend_entropy.mean().item()
         self.log_dict(log_data)

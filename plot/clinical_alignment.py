@@ -138,7 +138,7 @@ class ClinicalAlignmentPlotter(BasePlotter):
                 probs = torch.softmax(q_vals, dim=-1)
                 acts = torch.argmax(q_vals, dim=-1)
                 return probs, acts
-            elif hasattr(ag.model, "actor"):
+            elif use_actor and hasattr(ag.model, "actor"):
                 probs, _ = ag.model.actor(obs_b, logic_obs)
                 acts = torch.argmax(probs, dim=-1)
                 return probs, acts

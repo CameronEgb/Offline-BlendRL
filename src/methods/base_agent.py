@@ -167,6 +167,14 @@ class BaseAgent(L.LightningModule, ABC):
         probs = self.get_action_probs(obs, logic_obs)
         return torch.argmax(probs, dim=-1)
 
+    def get_blending_weights(self, obs: torch.Tensor, logic_obs: Optional[torch.Tensor] = None) -> Optional[torch.Tensor]:
+        """Return blending weights for hybrid/modular architectures if applicable, else None."""
+        if hasattr(self, "model") and hasattr(self.model, "actor") and hasattr(self.model.actor, "to_blender_policy_distribution"):
+            if getattr(self, "is_modular", False) and hasattr(self, "_prepare_logic_obs"):
+                logic_obs = self._prepare_logic_obs(obs, logic_obs)
+            return self.model.actor.to_blender_policy_distribution(obs, logic_obs)
+        return None
+
 
 class OfflineAgentBase(BaseAgent):
     """Base class for all offline RL agents (IQL, CQL, CEW, and their BlendRL variants).
