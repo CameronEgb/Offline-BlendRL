@@ -123,17 +123,7 @@ class BasePlotter:
         """Finds, resolves, and loads the experiment configuration YAML or saved run config."""
         clean_exp = Path(exp_id).stem
 
-        # 1. First try to load the saved config.yaml from the experiment's log directory
-        for base_dir in [Path("results/logs"), Path("results/checkpoints")]:
-            if base_dir.exists():
-                matches = list(base_dir.glob(f"*/{clean_exp}/config.yaml"))
-                if matches:
-                    return self._load_yaml(matches[0])
-                matches_nested = list(base_dir.glob(f"*/{clean_exp}/*/config.yaml"))
-                if matches_nested:
-                    return self._load_yaml(matches_nested[0])
-
-        # 2. Fall back to parsing the experiment YAML
+        # 1. First find live experiment YAML candidates
         candidates = []
         if exp_config_name:
             clean_base = Path(exp_config_name).stem
@@ -148,11 +138,35 @@ class BasePlotter:
             Path(f"in/config/experiment/{clean_exp}.yaml"),
         ])
         candidates.extend(list(Path("in/config/experiment").glob(f"**/{clean_exp}.yaml")))
-        
+
+        live_cfg = {}
         for cand in candidates:
             if cand.exists():
                 raw = self._load_yaml(cand)
-                return self._resolve_config_defaults(raw)
+                live_cfg = self._resolve_config_defaults(raw)
+                break
+
+        # 2. Check saved config.yaml from the experiment's log or checkpoint directory
+        saved_cfg = {}
+        for base_dir in [Path("results/logs"), Path("results/checkpoints")]:
+            if base_dir.exists():
+                matches = list(base_dir.glob(f"*/{clean_exp}/config.yaml"))
+                if matches:
+                    saved_cfg = self._load_yaml(matches[0])
+                    break
+                matches_nested = list(base_dir.glob(f"*/{clean_exp}/*/config.yaml"))
+                if matches_nested:
+                    saved_cfg = self._load_yaml(matches_nested[0])
+                    break
+
+        if live_cfg and saved_cfg:
+            merged = dict(saved_cfg)
+            merged.update(live_cfg)
+            return merged
+        elif live_cfg:
+            return live_cfg
+        elif saved_cfg:
+            return saved_cfg
 
         return {}
 
