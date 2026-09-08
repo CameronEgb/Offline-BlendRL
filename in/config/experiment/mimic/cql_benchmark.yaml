@@ -15,12 +15,10 @@ offline_methods:
   # Pure Neural Baselines
   - cql/dnn
   - cql/dueling_resnet
-  - cql/transformer
   # Value-Based BlendRL Hybrids (Q-Blending)
   - cql/blendrl_human_rigid
   - cql/blendrl_human_dueling_resnet_rigid
   - cql/blendrl_cew_dueling_resnet
-  - cql/blendrl_cross_attention
 
 agent:
   epochs_per_interval: 25
