@@ -49,12 +49,15 @@ class StandardMLP(nn.Module):
         has_sigmoid=False,
         out_size=2,
         logic=False,
+        num_in_features=None,
         **kwargs,
     ):
         super().__init__()
         self.device = device if device is not None else torch.device("cpu")
         self.logic = logic
-        self.num_in_features = 46
+        if num_in_features is None:
+            raise ValueError("StandardMLP requires 'num_in_features' matching the observation space dimension.")
+        self.num_in_features = int(num_in_features)
         self.out_size = out_size
 
         if hidden_sizes is None or len(hidden_sizes) == 0:
@@ -145,12 +148,16 @@ class DuelingResNetMLP(nn.Module):
         logic=False,
         use_dueling=True,
         dropout=0.05,
+        num_in_features=None,
+        **kwargs,
     ):
         super().__init__()
         self.device = device if device is not None else torch.device("cpu")
         self.logic = logic
         self.use_dueling = use_dueling
-        self.num_in_features = 46
+        if num_in_features is None:
+            raise ValueError("DuelingResNetMLP requires 'num_in_features' matching the observation space dimension.")
+        self.num_in_features = int(num_in_features)
 
         if hidden_sizes is None or len(hidden_sizes) == 0:
             hidden_sizes = [512, 512, 256, 128]

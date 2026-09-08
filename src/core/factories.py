@@ -6,48 +6,57 @@ from nsfr.utils.common import load_module
 from collections import OrderedDict
 from src.models.architectures import CNNActor, NeuralBlenderActor, NeuralBlenderMLP
 
+def _safe_instantiate(module_class, **kwargs):
+    import inspect
+    sig = inspect.signature(module_class.__init__)
+    has_var_keyword = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+    if has_var_keyword:
+        return module_class(**kwargs)
+    valid_kwargs = {k: v for k, v in kwargs.items() if k in sig.parameters}
+    return module_class(**valid_kwargs)
+
 def get_neural_agent(env_name, n_actions, device, arch_name=None, hidden_sizes=[64, 64], num_in_features=None, **kwargs):
+    if num_in_features is None:
+        from blendrl.env_vectorized import VectorizedNudgeBaseEnv
+        try:
+            temp_env = VectorizedNudgeBaseEnv.from_name(env_name, n_envs=1, mode="eval")
+            _, dummy_neural = temp_env.reset()
+            num_in_features = dummy_neural.shape[-1]
+            temp_env.close()
+        except Exception:
+            pass
+
     if arch_name in ["cross_attention", "cross_attention_transformer", "sepsis_cross_attention"]:
         transformer_module_path = f"in/envs/{env_name}/transformer.py"
         if not os.path.exists(transformer_module_path):
             raise FileNotFoundError(f"Requested transformer architecture but {transformer_module_path} does not exist.")
         module = load_module(transformer_module_path)
-        if hasattr(module, "CrossAttentionPolicy"):
-            return module.CrossAttentionPolicy(device=device, out_size=n_actions, num_in_features=num_in_features).to(device)
-        return module.CrossAttentionSepsisPolicy(device=device, out_size=n_actions, num_in_features=num_in_features).to(device)
+        cls = getattr(module, "CrossAttentionPolicy", None) or getattr(module, "CrossAttentionSepsisPolicy")
+        return _safe_instantiate(cls, device=device, out_size=n_actions, num_in_features=num_in_features, **kwargs).to(device)
 
     if arch_name in ["transformer", "sepsis_transformer"]:
         transformer_module_path = f"in/envs/{env_name}/transformer.py"
         if not os.path.exists(transformer_module_path):
             raise FileNotFoundError(f"Requested transformer architecture but {transformer_module_path} does not exist.")
         module = load_module(transformer_module_path)
-        if hasattr(module, "TransformerPolicy"):
-            return module.TransformerPolicy(device=device, out_size=n_actions, num_in_features=num_in_features).to(device)
-        return module.SepsisTransformerPolicy(device=device, out_size=n_actions, num_in_features=num_in_features).to(device)
+        cls = getattr(module, "TransformerPolicy", None) or getattr(module, "SepsisTransformerPolicy")
+        return _safe_instantiate(cls, device=device, out_size=n_actions, num_in_features=num_in_features, **kwargs).to(device)
 
     if arch_name in ["dueling_resnet", "resnet"]:
         mlp_module_path = f"in/envs/{env_name}/mlp.py"
         if not os.path.exists(mlp_module_path):
             raise FileNotFoundError(f"Requested resnet architecture but {mlp_module_path} does not exist.")
         module = load_module(mlp_module_path)
-        if hasattr(module, "DuelingResNetMLP"):
-            return module.DuelingResNetMLP(device=device, out_size=n_actions, hidden_sizes=hidden_sizes, num_in_features=num_in_features).to(device)
-        return module.MLP(device=device, out_size=n_actions, hidden_sizes=hidden_sizes, num_in_features=num_in_features).to(device)
-
-    def _safe_instantiate(module_class, **kwargs):
-        import inspect
-        sig = inspect.signature(module_class.__init__)
-        valid_kwargs = {k: v for k, v in kwargs.items() if k in sig.parameters}
-        return module_class(**valid_kwargs)
+        cls = getattr(module, "DuelingResNetMLP", None) or getattr(module, "MLP")
+        return _safe_instantiate(cls, device=device, out_size=n_actions, hidden_sizes=hidden_sizes, num_in_features=num_in_features, **kwargs).to(device)
 
     if arch_name in ["mlp", "dnn", "standard_mlp"]:
         mlp_module_path = f"in/envs/{env_name}/mlp.py"
         if not os.path.exists(mlp_module_path):
             raise FileNotFoundError(f"Requested MLP architecture but {mlp_module_path} does not exist.")
         module = load_module(mlp_module_path)
-        if hasattr(module, "StandardMLP"):
-            return _safe_instantiate(module.StandardMLP, device=device, out_size=n_actions, hidden_sizes=hidden_sizes, num_in_features=num_in_features).to(device)
-        return _safe_instantiate(module.MLP, device=device, out_size=n_actions, hidden_sizes=hidden_sizes, num_in_features=num_in_features).to(device)
+        cls = getattr(module, "StandardMLP", None) or getattr(module, "MLP")
+        return _safe_instantiate(cls, device=device, out_size=n_actions, hidden_sizes=hidden_sizes, num_in_features=num_in_features, **kwargs).to(device)
     
     if arch_name == "cnn":
         return CNNActor(n_actions=n_actions).to(device)
