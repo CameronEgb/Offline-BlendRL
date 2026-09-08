@@ -130,7 +130,7 @@ Priority: CLI flags > experiment `resources:` > site config > hardcoded fallback
 - **Verification:** Ensure `run_pipeline.py` orchestration is never broken and that `src/train.py` remains compatible with Hydra.
 
 ## 7. Unified Logging & Reproducibility
-- **Dual Loggers:** The project uses `CSVLogger` for data analysis and `TensorBoardLogger` for real-time monitoring.
+- **Unified Logging:** The project uses `CSVLogger` (`metrics.csv`) as the foundational logger for all analysis, plotting, and status auditing. `TensorBoardLogger` is optional and disabled by default (enabled only when `tensorboard: true` is configured).
 - **Metrics Source:** `results/logs/[GROUP]/[EXP_ID]/[AGENT]/version_X/metrics.csv` is the foundational file for all plotting.
 - **Alignment Metric:** The `transitions` column is the universal x-axis. It ensures that Online (PPO) and Offline (IQL/BlendRL) agents are compared at the exact same data exposure levels.
 - **Reproducibility Metadata (`src/core/metadata.py`):** Every training run automatically captures:
@@ -204,7 +204,7 @@ Agents are implemented as PyTorch Lightning Modules in `src/methods/`:
 - **Results:** Per-round checkpoints in `results/checkpoints/[GROUP]/[EXP_ID]/roundN/`, convergence log in `results/plots/[GROUP]/[EXP_ID]/convergence_log.json`.
 
 ## 16. Command & Workflow Reference
-For detailed instructions, Optuna hyperparameter tuning, plot style specs, custom agent implementation steps, and cluster workflow tutorials, refer to [`docs/WORKFLOW_GUIDE.md`](file:///Users/cameronegbert/Documents/NCSU/Research/NeSyRL/docs/WORKFLOW_GUIDE.md).
+For detailed instructions, Optuna hyperparameter tuning, plot style specs, custom agent implementation steps, and cluster workflow tutorials, refer to [`docs/WORKFLOW_GUIDE.md`](file:///Users/cameronegbert/Research/NeSyRL/docs/WORKFLOW_GUIDE.md).
 
 ---
 *Last Updated: 2026-08-27*

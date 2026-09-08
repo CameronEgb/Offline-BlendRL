@@ -66,13 +66,15 @@ class StandaloneProblemPolicy(torch.nn.Module):
         if self.is_modular:
             logic_obs = obs_133.unsqueeze(1).repeat(1, 2, 1)
             probs, _ = self.actor(obs_133, logic_obs)
-            return probs
         elif hasattr(self, "q_network"):
             q = self.q_network(obs_133)
-            return torch.softmax(q, dim=-1)
+            probs = torch.softmax(q, dim=-1)
         else:
             q = self.model.get_q_values(obs_133)
-            return torch.softmax(q, dim=-1)
+            probs = torch.softmax(q, dim=-1)
+
+        # Align NeSyRL actions [0: PS, 1: WE, 2: FWE] -> Pyrenees native [0: problem, 1: step_decision, 2: example]
+        return torch.stack([probs[:, 0], probs[:, 2], probs[:, 1]], dim=-1)
 
 
 class StandaloneStepPolicy(torch.nn.Module):
@@ -92,19 +94,21 @@ class StandaloneStepPolicy(torch.nn.Module):
             obs = obs.unsqueeze(0)
         obs_123 = obs[:, :123]
         B = obs_123.shape[0]
-        pad = torch.zeros((B, 3), dtype=obs_123.dtype, device=obs_123.device)
-        obs_126 = torch.cat([obs_123, pad], dim=-1)
+        pad = torch.zeros((B, 10), dtype=obs_123.dtype, device=obs_123.device)
+        obs_133 = torch.cat([obs_123, pad], dim=-1)
 
         if self.is_modular:
-            logic_obs = obs_126.unsqueeze(1).repeat(1, 2, 1)
-            probs, _ = self.actor(obs_126, logic_obs)
-            return probs
+            logic_obs = obs_133.unsqueeze(1).repeat(1, 2, 1)
+            probs, _ = self.actor(obs_133, logic_obs)
         elif hasattr(self, "q_network"):
-            q = self.q_network(obs_126)
-            return torch.softmax(q, dim=-1)
+            q = self.q_network(obs_133)
+            probs = torch.softmax(q, dim=-1)
         else:
-            q = self.model.get_q_values(obs_126)
-            return torch.softmax(q, dim=-1)
+            q = self.model.get_q_values(obs_133)
+            probs = torch.softmax(q, dim=-1)
+
+        # Align Step actions: [0: PS/elicit, 1: WE/tell]
+        return probs[:, :2]
 
 
 def find_checkpoint(problem_id: str, ckpt_root: Path = None) -> Path:
@@ -115,6 +119,7 @@ def find_checkpoint(problem_id: str, ckpt_root: Path = None) -> Path:
     if ckpt_root:
         search_roots.append(ckpt_root)
     search_roots.extend([
+        PROJECT_ROOT / "results" / "checkpoints" / "pyrenees" / "final",
         PROJECT_ROOT / "results" / "checkpoints" / "pyrenees" / "tune_pyrenees_3way",
         PROJECT_ROOT / "results" / "checkpoints" / "pyrenees" / "tune_pyrenees_blendrl_resnet",
         PROJECT_ROOT / "results" / "checkpoints" / "pyrenees" / "pyrenees_scaled",
@@ -126,13 +131,18 @@ def find_checkpoint(problem_id: str, ckpt_root: Path = None) -> Path:
         if not root.exists():
             continue
         for aid in alt_ids:
-            # 1. Direct filename match (e.g. cql_blendrl_human_neural_ex132_w.ckpt or ex132(w).ckpt)
-            for p in root.rglob("*.ckpt"):
+            # 1. Prefer BlendRL model
+            for p in sorted(root.rglob("cql_blendrl_human_neural_*.ckpt")):
                 stem = p.stem
                 if stem.endswith(f"_{aid}") or stem == aid or f"_{aid}" in stem:
                     return p
-            # 2. Directory match (e.g. cql_blendrl_human_neural_ex132_w/best_model.ckpt)
-            for p in root.rglob("best_model*.ckpt"):
+            # 2. General ckpt match
+            for p in sorted(root.rglob("*.ckpt")):
+                stem = p.stem
+                if stem.endswith(f"_{aid}") or stem == aid or f"_{aid}" in stem:
+                    return p
+            # 3. Directory match (e.g. cql_blendrl_human_neural_ex132_w/best_model.ckpt)
+            for p in sorted(root.rglob("best_model*.ckpt")):
                 parent_name = p.parent.parent.name if p.parent.name in ("0", "1", "2", "3", "4", "5") else p.parent.name
                 if parent_name.endswith(f"_{aid}") or parent_name == aid or f"/{aid}/" in str(p):
                     return p
@@ -142,7 +152,7 @@ def find_checkpoint(problem_id: str, ckpt_root: Path = None) -> Path:
 
 def export_all_models(output_dir: Path = None, ckpt_root: Path = None):
     if output_dir is None:
-        output_dir = Path("/Users/cameronegbert/Documents/NCSU/Research/Pyrenees/Pyrenees-python/app/models/policies/Blend-RL")
+        output_dir = Path("/Users/cameronegbert/Research/Pyrenees/Pyrenees-python/app/models/policies/Blend-RL")
 
     onnx_dir = output_dir / "onnx"
     minmax_dir = output_dir / "minmax"
@@ -193,39 +203,46 @@ def export_all_models(output_dir: Path = None, ckpt_root: Path = None):
 
         print(f"  [{problem_id}] Loading checkpoint: {ckpt_file.name} (In: {n_in}, Out: {n_out})")
         
-        # Load agent
-        orig_prob = os.environ.get("PYRENEES_PROBLEM_TYPE", None)
-        os.environ["PYRENEES_PROBLEM_TYPE"] = problem_id
-        try:
-            agent = CQLAgent.load_from_checkpoint(str(ckpt_file), map_location="cpu", weights_only=False)
-            agent.eval()
+        # Load agent and setup GMM cache
+        gmm_path = PROJECT_ROOT / "in" / "datasets" / "pyrenees" / "per_problem" / problem_id / "gmm_scaler.npz"
+        if not gmm_path.exists():
+            gmm_path = PROJECT_ROOT / "in" / "datasets" / "pyrenees" / "pyrenees_gmm_scaler.npz"
+        if gmm_path.exists():
+            os.environ["PYRENEES_GMM_PATH"] = str(gmm_path.resolve())
+            try:
+                import importlib
+                val = importlib.import_module("in.envs.pyrenees.valuation")
+                val._GMM_PARAMS_CACHE.clear()
+                val._GMM_TENSOR_CACHE.clear()
+            except Exception:
+                pass
 
-            if is_problem_level:
-                policy_wrapper = StandaloneProblemPolicy(agent)
-            else:
-                policy_wrapper = StandaloneStepPolicy(agent)
-            policy_wrapper.eval()
+        agent = CQLAgent.load_from_checkpoint(str(ckpt_file), map_location="cpu", weights_only=False)
+        agent.eval()
 
-            # Export ONNX
-            out_onnx_file = onnx_dir / f"{problem_id}.onnx"
-            dummy_input = torch.zeros((1, n_in), dtype=torch.float32)
+        if is_problem_level:
+            policy_wrapper = StandaloneProblemPolicy(agent)
+        else:
+            policy_wrapper = StandaloneStepPolicy(agent)
+        policy_wrapper.eval()
 
-            torch.onnx.export(
-                policy_wrapper,
-                dummy_input,
-                str(out_onnx_file),
-                input_names=["input_0"],
-                output_names=["output_0"],
-                dynamic_axes={"input_0": {0: "batch", 1: "features"}, "output_0": {0: "batch"}},
-                opset_version=14,
-                dynamo=False,
-            )
+        # Export ONNX
+        out_onnx_file = onnx_dir / f"{problem_id}.onnx"
+        dummy_input = torch.zeros((1, n_in), dtype=torch.float32)
 
-            print(f"  ✅ Exported {problem_id:12s} -> ONNX: {out_onnx_file.name}, Scaler: {out_scaler_file.name}")
-            exported_count += 1
-        finally:
-            if orig_prob is not None:
-                os.environ["PYRENEES_PROBLEM_TYPE"] = orig_prob
+        torch.onnx.export(
+            policy_wrapper,
+            dummy_input,
+            str(out_onnx_file),
+            input_names=["input_0"],
+            output_names=["output_0"],
+            dynamic_axes={"input_0": {0: "batch", 1: "features"}, "output_0": {0: "batch"}},
+            opset_version=14,
+            dynamo=False,
+        )
+
+        print(f"  ✅ Exported {problem_id:12s} -> ONNX: {out_onnx_file.name}, Scaler: {out_scaler_file.name}")
+        exported_count += 1
 
     print("=" * 75)
     print(f"  Export Complete: {exported_count} / {len(ALL_PROBLEMS)} models exported.")
@@ -233,7 +250,7 @@ def export_all_models(output_dir: Path = None, ckpt_root: Path = None):
 
 
 def run_verification_tests():
-    tutor_dir = Path("/Users/cameronegbert/Documents/NCSU/Research/Pyrenees/Pyrenees-python")
+    tutor_dir = Path("/Users/cameronegbert/Research/Pyrenees/Pyrenees-python")
     if not tutor_dir.exists():
         print(f"Tutor directory {tutor_dir} not found; skipping verification.")
         return
@@ -250,10 +267,20 @@ def run_verification_tests():
     env["PYTHONPATH"] = f"{tutor_dir}:{tutor_dir}/app:{PROJECT_ROOT}:{PROJECT_ROOT}/src:" + env.get("PYTHONPATH", "")
     
     python_bin = sys.executable
-    if (PROJECT_ROOT / "venv" / "bin" / "python").exists():
+    if Path("/opt/anaconda3/bin/python").exists():
+        python_bin = "/opt/anaconda3/bin/python"
+    elif (PROJECT_ROOT / "venv" / "bin" / "python").exists():
         python_bin = str(PROJECT_ROOT / "venv" / "bin" / "python")
 
-    cmd = [python_bin, "-m", "unittest", "app/blendrl_policy_test.py"]
+    test_cmd = (
+        "import sys, unittest; "
+        "sys.path.insert(0, 'app'); "
+        "from blendrl_policy_test import TestBlendRLPolicy; "
+        "suite = unittest.TestLoader().loadTestsFromTestCase(TestBlendRLPolicy); "
+        "res = unittest.TextTestRunner(verbosity=2).run(suite); "
+        "sys.exit(0 if res.wasSuccessful() else 1)"
+    )
+    cmd = [python_bin, "-c", test_cmd]
     res = subprocess.run(cmd, cwd=str(tutor_dir), env=env)
     if res.returncode == 0:
         print("\n✅ ALL PYRENEES BLENDRL UNIT TESTS PASSED!")

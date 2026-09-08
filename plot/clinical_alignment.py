@@ -8,9 +8,8 @@ septic shock outcomes in ICU time-series trajectories.
 Outputs:
   - Clinical action alignment: precision, recall, F1, windowed F1, AUC-ROC, AUPRC
   - Septic shock outcome analysis across clinician agreement deciles
-  - Visual figures: clinical_agreement.png, clinician_agreement_vs_shock.png,
-    auc_comparison.png, pr_curves.png
-  - Markdown summary: clinical_alignment_report.md
+  - Visual figures: clinician_agreement_vs_shock.png, clinical_agreement.png (opt-in)
+  - Tabular metrics: method_comparison.csv
 """
 
 import os
@@ -335,43 +334,53 @@ class ClinicalAlignmentPlotter(BasePlotter):
         df.to_csv(csv_path, index=False)
         print(f"  Saved MIMIC method comparison: {csv_path}")
 
-        # 1. Clinician Agreement % Bar Chart
-        fig, ax = plt.subplots(figsize=(max(8, len(results) * 1.8), 5.5))
-        methods = [r["Method"] for r in results]
-        accuracies = [r["Accuracy %"] for r in results]
+        # 1. Clinician Agreement % Bar Chart (Opt-in only, excluded from defaults)
+        requested_plots = cfg.get("plots", [])
+        if isinstance(requested_plots, dict):
+            requested_plots = list(requested_plots.keys())
+        elif isinstance(requested_plots, (list, tuple)):
+            requested_plots = [str(p).lower() for p in requested_plots]
+        else:
+            requested_plots = []
 
-        bar_colors = []
-        for r in results:
-            m_name = r["Method"]
-            if "Clinician" in m_name:
-                bar_colors.append("#7f7f7f")
-            else:
-                style = get_method_style(m_name)
-                bar_colors.append(style.get("color") or "tab:blue")
+        if any(k in requested_plots for k in ["clinical_agreement", "agreement_bar", "agreement"]):
+            fig, ax = plt.subplots(figsize=(max(8, len(results) * 1.8), 5.5))
+            methods = [r["Method"] for r in results]
+            accuracies = [r["Accuracy %"] for r in results]
 
-        bars = ax.bar(methods, accuracies, color=bar_colors, width=0.55, edgecolor="#333333", linewidth=1.0, alpha=0.85)
-        ax.set_ylabel("Clinician Agreement (%)", fontsize=12, fontweight="bold")
-        ax.set_title(f"MIMIC Treatment Action Agreement ({clean_exp})", fontsize=13, fontweight="bold")
-        ax.set_ylim(0, 110)
-        ax.grid(True, axis="y", linestyle="--", alpha=0.4)
-        plt.xticks(rotation=15, ha="right", fontsize=10, fontweight="bold")
+            bar_colors = []
+            for r in results:
+                m_name = r["Method"]
+                if "Clinician" in m_name:
+                    bar_colors.append("#7f7f7f")
+                else:
+                    style = get_method_style(m_name)
+                    bar_colors.append(style.get("color") or "tab:blue")
 
-        for bar in bars:
-            height = bar.get_height()
-            ax.annotate(f"{height:.1f}%",
-                        xy=(bar.get_x() + bar.get_width() / 2, height),
-                        xytext=(0, 4),
-                        textcoords="offset points",
-                        ha="center", va="bottom", fontsize=10, fontweight="bold")
+            bars = ax.bar(methods, accuracies, color=bar_colors, width=0.55, edgecolor="#333333", linewidth=1.0, alpha=0.85)
+            ax.set_ylabel("Clinician Agreement (%)", fontsize=12, fontweight="bold")
+            ax.set_title(f"MIMIC Treatment Action Agreement ({clean_exp})", fontsize=13, fontweight="bold")
+            ax.set_ylim(0, 110)
+            ax.grid(True, axis="y", linestyle="--", alpha=0.4)
+            plt.xticks(rotation=15, ha="right", fontsize=10, fontweight="bold")
 
-        fig.tight_layout()
-        plot_path = output_dir / "clinical_agreement.png"
-        plt.savefig(plot_path, dpi=200)
-        plt.close()
-        print(f"  Saved: {plot_path}")
+            for bar in bars:
+                height = bar.get_height()
+                ax.annotate(f"{height:.1f}%",
+                            xy=(bar.get_x() + bar.get_width() / 2, height),
+                            xytext=(0, 4),
+                            textcoords="offset points",
+                            ha="center", va="bottom", fontsize=10, fontweight="bold")
+
+            fig.tight_layout()
+            plot_path = output_dir / "clinical_agreement.png"
+            plt.savefig(plot_path, dpi=200)
+            plt.close()
+            print(f"  Saved: {plot_path}")
 
         # 2. Clinician Agreement vs Septic Shock Outcome Analysis
-        if patient_agreements and len(outcomes) == len(next(iter(patient_agreements.values()))):
+        should_plot_shock = (not requested_plots) or any(k in requested_plots for k in ["agreement_vs_shock", "agreement_vs_shock_deciles", "shock"])
+        if should_plot_shock and patient_agreements and len(outcomes) == len(next(iter(patient_agreements.values()))):
             fig, ax = plt.subplots(figsize=(10, 6))
             for m_name, p_agr in patient_agreements.items():
                 style = get_method_style(m_name)
@@ -403,13 +412,6 @@ class ClinicalAlignmentPlotter(BasePlotter):
             plt.close()
             print(f"  Saved: {shock_plot_path}")
 
-        # 3. Save Summary Markdown Report
-        report_path = output_dir / "clinical_alignment_report.md"
-        with open(report_path, "w") as f:
-            f.write(f"# MIMIC Clinical Policy Alignment Report: `{clean_exp}`\n\n")
-            f.write(pd.DataFrame(results).to_markdown(index=False))
-            f.write("\n\n---\n*Auto-generated by NeSyRL Pipeline*\n")
-        print(f"  Saved Markdown Report:     {report_path}")
         print("==========================================================================================\n")
 
 

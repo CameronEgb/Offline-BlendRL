@@ -71,11 +71,19 @@ def infer_dynamic_timesteps(cfg):
 
 def setup_loggers(cfg, base_root):
     log_dir = os.path.join(base_root, "results/logs", cfg.group, cfg.experiment_id)
-    tb_dir = os.path.join(base_root, "results/tensorboard", cfg.group, cfg.experiment_id)
     loggers = [CSVLogger(log_dir, name=cfg.agent.name)]
-    tb_logger = TensorBoardLogger(tb_dir, name=cfg.agent.name, default_hp_metric=False)
-    _ = tb_logger.experiment
-    loggers.append(tb_logger)
+    
+    use_tb = False
+    if "tensorboard" in cfg:
+        use_tb = bool(cfg.tensorboard)
+    elif "agent" in cfg and hasattr(cfg.agent, "get") and cfg.agent.get("tensorboard", False):
+        use_tb = bool(cfg.agent.tensorboard)
+
+    if use_tb:
+        tb_dir = os.path.join(base_root, "results/tensorboard", cfg.group, cfg.experiment_id)
+        tb_logger = TensorBoardLogger(tb_dir, name=cfg.agent.name, default_hp_metric=False)
+        _ = tb_logger.experiment
+        loggers.append(tb_logger)
     return loggers
 
 def build_trainer(cfg, model=None):

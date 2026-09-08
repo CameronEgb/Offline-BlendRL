@@ -1,7 +1,7 @@
 # Handoff Guide 2: Multi-Model (11-Problem) BlendRL Training & Deployment Pipeline
 
 ## Executive Summary
-This document provides the complete technical specification to train **11 separate, specialized BlendRL models** in `/Users/cameronegbert/Documents/NCSU/Research/NeSyRL` (1 problem-level model + 10 exercise-level step models) and export them as drop-in replacements into `Pyrenees-python/app/models/policies/Blend-RL/`.
+This document provides the complete technical specification to train **11 separate, specialized BlendRL models** in `/Users/cameronegbert/Research/NeSyRL` (1 problem-level model + 10 exercise-level step models) and export them as drop-in replacements into `Pyrenees-python/app/models/policies/Blend-RL/`.
 
 ---
 
@@ -58,7 +58,7 @@ graph TD
 ## 3. Implementation Blueprint
 
 ### Script 1: Dataset Partitioning
-Create [`/Users/cameronegbert/Documents/NCSU/Research/NeSyRL/scripts/preprocess_pyrenees_per_problem.py`](file:///Users/cameronegbert/Documents/NCSU/Research/NeSyRL/scripts/preprocess_pyrenees_per_problem.py):
+Create [`/Users/cameronegbert/Research/NeSyRL/scripts/preprocess_pyrenees_per_problem.py`](file:///Users/cameronegbert/Research/NeSyRL/scripts/preprocess_pyrenees_per_problem.py):
 - Iterates over each CSV in `in/datasets/pyrenees/Pyrenees data clean/`.
 - For `problem.csv`:
   - Extracts 130 state features, actions `0, 1, 2`.
@@ -72,7 +72,7 @@ Create [`/Users/cameronegbert/Documents/NCSU/Research/NeSyRL/scripts/preprocess_
   - `gmm_scaler.npz` (contains GMM means, precisions, weights)
 
 ### Script 2: Multi-Model Training Orchestrator
-Create [`/Users/cameronegbert/Documents/NCSU/Research/NeSyRL/scripts/train_pyrenees_all_problems.py`](file:///Users/cameronegbert/Documents/NCSU/Research/NeSyRL/scripts/train_pyrenees_all_problems.py):
+Create [`/Users/cameronegbert/Research/NeSyRL/scripts/train_pyrenees_all_problems.py`](file:///Users/cameronegbert/Research/NeSyRL/scripts/train_pyrenees_all_problems.py):
 - Iterates through all 11 problem types.
 - Configures:
   - `num_in_features`: 130 for `problem`, 123 for exercises.
@@ -81,7 +81,7 @@ Create [`/Users/cameronegbert/Documents/NCSU/Research/NeSyRL/scripts/train_pyren
 - Saves 11 checkpoints to `results/checkpoints/pyrenees/per_problem/{problem_id}/best_model.ckpt`.
 
 ### Script 3: Batch Export to Pyrenees ITS
-Create [`/Users/cameronegbert/Documents/NCSU/Research/NeSyRL/scripts/export_pyrenees_per_problem.py`](file:///Users/cameronegbert/Documents/NCSU/Research/NeSyRL/scripts/export_pyrenees_per_problem.py):
+Create [`/Users/cameronegbert/Research/NeSyRL/scripts/export_pyrenees_per_problem.py`](file:///Users/cameronegbert/Research/NeSyRL/scripts/export_pyrenees_per_problem.py):
 - Iterates over all 11 trained checkpoints.
 - For each problem:
   - Loads `best_model.ckpt`.
@@ -96,16 +96,16 @@ Create [`/Users/cameronegbert/Documents/NCSU/Research/NeSyRL/scripts/export_pyre
 
 ```bash
 # 1. Run Per-Problem Preprocessing in NeSyRL
-/Users/cameronegbert/Documents/NCSU/Research/NeSyRL/venv/bin/python /Users/cameronegbert/Documents/NCSU/Research/NeSyRL/scripts/preprocess_pyrenees_per_problem.py
+/Users/cameronegbert/Research/NeSyRL/venv/bin/python /Users/cameronegbert/Research/NeSyRL/scripts/preprocess_pyrenees_per_problem.py
 
 # 2. Run Multi-Problem Training
-/Users/cameronegbert/Documents/NCSU/Research/NeSyRL/venv/bin/python /Users/cameronegbert/Documents/NCSU/Research/NeSyRL/scripts/train_pyrenees_all_problems.py
+/Users/cameronegbert/Research/NeSyRL/venv/bin/python /Users/cameronegbert/Research/NeSyRL/scripts/train_pyrenees_all_problems.py
 
 # 3. Batch Export all 11 Models to Pyrenees ITS
-/Users/cameronegbert/Documents/NCSU/Research/NeSyRL/venv/bin/python /Users/cameronegbert/Documents/NCSU/Research/NeSyRL/scripts/export_pyrenees_per_problem.py
+/Users/cameronegbert/Research/NeSyRL/venv/bin/python /Users/cameronegbert/Research/NeSyRL/scripts/export_pyrenees_per_problem.py
 
 # 4. Verify in Pyrenees ITS
-cd /Users/cameronegbert/Documents/NCSU/Research/Pyrenees/Pyrenees-python
+cd /Users/cameronegbert/Research/Pyrenees/Pyrenees-python
 python -m unittest app/blendrl_policy_test.py
 ./run_all_unit_tests.sh
 ```

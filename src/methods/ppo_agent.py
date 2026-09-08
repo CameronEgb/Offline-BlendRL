@@ -155,9 +155,9 @@ class PPOAgent(BaseAgent):
                 else:
                     action, logprob, _, value = self.model.get_action_and_value(self.next_obs.to(self.device))
                     
-                self.values[step] = value.flatten().cpu()
-            self.actions[step] = action.cpu()
-            self.logprobs[step] = logprob.cpu()
+                self.values[step] = value.flatten()
+            self.actions[step] = action
+            self.logprobs[step] = logprob
 
             (next_logic, next_neural), reward, terminated, truncated, infos = self.env.step(action.cpu().numpy())
             
@@ -177,7 +177,7 @@ class PPOAgent(BaseAgent):
                     next_logic_obs=next_logic.cpu().numpy(),
                 )
 
-            self.rewards[step] = reward.view(-1).cpu()
+            self.rewards[step] = reward.view(-1)
             self.next_obs = next_neural
             self.next_logic_obs = next_logic
             self.next_terminated = terminated
@@ -190,9 +190,9 @@ class PPOAgent(BaseAgent):
                 next_value = self.model.get_value(
                     self.next_obs.to(self.device),
                     self.next_logic_obs.to(self.device)
-                ).reshape(1, -1).cpu()
+                ).reshape(1, -1)
             else:
-                next_value = self.model.get_value(self.next_obs.to(self.device)).reshape(1, -1).cpu()
+                next_value = self.model.get_value(self.next_obs.to(self.device)).reshape(1, -1)
                 
             advantages = torch.zeros_like(self.rewards)
             lastgaelam = 0

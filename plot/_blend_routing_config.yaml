@@ -1,0 +1,12 @@
+figsize: [12, 6]
+dpi: 200
+pure_logic_threshold: 0.90
+pure_neural_threshold: 0.90
+mixed_lower_threshold: 0.10
+
+style:
+  grid: true
+  grid_alpha: 0.3
+  logic_color: "#d95f02"   # Orange/Vermillion for Logic
+  neural_color: "#2b5c8f"  # Blue/Navy for Neural
+  mixed_color: "#7570b3"   # Purple for Mixed/Blended

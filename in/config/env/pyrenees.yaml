@@ -13,4 +13,4 @@ problem_type: pyrenees
 # 3 discrete actions: PS (0), WE (1), FWE (2)
 n_actions: 3
 
-default_plots: [losses, action_distribution, reports]
+default_plots: [losses, action_distribution, blend_authority, blend_handover, blend_state_space, blend_manifold, reports]

@@ -19,4 +19,4 @@ reward_shaping:
   ep_arch: null
   cql_ckpt_dir: null
 
-default_plots: [losses, clinical_alignment, reports]
+default_plots: [losses, clinical_alignment, clinical, reports]

@@ -1,0 +1,6 @@
+figsize: [9, 5]
+dpi: 300
+clinician_baseline: 1.51
+metrics:
+  - val/admin_rate
+  - val/q_mean
