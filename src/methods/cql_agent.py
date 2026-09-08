@@ -162,6 +162,25 @@ class CQLAgent(OfflineAgentBase):
         q_vals = self.get_q_values(obs, logic_obs)
         return q_vals.max(dim=-1)[0]
 
+    def setup(self, stage: Optional[str] = None):
+        super().setup(stage)
+        if self.is_modular and hasattr(self.model, "self_organize_cew_modules"):
+            has_cew = any(m_type == "cew" for m_type in getattr(self.model, "module_types", []))
+            if has_cew:
+                datamodule = getattr(self.trainer, "datamodule", None)
+                if datamodule is not None and hasattr(datamodule, "reader") and datamodule.reader is not None:
+                    sample_size = min(len(datamodule.reader), 10000)
+                    if sample_size > 0:
+                        batch = datamodule.reader.sample(sample_size)
+                        organize_obs = batch["obs"] if ("obs" in batch and batch["obs"] is not None) else batch.get("logic_obs")
+                        changed1 = self.model.self_organize_cew_modules(organize_obs)
+                        changed2 = False
+                        if hasattr(self, "target_model") and self.target_model is not None and hasattr(self.target_model, "self_organize_cew_modules"):
+                            changed2 = self.target_model.self_organize_cew_modules(organize_obs)
+                        if changed1 or changed2:
+                            if hasattr(self, "target_model") and self.target_model is not None:
+                                self.target_model.load_state_dict(self.model.state_dict())
+
     def on_train_start(self):
         if hasattr(self.trainer.datamodule, "reader") and self.trainer.datamodule.reader is not None:
             self.trainer.datamodule.reader.device = self.device
@@ -170,21 +189,27 @@ class CQLAgent(OfflineAgentBase):
 
     def on_train_epoch_start(self):
         super().on_train_epoch_start()
-        if self.is_modular:
-            datamodule = self.trainer.datamodule
-            if hasattr(datamodule, "reader") and datamodule.reader is not None:
-                epochs_per_interval = self.get_cfg("epochs_per_interval", 1)
-                if self.current_epoch % epochs_per_interval == 0:
-                    sample_size = min(len(datamodule.reader), 10000)
-                    if sample_size > 0:
-                        batch = datamodule.reader.sample(sample_size)
-                        organize_obs = batch["logic_obs"] if batch["logic_obs"] is not None else batch["obs"]
-                        changed1 = self.model.self_organize_cew_modules(organize_obs)
-                        changed2 = self.target_model.self_organize_cew_modules(organize_obs)
-                        if changed1 or changed2:
-                            self.target_model.load_state_dict(self.model.state_dict())
-                            lr = self.get_cfg("lr", 3e-4)
-                            self.opt = optim.Adam(self.model.parameters(), lr=lr)
+        if self.is_modular and hasattr(self.model, "self_organize_cew_modules"):
+            has_cew = any(m_type == "cew" for m_type in getattr(self.model, "module_types", []))
+            if has_cew:
+                datamodule = getattr(self.trainer, "datamodule", None)
+                if datamodule is not None and hasattr(datamodule, "reader") and datamodule.reader is not None:
+                    epochs_per_interval = self.get_cfg("epochs_per_interval", 1)
+                    if self.current_epoch > 0 and self.current_epoch % epochs_per_interval == 0:
+                        sample_size = min(len(datamodule.reader), 10000)
+                        if sample_size > 0:
+                            batch = datamodule.reader.sample(sample_size)
+                            organize_obs = batch["obs"] if ("obs" in batch and batch["obs"] is not None) else batch.get("logic_obs")
+                            changed1 = self.model.self_organize_cew_modules(organize_obs)
+                            changed2 = False
+                            if hasattr(self, "target_model") and self.target_model is not None and hasattr(self.target_model, "self_organize_cew_modules"):
+                                changed2 = self.target_model.self_organize_cew_modules(organize_obs)
+                            if changed1 or changed2:
+                                if hasattr(self, "target_model") and self.target_model is not None:
+                                    self.target_model.load_state_dict(self.model.state_dict())
+                                new_opt = self.configure_optimizers()
+                                if hasattr(self.trainer, "strategy") and hasattr(self.trainer.strategy, "optimizers") and len(self.trainer.strategy.optimizers) > 0:
+                                    self.trainer.strategy.optimizers[0] = new_opt
 
     def training_step(self, batch, batch_idx):
         datamodule = getattr(self.trainer, "datamodule", None)
@@ -481,9 +506,12 @@ class CQLAgent(OfflineAgentBase):
                     if f"{prefix}flcs.0.links" in sd:
                         new_m = MultiFLC.from_state_dict_shapes(prefix, sd, self.n_actions)
                         self.model.policy_modules[i] = new_m
-                        self.model.actor.policy_modules[i] = new_m
+                        if hasattr(self.model, "actor") and hasattr(self.model.actor, "policy_modules"):
+                            self.model.actor.policy_modules[i] = new_m
                         
                         target_prefix = f"target_model.policy_modules.{i}."
-                        new_target = MultiFLC.from_state_dict_shapes(target_prefix, sd, self.n_actions)
-                        self.target_model.policy_modules[i] = new_target
-                        self.target_model.actor.policy_modules[i] = new_target
+                        if hasattr(self, "target_model") and self.target_model is not None and f"{target_prefix}flcs.0.links" in sd:
+                            new_target = MultiFLC.from_state_dict_shapes(target_prefix, sd, self.n_actions)
+                            self.target_model.policy_modules[i] = new_target
+                            if hasattr(self.target_model, "actor") and hasattr(self.target_model.actor, "policy_modules"):
+                                self.target_model.actor.policy_modules[i] = new_target

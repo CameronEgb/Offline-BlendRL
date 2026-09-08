@@ -250,10 +250,10 @@ class FLC(nn.Module):
             self.consequences = Parameter(torch.tensor(consequences, dtype=torch.float32))
             
     @classmethod
-    def from_shapes(cls, transformed_len, n_rules, out_features=1):
+    def from_shapes(cls, transformed_len, n_rules, out_features=1, in_features=None):
         flc = cls.__new__(cls)
         super(FLC, flc).__init__()
-        flc.in_features = transformed_len
+        flc.in_features = in_features if in_features is not None else transformed_len
         flc.out_features = out_features
         flc.transformed_len = transformed_len
         flc.input_variable_ids = []
@@ -326,13 +326,19 @@ class MultiFLC(nn.Module):
             flc_prefix = f"{prefix}flcs.{out_idx}."
             links_key = f"{flc_prefix}links"
             cons_key = f"{flc_prefix}consequences"
+            feature_map_key = f"{flc_prefix}feature_map"
             if links_key in state_dict and cons_key in state_dict:
                 transformed_len = state_dict[links_key].shape[0]
                 n_rules = state_dict[links_key].shape[1]
                 out_features = state_dict[cons_key].shape[1]
-                flcs_list.append(FLC.from_shapes(transformed_len, n_rules, out_features))
+                in_features = (
+                    int(state_dict[feature_map_key].max().item()) + 1
+                    if feature_map_key in state_dict and len(state_dict[feature_map_key]) > 0
+                    else transformed_len
+                )
+                flcs_list.append(FLC.from_shapes(transformed_len, n_rules, out_features, in_features=in_features))
         mflc.flcs = nn.ModuleList(flcs_list)
-        mflc.n_inputs = flcs_list[0].transformed_len if flcs_list else 0
+        mflc.n_inputs = flcs_list[0].in_features if flcs_list else 0
         return mflc
 
     def forward(self, X):

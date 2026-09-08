@@ -151,8 +151,11 @@ class BlenderActor(nn.Module):
             m_type = self.module_types[i]
             if m_type == "neural":
                 probs = module.get_action_probs(neural_state)
+            elif m_type == "cew":
+                cew_inp = neural_state if (neural_state.ndim == 2 and hasattr(module, "n_inputs") and neural_state.shape[1] == module.n_inputs) else (logic_state if logic_state is not None else neural_state)
+                probs = self._map_logic_output(module.get_action_probs(cew_inp), module)
             else:
-                # logic or cew
+                # logic
                 probs = self._map_logic_output(module.get_action_probs(logic_state), module)
             module_probs.append(probs)
             
@@ -191,7 +194,12 @@ class BlenderActor(nn.Module):
         
         action_probs = torch.zeros(logic_state.size(0), self.env.n_actions, device=logic_state.device)
         for i, module in enumerate(self.policy_modules):
-            if self.module_types[i] != "neural":
+            m_type = self.module_types[i]
+            if m_type == "cew":
+                cew_inp = dummy_neural if (dummy_neural.ndim == 2 and hasattr(module, "n_inputs") and dummy_neural.shape[1] == module.n_inputs) else (logic_state if logic_state is not None else dummy_neural)
+                probs = self._map_logic_output(module.get_action_probs(cew_inp), module)
+                action_probs += weights[:, i].unsqueeze(1) * probs
+            elif m_type != "neural":
                 probs = self._map_logic_output(module.get_action_probs(logic_state), module)
                 action_probs += weights[:, i].unsqueeze(1) * probs
             
@@ -292,12 +300,16 @@ class BlenderActor(nn.Module):
                         q = module(neural_state) # Assuming forward returns Q-values for Q-networks
                 else:
                     q = torch.zeros(batch_size, self.env.n_actions, device=neural_state.device)
+            elif m_type == "cew":
+                cew_inp = neural_state if (neural_state.ndim == 2 and hasattr(module, "n_inputs") and neural_state.shape[1] == module.n_inputs) else (logic_state if logic_state is not None else neural_state)
+                if hasattr(module, "get_q_values"):
+                    q = module.get_q_values(cew_inp)
+                else:
+                    q = module(cew_inp) # MultiFLC forward returns Q-values
             else:
-                # logic or cew
+                # logic (NSFR / Neumann)
                 if hasattr(module, "get_q_values"):
                     q = module.get_q_values(logic_state)
-                elif m_type == "cew":
-                    q = module(logic_state) # MultiFLC forward returns Q-values
                 else:
                     # Logic modules usually return probs, treat as Q-values [0, 1]
                     q = self._map_logic_output(module.get_action_probs(logic_state), module)

@@ -22,7 +22,7 @@ offline_methods:
 
 agent:
   epochs_per_interval: 25
-  eval_interval_epochs: 5
+  eval_interval_epochs: 1
   batch_size: 1024
   lr: 2e-4
   cql_alpha: 2.0
