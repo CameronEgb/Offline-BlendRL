@@ -185,8 +185,22 @@ class ClinicalAlignmentPlotter(BasePlotter):
         device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
         total_steps = len(all_clin_acts)
 
+        cache_path = output_dir / "clinical_alignment_cache.npz"
+        remake = cfg.get("remake", False)
+        num_patients = X.shape[0]
+        outcomes = data['y'].squeeze() if 'y' in data else np.zeros(num_patients)
+        patient_agreements = {}
+
         method_ckpts = self._discover_checkpoints(exp_id, group, clean_exp)
-        if not method_ckpts:
+        if not method_ckpts and cache_path.exists() and not remake:
+            print(f"  Loading cached clinical alignment data from {cache_path}")
+            cached_data = np.load(cache_path, allow_pickle=True)
+            for k in cached_data.files:
+                if k != "outcomes":
+                    patient_agreements[k] = cached_data[k]
+            if "outcomes" in cached_data.files:
+                outcomes = cached_data["outcomes"]
+        elif not method_ckpts:
             print(f"Notice [clinical_alignment]: No policy checkpoints found for '{clean_exp}'")
             return
 
@@ -208,10 +222,6 @@ class ClinicalAlignmentPlotter(BasePlotter):
             "Windowed Recall %": 100.0,
             "Opt Threshold": 0.5000
         })
-
-        num_patients = X.shape[0]
-        outcomes = data['y'].squeeze() if 'y' in data else np.zeros(num_patients)
-        patient_agreements = {}
 
         batch_size = 10000
         for method_name, ckpt_path in sorted(method_ckpts.items()):
@@ -329,10 +339,16 @@ class ClinicalAlignmentPlotter(BasePlotter):
                 "Opt Threshold": opt_thresh
             })
 
-        df = pd.DataFrame(results)
-        csv_path = output_dir / "method_comparison.csv"
-        df.to_csv(csv_path, index=False)
-        print(f"  Saved MIMIC method comparison: {csv_path}")
+        if method_ckpts:
+            df = pd.DataFrame(results)
+            csv_path = output_dir / "method_comparison.csv"
+            df.to_csv(csv_path, index=False)
+            print(f"  Saved MIMIC method comparison: {csv_path}")
+            np.savez(cache_path, outcomes=outcomes, **patient_agreements)
+            print(f"  Cached clinical alignment data: {cache_path}")
+
+        # Color deduplication across active methods
+        color_map = self._deduplicate_colors(list(patient_agreements.keys()))
 
         # 1. Clinician Agreement % Bar Chart (Opt-in only, excluded from defaults)
         requested_plots = cfg.get("plots", [])
@@ -343,7 +359,7 @@ class ClinicalAlignmentPlotter(BasePlotter):
         else:
             requested_plots = []
 
-        if any(k in requested_plots for k in ["clinical_agreement", "agreement_bar", "agreement"]):
+        if any(k in requested_plots for k in ["clinical_agreement", "agreement_bar", "agreement"]) and results:
             fig, ax = plt.subplots(figsize=(max(8, len(results) * 1.8), 5.5))
             methods = [r["Method"] for r in results]
             accuracies = [r["Accuracy %"] for r in results]
@@ -352,10 +368,9 @@ class ClinicalAlignmentPlotter(BasePlotter):
             for r in results:
                 m_name = r["Method"]
                 if "Clinician" in m_name:
-                    bar_colors.append("#7f7f7f")
+                    bar_colors.append("#756bb1")
                 else:
-                    style = get_method_style(m_name)
-                    bar_colors.append(style.get("color") or "tab:blue")
+                    bar_colors.append(color_map.get(m_name, get_method_style(m_name).get("color") or "tab:blue"))
 
             bars = ax.bar(methods, accuracies, color=bar_colors, width=0.55, edgecolor="#333333", linewidth=1.0, alpha=0.85)
             ax.set_ylabel("Clinician Agreement (%)", fontsize=12, fontweight="bold")
@@ -374,44 +389,186 @@ class ClinicalAlignmentPlotter(BasePlotter):
 
             fig.tight_layout()
             plot_path = output_dir / "clinical_agreement.png"
-            plt.savefig(plot_path, dpi=200)
+            plt.savefig(plot_path, dpi=200, bbox_inches="tight")
             plt.close()
             print(f"  Saved: {plot_path}")
 
         # 2. Clinician Agreement vs Septic Shock Outcome Analysis
-        should_plot_shock = (not requested_plots) or any(k in requested_plots for k in ["agreement_vs_shock", "agreement_vs_shock_deciles", "shock"])
-        if should_plot_shock and patient_agreements and len(outcomes) == len(next(iter(patient_agreements.values()))):
-            fig, ax = plt.subplots(figsize=(10, 6))
-            for m_name, p_agr in patient_agreements.items():
-                style = get_method_style(m_name)
-                color = style.get("color") or "tab:blue"
+        plot_all = len(requested_plots) == 0
+        should_plot_abs = plot_all or any(k in requested_plots for k in ["agreement_vs_shock", "agreement_vs_shock_absolute", "shock", "absolute"])
+        should_plot_dec = plot_all or any(k in requested_plots for k in ["agreement_vs_shock_deciles", "deciles", "shock_deciles"])
 
-                deciles = np.percentile(p_agr, np.linspace(0, 100, 11))
-                decile_centers = []
-                shock_rates = []
+        has_valid_data = patient_agreements and len(outcomes) == len(next(iter(patient_agreements.values())))
 
-                for i in range(len(deciles) - 1):
-                    low = deciles[i]
-                    high = deciles[i+1]
-                    m = (p_agr >= low) & (p_agr <= high)
-                    if m.sum() > 0:
-                        decile_centers.append((low + high) / 2.0 * 100.0)
-                        shock_rates.append(outcomes[m].mean() * 100.0)
+        if should_plot_abs and has_valid_data:
+            self._plot_agreement_vs_shock_absolute(patient_agreements, outcomes, output_dir, clean_exp, color_map)
 
-                if len(decile_centers) > 1:
-                    ax.plot(decile_centers, shock_rates, marker="o", linewidth=2.2, label=clean_label(m_name), color=color)
-
-            ax.set_xlabel("Clinician Agreement Rate (%)", fontsize=11, fontweight="bold")
-            ax.set_ylabel("Septic Shock Incidence (%)", fontsize=11, fontweight="bold")
-            ax.set_title("Septic Shock Incidence vs Clinician Agreement Deciles", fontsize=13, fontweight="bold")
-            ax.grid(True, linestyle="--", alpha=0.4)
-            ax.legend(loc="best", fontsize=10)
-            fig.tight_layout()
-            shock_plot_path = output_dir / "clinician_agreement_vs_shock.png"
-            plt.savefig(shock_plot_path, dpi=200)
-            plt.close()
-            print(f"  Saved: {shock_plot_path}")
+        if should_plot_dec and has_valid_data:
+            self._plot_agreement_vs_shock_deciles(patient_agreements, outcomes, output_dir, clean_exp, color_map)
 
         print("==========================================================================================\n")
+
+    def _deduplicate_colors(self, methods: List[str]) -> Dict[str, str]:
+        """Ensures every method plotted has a distinct color, dynamically reassigning duplicates if needed."""
+        fallback_palette = [
+            "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
+            "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
+            "#08519c", "#d95f02", "#018571", "#6a3d9a", "#e7298a"
+        ]
+        color_map = {}
+        used_colors = set()
+        for m in methods:
+            style = get_method_style(m)
+            c = style.get("color")
+            if not c or c in used_colors:
+                for candidate in fallback_palette:
+                    if candidate not in used_colors:
+                        c = candidate
+                        break
+                else:
+                    c = f"C{len(color_map) % 10}"
+            color_map[m] = c
+            used_colors.add(c)
+        return color_map
+
+    def _plot_agreement_vs_shock_deciles(self, patient_agreements: dict, outcomes: np.ndarray,
+                                         output_dir: Path, clean_exp: str, color_map: dict):
+        """Plot septic shock incidence across 10 equal patient agreement deciles with background distribution."""
+        fig, ax = plt.subplots(figsize=(11, 6))
+        ax2 = ax.twinx()
+
+        num_patients = len(outcomes)
+        decile_labels = [f"D{i+1}\n({i*10}-{(i+1)*10}%)" for i in range(10)]
+        x_indices = np.arange(10)
+
+        # Background distribution: in deciles, each bucket has ~N/10 patients
+        patients_per_decile = [num_patients // 10] * 10
+        patients_per_decile[-1] += num_patients % 10
+
+        ax2.bar(x_indices, patients_per_decile, width=0.55, color="#cfd8dc", edgecolor="#90a4ae",
+                alpha=0.40, linewidth=1.0, label="Trajectories per Decile", zorder=1)
+        ax2.set_ylabel("Number of Trajectories", fontsize=11, fontweight="bold", color="#546e7a")
+        ax2.tick_params(axis='y', labelcolor="#546e7a")
+        ax2.set_ylim(0, max(patients_per_decile) * 1.55)
+
+        # Foreground lines
+        ax.set_zorder(ax2.get_zorder() + 1)
+        ax.patch.set_visible(False)
+
+        for m_name, p_agr in sorted(patient_agreements.items()):
+            color = color_map.get(m_name) or get_method_style(m_name).get("color") or "tab:blue"
+            marker = get_method_style(m_name).get("marker") or "o"
+            ls = get_method_style(m_name).get("linestyle") or "-"
+
+            # Equal frequency rank deciles (0 to 9)
+            ranks = pd.Series(p_agr).rank(method="first").values
+            decile_assignments = pd.qcut(ranks, q=10, labels=False)
+
+            shock_rates = []
+            for d in range(10):
+                m = (decile_assignments == d)
+                shock_rates.append(outcomes[m].mean() * 100.0)
+
+            ax.plot(x_indices, shock_rates, marker=marker, linestyle=ls, linewidth=2.2, markersize=7,
+                    label=clean_label(m_name), color=color, zorder=5)
+
+        ax.set_xlabel("Patient Agreement Decile (Lowest → Highest Clinician Alignment)", fontsize=11, fontweight="bold")
+        ax.set_ylabel("Septic Shock Incidence (%)", fontsize=11, fontweight="bold")
+        ax.set_title(f"Septic Shock Incidence vs Clinician Agreement Deciles ({clean_exp})", fontsize=13, fontweight="bold")
+        ax.set_xticks(x_indices)
+        ax.set_xticklabels(decile_labels, fontsize=9.5, fontweight="bold")
+        ax.grid(True, linestyle="--", alpha=0.35, zorder=0)
+        ax.set_ylim(0, 105)
+
+        lines1, labels1 = ax.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax.legend(lines1 + lines2, labels1 + labels2, loc="upper left", bbox_to_anchor=(1.08, 1),
+                  fontsize=9.5, framealpha=0.95)
+
+        fig.tight_layout()
+        decile_plot_path = output_dir / "clinician_agreement_vs_shock_deciles.png"
+        plt.savefig(decile_plot_path, dpi=200, bbox_inches="tight")
+        plt.close()
+        print(f"  Saved Decile Shock Plot:   {decile_plot_path}")
+
+    def _plot_agreement_vs_shock_absolute(self, patient_agreements: dict, outcomes: np.ndarray,
+                                          output_dir: Path, clean_exp: str, color_map: dict):
+        """Plot septic shock incidence across standardized absolute clinician agreement intervals."""
+        from matplotlib.patches import Patch
+
+        fig, ax = plt.subplots(figsize=(11, 6))
+        ax2 = ax.twinx()
+
+        bin_edges = np.linspace(0.0, 1.0, 11)  # 0.0, 0.1, ..., 1.0
+        bin_labels = [f"{int(bin_edges[i]*100)}-{int(bin_edges[i+1]*100)}%" for i in range(10)]
+        x_indices = np.arange(10)
+        n_methods = len(patient_agreements)
+        bar_width = 0.8 / max(1, n_methods)
+
+        max_count = 0
+        method_items = sorted(patient_agreements.items())
+
+        # Plot background trajectory distribution grouped bars for each method
+        for idx, (m_name, p_agr) in enumerate(method_items):
+            color = color_map.get(m_name) or get_method_style(m_name).get("color") or "tab:blue"
+            counts = []
+            for i in range(10):
+                low = bin_edges[i]
+                high = bin_edges[i+1]
+                m = (p_agr >= low) & (p_agr <= high if i == 9 else p_agr < high)
+                counts.append(m.sum())
+            max_count = max(max_count, max(counts) if counts else 0)
+
+            x_pos = x_indices + (idx - (n_methods - 1) / 2.0) * bar_width
+            ax2.bar(x_pos, counts, width=bar_width * 0.9, color=color, alpha=0.20,
+                    edgecolor=color, linewidth=0.8, zorder=1)
+
+        ax2.set_ylabel("Number of Trajectories in Bucket", fontsize=11, fontweight="bold", color="#546e7a")
+        ax2.tick_params(axis='y', labelcolor="#546e7a")
+        ax2.set_ylim(0, max(1, max_count) * 1.35)
+
+        # Foreground shock incidence lines
+        ax.set_zorder(ax2.get_zorder() + 1)
+        ax.patch.set_visible(False)
+
+        for m_name, p_agr in method_items:
+            color = color_map.get(m_name) or get_method_style(m_name).get("color") or "tab:blue"
+            marker = get_method_style(m_name).get("marker") or "o"
+            ls = get_method_style(m_name).get("linestyle") or "-"
+
+            shock_rates = []
+            for i in range(10):
+                low = bin_edges[i]
+                high = bin_edges[i+1]
+                m = (p_agr >= low) & (p_agr <= high if i == 9 else p_agr < high)
+                if m.sum() >= 5:  # Require at least 5 patients to plot reliable point
+                    shock_rates.append(outcomes[m].mean() * 100.0)
+                else:
+                    shock_rates.append(np.nan)
+
+            valid_mask = ~np.isnan(shock_rates)
+            if valid_mask.sum() > 0:
+                ax.plot(x_indices[valid_mask], np.array(shock_rates)[valid_mask],
+                        marker=marker, linestyle=ls, linewidth=2.2, markersize=7,
+                        label=clean_label(m_name), color=color, zorder=5)
+
+        ax.set_xlabel("Clinician Agreement Rate Interval (%)", fontsize=11, fontweight="bold")
+        ax.set_ylabel("Septic Shock Incidence (%)", fontsize=11, fontweight="bold")
+        ax.set_title(f"Septic Shock Incidence vs Absolute Clinician Agreement ({clean_exp})", fontsize=13, fontweight="bold")
+        ax.set_xticks(x_indices)
+        ax.set_xticklabels(bin_labels, fontsize=9.5, fontweight="bold")
+        ax.grid(True, linestyle="--", alpha=0.35, zorder=0)
+        ax.set_ylim(0, 105)
+
+        lines1, labels1 = ax.get_legend_handles_labels()
+        dist_patch = Patch(facecolor="#90a4ae", alpha=0.35, label="Trajectory Distribution (Bars)")
+        ax.legend(lines1 + [dist_patch], labels1 + ["Trajectory Distribution (Bars)"],
+                  loc="upper left", bbox_to_anchor=(1.08, 1), fontsize=9.5, framealpha=0.95)
+
+        fig.tight_layout()
+        abs_plot_path = output_dir / "clinician_agreement_vs_shock_absolute.png"
+        plt.savefig(abs_plot_path, dpi=200, bbox_inches="tight")
+        plt.close()
+        print(f"  Saved Absolute Shock Plot: {abs_plot_path}")
 
 
