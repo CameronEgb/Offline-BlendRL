@@ -50,9 +50,14 @@ def generate_sbatch_header(job_name, log_dir, cfg, dependency=None, dependency_t
     site_dict = OmegaConf.to_container(site_res_raw, resolve=True) if OmegaConf.is_config(site_res_raw) else (dict(site_res_raw) if isinstance(site_res_raw, dict) else {})
     exp_dict = OmegaConf.to_container(exp_res_raw, resolve=True) if OmegaConf.is_config(exp_res_raw) else (dict(exp_res_raw) if isinstance(exp_res_raw, dict) else {})
     res = {**site_dict, **exp_dict}
+    if cfg.get("partition", None) is not None:
+        res["partition"] = cfg.get("partition")
     
     partition = res.get("partition")
-    if is_consolidated or cfg.get("consolidate", False):
+    cfg_consolidate = cfg.get("consolidate", None)
+    site_consolidate = getattr(site_cfg, "consolidate", False) if site_cfg else False
+    effective_consolidate = is_consolidated or (cfg_consolidate if cfg_consolidate is not None else site_consolidate)
+    if effective_consolidate:
         cores = res.get("consolidated_cores", res.get("cores", 16))
         memory = res.get("consolidated_memory", res.get("memory", "32G"))
     else:

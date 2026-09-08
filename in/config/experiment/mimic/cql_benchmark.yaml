@@ -1,8 +1,12 @@
 # @package _global_
 defaults:
   - mimic/_base
+  - override /site: ncshare
 
-consolidate: true
+# Default partition: common (standard compute nodes)
+# Dispatches parallel jobs across compute nodes
+partition: common
+consolidate: false
 
 # Discrete CQL Comparison Benchmark: Pure Neural vs. Value-Based BlendRL
 # All models train under identical discrete CQL Bellman + LogSumExp loss on Q-values.
@@ -48,8 +52,7 @@ plots:
     include_hyperparameters: true
 
 resources:
-  partition: gpu
-  gpus: 1
+  partition: common
   cores: 16
   time: "08:00:00"
   memory: "32G"

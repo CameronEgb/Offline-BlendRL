@@ -42,7 +42,9 @@ def run_slurm_training(cfg, context):
         exp_log_dir.mkdir(parents=True, exist_ok=True)
 
     resources = cfg.get("resources", {})
-    should_consolidate = cfg.get("consolidate", False)
+    cfg_consolidate = cfg.get("consolidate", None)
+    site_consolidate = getattr(site_cfg, "consolidate", False) if site_cfg else False
+    should_consolidate = cfg_consolidate if cfg_consolidate is not None else site_consolidate
 
     # Consolidated Single Slurm Job Execution
     if should_consolidate:

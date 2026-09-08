@@ -16,7 +16,9 @@ save_dataset: true
 recover: false
 
 # Pipeline Orchestration Flags
-consolidate: false
+consolidate: null
+partition: null
+tensorboard: false
 plot_style: null
 no_plot: false
 no_online: false
@@ -26,6 +28,16 @@ dash: false
 dash_only: false
 sweep: false
 remake: false
+
+# Default Slurm / Hardware Resources Schema
+resources:
+  partition: null
+  cores: null
+  memory: null
+  time: null
+  gpus: null
+  nodes: null
+  gpu_type: null
 
 # Paths
 results_dir: "results"
