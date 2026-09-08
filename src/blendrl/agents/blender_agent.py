@@ -433,7 +433,15 @@ class BlenderActorCritic(nn.Module):
             module = load_module(mlp_module_path)
             mlp_cls = getattr(module, "StandardMLP", getattr(module, "MLP", None))
             if mlp_cls:
-                self.logic_critic = mlp_cls(device=device, out_size=1, logic=True, hidden_sizes=hidden_sizes)
+                from src.core.factories import _safe_instantiate
+                self.logic_critic = _safe_instantiate(
+                    mlp_cls,
+                    device=device,
+                    out_size=1,
+                    logic=True,
+                    hidden_sizes=hidden_sizes,
+                    num_in_features=neural_in_features,
+                )
             else:
                 self.logic_critic = None
         else:
