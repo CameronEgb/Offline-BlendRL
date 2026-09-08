@@ -281,9 +281,15 @@ class BlenderActor(nn.Module):
             m_type = self.module_types[i]
             if m_type == "neural":
                 if hasattr(module, "get_q_values"):
-                    q = module.get_q_values(neural_state)
+                    try:
+                        q = module.get_q_values(neural_state, logic_obs=logic_state)
+                    except TypeError:
+                        q = module.get_q_values(neural_state)
                 elif hasattr(module, "forward"):
-                    q = module(neural_state) # Assuming forward returns Q-values for Q-networks
+                    try:
+                        q = module(neural_state, logic_obs=logic_state)
+                    except TypeError:
+                        q = module(neural_state) # Assuming forward returns Q-values for Q-networks
                 else:
                     q = torch.zeros(batch_size, self.env.n_actions, device=neural_state.device)
             else:
@@ -301,7 +307,7 @@ class BlenderActor(nn.Module):
         
         q_values = torch.zeros(batch_size, self.env.n_actions, device=neural_state.device)
         for i, m_q in enumerate(module_q_values):
-            q_values += weights[:, i].unsqueeze(1) * m_q.to(neural_state.device)
+            q_values = q_values + weights[:, i].unsqueeze(1) * m_q.to(neural_state.device)
             
         return q_values
 
@@ -528,7 +534,9 @@ class BlenderActorCritic(nn.Module):
         return action, logprob, dist.entropy(), blend_dist.entropy(), blended_value
 
     def get_q_values(self, neural_state, logic_state=None):
-        # Extract well-calibrated continuous Q-values from neural module for Bellman updates
+        if self.get_cfg("blend_q_values", True):
+            return self.actor.get_q_values(neural_state, logic_state)
+        # Legacy fallback if blend_q_values is explicitly False
         for i, module in enumerate(self.policy_modules):
             if self.module_types[i] == "neural":
                 if hasattr(module, "get_q_values"):

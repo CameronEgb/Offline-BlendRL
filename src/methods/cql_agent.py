@@ -116,8 +116,11 @@ class CQLAgent(OfflineAgentBase):
     def get_action_and_value(self, obs, logic_obs=None, action=None):
         if self.is_modular:
             logic_obs = self._prepare_logic_obs(obs, logic_obs)
-            return self.model(obs, logic_obs, action=action)
-        q_vals = self.q_network.get_q_values(obs) if hasattr(self.q_network, "get_q_values") else self.q_network(obs)
+            if self.get_cfg("use_actor", False):
+                return self.model(obs, logic_obs, action=action)
+            q_vals = self.model.get_q_values(obs, logic_obs)
+        else:
+            q_vals = self.q_network.get_q_values(obs) if hasattr(self.q_network, "get_q_values") else self.q_network(obs)
         probs = torch.softmax(q_vals, dim=-1)
         dist = torch.distributions.Categorical(probs)
         if action is None:
@@ -130,8 +133,11 @@ class CQLAgent(OfflineAgentBase):
     def get_value(self, obs, logic_obs=None):
         if self.is_modular:
             logic_obs = self._prepare_logic_obs(obs, logic_obs)
-            return self.model.get_value(obs, logic_obs)
-        q_vals = self.q_network.get_q_values(obs)
+            if self.get_cfg("use_actor", False):
+                return self.model.get_value(obs, logic_obs)
+            q_vals = self.model.get_q_values(obs, logic_obs)
+        else:
+            q_vals = self.q_network.get_q_values(obs)
         return q_vals.max(dim=-1)[0]
 
     def on_train_start(self):
@@ -230,19 +236,24 @@ class CQLAgent(OfflineAgentBase):
             cql_loss = (sample_weights * cql_diff).mean() / weight_norm
             q_loss = bellman_loss + cql_alpha * cql_loss
 
-            probs, weights = self.model.actor(obs, logic_obs)
-            log_probs = torch.log(probs + 1e-12)
-            entropy = -(probs * log_probs).sum(dim=1)
-            blend_entropy = -(weights * torch.log(weights + 1e-12)).sum(dim=1) if weights is not None else None
-            ent_coef = self.get_cfg("ent_coef", 0.01)
-            blend_ent_coef = self.get_cfg("blend_ent_coef", 0.01)
-            blend_entropy_loss = blend_entropy.mean() if isinstance(blend_entropy, torch.Tensor) else 0.0
-            
-            weighted_actor_obj = (sample_weights * (probs * all_q_values.detach()).sum(dim=1)).mean() / weight_norm
-            actor_loss = -weighted_actor_obj - ent_coef * entropy.mean() - blend_ent_coef * blend_entropy_loss
+            use_actor = bool(self.get_cfg("use_actor", False))
+            if use_actor:
+                probs, weights = self.model.actor(obs, logic_obs)
+                log_probs = torch.log(probs + 1e-12)
+                entropy = -(probs * log_probs).sum(dim=1)
+                blend_entropy = -(weights * torch.log(weights + 1e-12)).sum(dim=1) if weights is not None else None
+                ent_coef = self.get_cfg("ent_coef", 0.01)
+                blend_ent_coef = self.get_cfg("blend_ent_coef", 0.01)
+                blend_entropy_loss = blend_entropy.mean() if isinstance(blend_entropy, torch.Tensor) else 0.0
+                
+                weighted_actor_obj = (sample_weights * (probs * all_q_values.detach()).sum(dim=1)).mean() / weight_norm
+                actor_loss = -weighted_actor_obj - ent_coef * entropy.mean() - blend_ent_coef * blend_entropy_loss
+                total_loss = q_loss + actor_loss
+            else:
+                actor_loss = torch.tensor(0.0, device=self.device)
+                blend_entropy = None
+                total_loss = q_loss
 
-            total_loss = q_loss + actor_loss
-            
             opt = getattr(self, "opt", self.optimizers())
             if isinstance(opt, list):
                 opt = opt[0]
@@ -255,7 +266,7 @@ class CQLAgent(OfflineAgentBase):
 
             if is_adaptive:
                 with torch.no_grad():
-                    pred_admin = (torch.argmax(probs, dim=-1) == 1).float().mean()
+                    pred_admin = (torch.argmax(all_q_values, dim=-1) == 1).float().mean()
                     tar = self.target_admin_rate if self.target_admin_rate is not None else 0.04
                     err = (tar - pred_admin).clamp(min=-1.0, max=1.0)
                     self.log_pos_weight += self.pos_weight_lr * err
@@ -346,8 +357,11 @@ class CQLAgent(OfflineAgentBase):
                 next_v = self.target_model.get_q_values(next_obs, next_logic_obs).gather(1, best_next_action).squeeze(1)
                 q_target = rewards + self.cfg.env.gamma * next_v * (1 - dones)
                 all_q_values = self.model.get_q_values(obs, logic_obs)
-                probs, _ = self.model.actor(obs, logic_obs)
-                pred_acts = torch.argmax(probs, dim=-1)
+                if self.get_cfg("use_actor", False):
+                    probs, _ = self.model.actor(obs, logic_obs)
+                    pred_acts = torch.argmax(probs, dim=-1)
+                else:
+                    pred_acts = torch.argmax(all_q_values, dim=-1)
             else:
                 online_next_q = self.q_network(next_obs)
                 best_next_action = torch.argmax(online_next_q, dim=1, keepdim=True)

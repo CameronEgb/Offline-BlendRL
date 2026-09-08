@@ -1,0 +1,53 @@
+# @package _global_
+defaults:
+  - mimic/_base
+
+# Discrete CQL Comparison Benchmark: Pure Neural vs. Value-Based BlendRL
+# All models train under identical discrete CQL Bellman + LogSumExp loss on Q-values.
+
+offline_methods:
+  # Pure Neural Baselines
+  - cql/dnn
+  - cql/dueling_resnet
+  - cql/transformer
+  # Value-Based BlendRL Hybrids (Q-Blending)
+  - cql/blendrl_human_rigid
+  - cql/blendrl_human_continuous
+  - cql/blendrl_human_dueling_resnet_rigid
+  - cql/blendrl_human_dueling_resnet_continuous
+  - cql/blendrl_cew_dueling_resnet
+  - cql/blendrl_cross_attention
+
+agent:
+  epochs_per_interval: 25
+  eval_interval_epochs: 5
+  batch_size: 1024
+  lr: 2e-4
+  cql_alpha: 2.0
+  pos_action_weight: 5.0
+  reward_scale: 0.1
+  bellman_loss: smooth_l1
+  weight_decay: 1e-4
+  use_actor: false        # Pure value-based Q-learning (no separate actor)
+  blend_q_values: true   # Blend Q-values directly across modules
+
+plots:
+  losses:
+    metrics:
+      - losses/total_loss
+      - losses/bellman_loss
+      - losses/cql_loss
+      - val/loss
+  clinical_alignment:
+    plots:
+      - agreement_vs_shock
+      - agreement_vs_shock_deciles
+  reports:
+    include_hyperparameters: true
+
+resources:
+  partition: gpu
+  gpus: 1
+  cores: 16
+  time: "06:00:00"
+  memory: "32G"
