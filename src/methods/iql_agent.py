@@ -200,6 +200,20 @@ class IQLAgent(OfflineAgentBase):
             return self.model.get_action_and_value(obs, logic_obs, action)
         return self.actor.get_action_and_value(obs, action)
 
+    def get_action_probs(self, obs, logic_obs=None):
+        if self.is_modular:
+            logic_obs = self._prepare_logic_obs(obs, logic_obs)
+            probs, _ = self.model.actor(obs, logic_obs)
+            return probs
+        if hasattr(self.actor, "get_action_probs"):
+            return self.actor.get_action_probs(obs)
+        action, log_prob, _, _ = self.actor.get_action_and_value(obs)
+        return torch.exp(log_prob)
+
+    def get_action(self, obs, logic_obs=None):
+        probs = self.get_action_probs(obs, logic_obs)
+        return torch.argmax(probs, dim=-1)
+
     def get_value(self, obs, logic_obs=None):
         return self.value_network(obs)
 

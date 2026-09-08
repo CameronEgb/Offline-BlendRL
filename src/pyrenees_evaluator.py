@@ -37,6 +37,12 @@ class PyreneesEvaluator:
         return None
 
     def _get_probs_and_actions(self, ag, obs_b):
+        if hasattr(ag, "get_action_probs"):
+            probs = ag.get_action_probs(obs_b)
+            acts = ag.get_action(obs_b) if hasattr(ag, "get_action") else torch.argmax(probs, dim=-1)
+            return probs, acts
+
+        # Fallback for unmigrated or raw models
         is_cql = ag.__class__.__name__ == "CQLAgent" or "cql" in str(getattr(ag, "algorithm", "")).lower()
         use_actor = bool(ag.get_cfg("use_actor", False)) if hasattr(ag, "get_cfg") else getattr(ag, "use_actor", False)
 

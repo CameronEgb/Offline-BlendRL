@@ -153,6 +153,20 @@ class BaseAgent(L.LightningModule, ABC):
         """Compute value estimate for given observations."""
         ...
 
+    def get_action_probs(self, obs, logic_obs=None):
+        """Compute action probabilities according to the agent's policy paradigm.
+        
+        Subclasses should override this method to define their canonical policy distribution.
+        """
+        if hasattr(self, "actor") and hasattr(self.actor, "get_action_probs"):
+            return self.actor.get_action_probs(obs)
+        raise NotImplementedError(f"{self.__class__.__name__} must implement get_action_probs.")
+
+    def get_action(self, obs, logic_obs=None):
+        """Select discrete action for given observation (default: argmax of action probs)."""
+        probs = self.get_action_probs(obs, logic_obs)
+        return torch.argmax(probs, dim=-1)
+
 
 class OfflineAgentBase(BaseAgent):
     """Base class for all offline RL agents (IQL, CQL, CEW, and their BlendRL variants).

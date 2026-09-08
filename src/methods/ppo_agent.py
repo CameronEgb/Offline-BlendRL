@@ -121,6 +121,23 @@ class PPOAgent(BaseAgent):
             return self.model.get_action_and_value(obs, logic_obs, action)
         return self.model.get_action_and_value(obs, action)
 
+    def get_action_probs(self, obs, logic_obs=None):
+        if self.is_modular:
+            if logic_obs is None and obs.ndim == 2:
+                logic_obs = obs.unsqueeze(1).repeat(1, 2, 1)
+            probs, _ = self.model.actor(obs, logic_obs)
+            return probs
+        elif hasattr(self.model, "get_action_probs"):
+            return self.model.get_action_probs(obs)
+        elif hasattr(self.model, "actor") and hasattr(self.model.actor, "get_action_probs"):
+            return self.model.actor.get_action_probs(obs)
+        action, _, dist_entropy, _ = self.model.get_action_and_value(obs)
+        return torch.softmax(action, dim=-1)
+
+    def get_action(self, obs, logic_obs=None):
+        probs = self.get_action_probs(obs, logic_obs)
+        return torch.argmax(probs, dim=-1)
+
     def get_value(self, obs, logic_obs=None):
         if self.is_modular:
             if logic_obs is None and obs.ndim == 2:

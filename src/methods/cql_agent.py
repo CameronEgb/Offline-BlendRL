@@ -113,6 +113,31 @@ class CQLAgent(OfflineAgentBase):
             return obs.unsqueeze(1).repeat(1, 2, 1).to(self.device)
         return obs.to(self.device)
 
+    def get_q_values(self, obs, logic_obs=None):
+        """Compute discrete Q-values across all supported architectures (modular or neural)."""
+        if self.is_modular:
+            logic_obs = self._prepare_logic_obs(obs, logic_obs)
+            return self.model.get_q_values(obs, logic_obs)
+        else:
+            return self.q_network.get_q_values(obs) if hasattr(self.q_network, "get_q_values") else self.q_network(obs)
+
+    def get_action_probs(self, obs, logic_obs=None):
+        """Action probabilities for discrete CQL: softmax over Q-values."""
+        if self.is_modular and self.get_cfg("use_actor", False) and hasattr(self.model, "actor"):
+            logic_obs = self._prepare_logic_obs(obs, logic_obs)
+            probs, _ = self.model.actor(obs, logic_obs)
+            return probs
+        q_vals = self.get_q_values(obs, logic_obs)
+        return torch.softmax(q_vals, dim=-1)
+
+    def get_action(self, obs, logic_obs=None):
+        """Greedy action selection for discrete CQL: argmax over Q-values."""
+        if self.is_modular and self.get_cfg("use_actor", False) and hasattr(self.model, "actor"):
+            probs = self.get_action_probs(obs, logic_obs)
+            return torch.argmax(probs, dim=-1)
+        q_vals = self.get_q_values(obs, logic_obs)
+        return torch.argmax(q_vals, dim=-1)
+
     def get_action_and_value(self, obs, logic_obs=None, action=None):
         if self.is_modular:
             logic_obs = self._prepare_logic_obs(obs, logic_obs)
