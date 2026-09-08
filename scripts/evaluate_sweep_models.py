@@ -80,15 +80,25 @@ def main():
             print(f"Could not load agent from {ckpt_path}")
             continue
 
+        is_cql = ag.__class__.__name__ == "CQLAgent" or "cql" in str(getattr(ag, "algorithm", "")).lower()
+        use_actor = bool(ag.get_cfg("use_actor", False)) if hasattr(ag, "get_cfg") else getattr(ag, "use_actor", False)
+
         with torch.no_grad():
             if hasattr(ag, "is_modular") and ag.is_modular:
                 logic_obs = ag._prepare_logic_obs(obs_t) if hasattr(ag, "_prepare_logic_obs") else obs_t.unsqueeze(1).repeat(1, 2, 1)
-                probs, weights = ag.model.actor(obs_t, logic_obs)
-                admin_probs = probs[:, 1].cpu().numpy()
-                pred_acts = torch.argmax(probs, dim=-1).cpu().numpy()
-                avg_logic_w = weights[:, 0].mean().item() if weights is not None and weights.shape[1] > 0 else 0.0
-                avg_neural_w = weights[:, 1].mean().item() if weights is not None and weights.shape[1] > 1 else 0.0
-                weight_str = f"L:{avg_logic_w:.2f} / N:{avg_neural_w:.2f}"
+                if is_cql and not use_actor and hasattr(ag.model, "get_q_values"):
+                    q_vals = ag.model.get_q_values(obs_t, logic_obs)
+                    probs = torch.softmax(q_vals, dim=-1)
+                    admin_probs = probs[:, 1].cpu().numpy()
+                    pred_acts = torch.argmax(q_vals, dim=-1).cpu().numpy()
+                    weight_str = "Blended Q-Values"
+                else:
+                    probs, weights = ag.model.actor(obs_t, logic_obs)
+                    admin_probs = probs[:, 1].cpu().numpy()
+                    pred_acts = torch.argmax(probs, dim=-1).cpu().numpy()
+                    avg_logic_w = weights[:, 0].mean().item() if weights is not None and weights.shape[1] > 0 else 0.0
+                    avg_neural_w = weights[:, 1].mean().item() if weights is not None and weights.shape[1] > 1 else 0.0
+                    weight_str = f"L:{avg_logic_w:.2f} / N:{avg_neural_w:.2f}"
             else:
                 q_vals = ag.q_network(obs_t) if hasattr(ag, "q_network") else ag(obs_t)
                 probs = torch.softmax(q_vals, dim=-1)

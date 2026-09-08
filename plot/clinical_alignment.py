@@ -122,9 +122,28 @@ class ClinicalAlignmentPlotter(BasePlotter):
         return None
 
     def _get_probs_and_actions(self, ag, obs_b):
+        is_cql = ag.__class__.__name__ == "CQLAgent" or "cql" in str(getattr(ag, "algorithm", "")).lower()
+        use_actor = bool(ag.get_cfg("use_actor", False)) if hasattr(ag, "get_cfg") else getattr(ag, "use_actor", False)
+
         if hasattr(ag, "is_modular") and ag.is_modular:
             logic_obs = ag._prepare_logic_obs(obs_b) if hasattr(ag, "_prepare_logic_obs") else obs_b.unsqueeze(1).repeat(1, 2, 1)
-            probs, _ = ag.model.actor(obs_b, logic_obs)
+            if is_cql and not use_actor and hasattr(ag.model, "get_q_values"):
+                q_vals = ag.model.get_q_values(obs_b, logic_obs)
+                probs = torch.softmax(q_vals, dim=-1)
+                acts = torch.argmax(q_vals, dim=-1)
+                return probs, acts
+            elif hasattr(ag.model, "actor"):
+                probs, _ = ag.model.actor(obs_b, logic_obs)
+                acts = torch.argmax(probs, dim=-1)
+                return probs, acts
+            elif hasattr(ag.model, "get_q_values"):
+                q_vals = ag.model.get_q_values(obs_b, logic_obs)
+                probs = torch.softmax(q_vals, dim=-1)
+                acts = torch.argmax(q_vals, dim=-1)
+                return probs, acts
+        elif is_cql and not use_actor and hasattr(ag, "q_network"):
+            q = ag.q_network.get_q_values(obs_b) if hasattr(ag.q_network, "get_q_values") else ag.q_network(obs_b)
+            probs = torch.softmax(q, dim=-1)
             acts = torch.argmax(probs, dim=-1)
             return probs, acts
         elif hasattr(ag, "actor") and hasattr(ag.actor, "get_action_probs"):
