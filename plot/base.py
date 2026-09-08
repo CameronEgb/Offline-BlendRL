@@ -247,7 +247,8 @@ class BasePlotter:
                 continue
             raw_method_name = method_dir.name
             if has_active_filter:
-                is_active = (raw_method_name in active_aliases) or any(raw_method_name.startswith(a + "_") for a in active_aliases)
+                parts = raw_method_name.rsplit("_", 1)
+                is_active = (raw_method_name in active_aliases) or (len(parts) == 2 and parts[0] in active_aliases and parts[1].isdigit())
                 if not is_active:
                     continue
 
