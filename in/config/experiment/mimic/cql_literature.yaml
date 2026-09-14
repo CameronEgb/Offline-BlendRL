@@ -1,0 +1,15 @@
+# @package _global_
+defaults:
+  - mimic/_base
+
+offline_methods:
+  - cql/dnn
+  - cql/dueling_resnet
+  - cql/blendrl_human_dueling_resnet_rigid
+
+agent:
+  epochs_per_interval: 20
+  eval_interval_epochs: 5
+  cql_alpha: 2.0
+  use_actor: false
+  reward_scale: 0.1

@@ -123,6 +123,12 @@ class BasePlotter:
         """Finds, resolves, and loads the experiment configuration YAML or saved run config."""
         clean_exp = Path(exp_id).stem
 
+        group_hint = None
+        if "/" in exp_id:
+            group_hint = exp_id.split("/")[0]
+        elif exp_config_name and "/" in exp_config_name:
+            group_hint = exp_config_name.split("/")[0]
+
         # 1. First find live experiment YAML candidates
         candidates = []
         if exp_config_name:
@@ -131,8 +137,12 @@ class BasePlotter:
                 Path(f"in/config/experiment/{exp_config_name}.yaml"),
                 Path(f"in/config/experiment/{clean_base}.yaml"),
             ])
+            if group_hint:
+                candidates.append(Path(f"in/config/experiment/{group_hint}/{clean_base}.yaml"))
             candidates.extend(list(Path("in/config/experiment").glob(f"**/{clean_base}.yaml")))
 
+        if group_hint:
+            candidates.append(Path(f"in/config/experiment/{group_hint}/{clean_exp}.yaml"))
         candidates.extend([
             Path(f"in/config/experiment/{exp_id}.yaml"),
             Path(f"in/config/experiment/{clean_exp}.yaml"),
@@ -150,6 +160,15 @@ class BasePlotter:
         saved_cfg = {}
         for base_dir in [Path("results/logs"), Path("results/checkpoints")]:
             if base_dir.exists():
+                if group_hint:
+                    target_direct = base_dir / group_hint / clean_exp / "config.yaml"
+                    if target_direct.exists():
+                        saved_cfg = self._load_yaml(target_direct)
+                        break
+                    target_nested = list(base_dir.glob(f"{group_hint}/{clean_exp}/*/config.yaml"))
+                    if target_nested:
+                        saved_cfg = self._load_yaml(target_nested[0])
+                        break
                 matches = list(base_dir.glob(f"*/{clean_exp}/config.yaml"))
                 if matches:
                     saved_cfg = self._load_yaml(matches[0])
@@ -172,13 +191,13 @@ class BasePlotter:
 
     def get_group(self, exp_id: str, exp_config: dict) -> str:
         """Resolves group for the given experiment ID."""
-        if "group" in exp_config and exp_config["group"]:
-            return exp_config["group"]
-        
-        # If exp_id has a group prefix like mimic/mimic_test
+        # If exp_id has a group prefix like mimic/mimic_test, prioritize it
         if "/" in exp_id:
             parts = exp_id.split("/")
             return parts[0]
+
+        if "group" in exp_config and exp_config["group"]:
+            return exp_config["group"]
 
         clean_exp = Path(exp_id).stem
         # Scan results/logs/*/clean_exp and results/checkpoints/*/clean_exp

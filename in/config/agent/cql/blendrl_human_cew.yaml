@@ -6,7 +6,6 @@ algorithm: blendrl_cql
 actor_mode: hybrid
 blender_mode: neural
 blend_function: softmax
-pos_action_weight: 20.0
 ecm_dthr: 0.03
 fyd_top_k: 150
 

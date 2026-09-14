@@ -22,11 +22,10 @@ offline_methods:
 
 agent:
   epochs_per_interval: 25
-  eval_interval_epochs: 1
+  eval_interval_epochs: 5
   batch_size: 1024
   lr: 2e-4
   cql_alpha: 2.0
-  pos_action_weight: 5.0
   reward_scale: 0.1
   bellman_loss: smooth_l1
   weight_decay: 1e-4
@@ -36,5 +35,8 @@ agent:
 resources:
   partition: common
   cores: 16
-  time: "08:00:00"
+  standalone_cores: 16
   memory: "32G"
+  standalone_memory: "32G"
+  time: "08:00:00"
+

@@ -7,9 +7,10 @@ septic shock outcomes in ICU time-series trajectories.
 
 Outputs:
   - Clinical action alignment: precision, recall, F1, windowed F1, AUC-ROC, AUPRC
-  - Septic shock outcome analysis across clinician agreement deciles
-  - Visual figures: clinician_agreement_vs_shock.png, clinical_agreement.png (opt-in)
+  - Septic shock outcome analysis: agreement_vs_shock.png
+  - Interval progression analysis: intervals/interagreement_vs_shock_[method]_progression.png
   - Tabular metrics: method_comparison.csv
+  - Visual figures: clinical_agreement.png (opt-in)
 """
 
 import os
@@ -52,7 +53,7 @@ class ClinicalAlignmentPlotter(BasePlotter):
         if not ckpt_root.exists():
             ckpt_root = Path("results/checkpoints") / clean_exp
         if not ckpt_root.exists():
-            return {}
+            return {}, {}
 
         exp_cfg = self.get_experiment_config(exp_id)
         active_aliases = set()
@@ -69,12 +70,18 @@ class ClinicalAlignmentPlotter(BasePlotter):
                     active_aliases.update(get_method_aliases(m))
 
         method_ckpts = {}
+        method_interval_ckpts = {}
+        import re
+
         for method_dir in sorted(ckpt_root.iterdir()):
             if method_dir.is_dir():
                 m_name = method_dir.name
                 if has_active_filter and m_name not in active_aliases:
                     continue
 
+                canon = get_canonical_method_name(m_name)
+
+                # 1. Best checkpoint
                 best_ckpt = None
                 storage_url = exp_cfg.get("hydra", {}).get("sweeper", {}).get("storage", None)
                 if storage_url:
@@ -91,10 +98,31 @@ class ClinicalAlignmentPlotter(BasePlotter):
                         best_ckpt = ckpts[0]
 
                 if best_ckpt:
-                    canon = get_canonical_method_name(m_name)
                     if canon not in method_ckpts or m_name == canon:
                         method_ckpts[canon] = best_ckpt
-        return method_ckpts
+
+                # 2. Interval checkpoints
+                intervals = []
+                seen_epochs = set()
+                candidate_files = list(method_dir.rglob("interval_epoch_*.ckpt")) + list(method_dir.rglob("epoch_*.ckpt"))
+                for ifile in candidate_files:
+                    match_eq = re.search(r"epoch=(\d+)", ifile.name)
+                    match_us = re.search(r"epoch_(\d+)", ifile.name)
+                    if match_eq:
+                        ep = int(match_eq.group(1)) + 1
+                    elif match_us:
+                        ep = int(match_us.group(1))
+                    else:
+                        continue
+                    if ep not in seen_epochs:
+                        seen_epochs.add(ep)
+                        intervals.append((ep, ifile))
+                intervals.sort(key=lambda x: x[0])
+                if intervals:
+                    if canon not in method_interval_ckpts or m_name == canon:
+                        method_interval_ckpts[canon] = intervals
+
+        return method_ckpts, method_interval_ckpts
 
     def _load_agent(self, path, dev):
         from src.methods.cql_agent import CQLAgent
@@ -210,46 +238,81 @@ class ClinicalAlignmentPlotter(BasePlotter):
         device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
         total_steps = len(all_clin_acts)
 
-        cache_path = output_dir / "clinical_alignment_cache.npz"
+        cache_dir = output_dir / "cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_path = cache_dir / "clinical_alignment_cache.npz"
+        history_cache_path = cache_dir / "clinical_alignment_history.npz"
+
         remake = cfg.get("remake", False)
         num_patients = X.shape[0]
         outcomes = data['y'].squeeze() if 'y' in data else np.zeros(num_patients)
         patient_agreements = {}
 
-        method_ckpts = self._discover_checkpoints(exp_id, group, clean_exp)
-        if not method_ckpts and cache_path.exists() and not remake:
+        method_ckpts, method_interval_ckpts = self._discover_checkpoints(exp_id, group, clean_exp)
+        interval_agreements = {}
+
+        if history_cache_path.exists() and not remake:
+            print(f"  Loading cached clinical alignment interval history from {history_cache_path}")
+            try:
+                hist_data = np.load(history_cache_path, allow_pickle=True)
+                for k in hist_data.files:
+                    if "__ep__" in k:
+                        m_part, ep_part = k.split("__ep__", 1)
+                        try:
+                            ep_num = int(ep_part)
+                            interval_agreements.setdefault(m_part, {})[ep_num] = hist_data[k]
+                        except Exception:
+                            pass
+            except Exception as e:
+                print(f"  Notice: could not load interval history cache: {e}")
+
+        if cache_path.exists() and not remake:
             print(f"  Loading cached clinical alignment data from {cache_path}")
-            cached_data = np.load(cache_path, allow_pickle=True)
-            for k in cached_data.files:
-                if k != "outcomes":
-                    patient_agreements[k] = cached_data[k]
-            if "outcomes" in cached_data.files:
-                outcomes = cached_data["outcomes"]
-        elif not method_ckpts:
-            print(f"Notice [clinical_alignment]: No policy checkpoints found for '{clean_exp}'")
+            try:
+                cached_data = np.load(cache_path, allow_pickle=True)
+                for k in cached_data.files:
+                    if k != "outcomes":
+                        patient_agreements[k] = cached_data[k]
+                if "outcomes" in cached_data.files:
+                    outcomes = cached_data["outcomes"]
+            except Exception as e:
+                print(f"  Notice: could not load alignment cache: {e}")
+
+        if not method_ckpts and not method_interval_ckpts and not interval_agreements and not patient_agreements:
+            print(f"Notice [clinical_alignment]: No policy checkpoints or cached data found for '{clean_exp}'")
             return
 
+        csv_path = output_dir / "method_comparison.csv"
         results = []
+        if csv_path.exists() and not remake:
+            try:
+                results = pd.read_csv(csv_path).to_dict("records")
+            except Exception:
+                results = []
 
-        # 1. Clinician Baseline
-        clin_admin_rate = (all_clin_acts == 1).mean() * 100.0
-        results.append({
-            "Method": "Clinician (Baseline)",
-            "Accuracy %": 100.0,
-            "Admin Rate %": float(clin_admin_rate),
-            "AUC-ROC": 1.0000,
-            "AUPRC": 1.0000,
-            "Precision": 1.0000,
-            "Recall": 1.0000,
-            "F1 Score": 1.0000,
-            "Best F1": 1.0000,
-            "Windowed F1 (±3h)": 1.0000,
-            "Windowed Recall %": 100.0,
-            "Opt Threshold": 0.5000
-        })
+        if not results:
+            # 1. Clinician Baseline
+            clin_admin_rate = (all_clin_acts == 1).mean() * 100.0
+            results.append({
+                "Method": "Clinician (Baseline)",
+                "Accuracy %": 100.0,
+                "Admin Rate %": float(clin_admin_rate),
+                "AUC-ROC": 1.0000,
+                "AUPRC": 1.0000,
+                "Precision": 1.0000,
+                "Recall": 1.0000,
+                "F1 Score": 1.0000,
+                "Best F1": 1.0000,
+                "Windowed F1 (±3h)": 1.0000,
+                "Windowed Recall %": 100.0,
+                "Opt Threshold": 0.5000
+            })
 
         batch_size = 10000
+        method_opt_thresholds = {}
         for method_name, ckpt_path in sorted(method_ckpts.items()):
+            if method_name in patient_agreements and any(r.get("Method") == clean_label(method_name) for r in results):
+                continue
             agent = self._load_agent(ckpt_path, device)
             if agent is None:
                 print(f"  Warning [clinical_alignment]: Could not load checkpoint {ckpt_path}")
@@ -274,7 +337,23 @@ class ClinicalAlignmentPlotter(BasePlotter):
                     all_policy_acts.extend(policy_acts)
 
             all_admin_probs = np.array(all_admin_probs)
-            all_policy_acts = np.array(all_policy_acts)
+
+            # Option A: Calibrated clinical decision thresholding
+            # Determine optimal operating threshold from Precision-Recall curve
+            try:
+                p_thresh, r_thresh, thresholds = precision_recall_curve(all_clin_acts, all_admin_probs)
+                f1_scores = 2 * (p_thresh * r_thresh) / (p_thresh + r_thresh + 1e-8)
+                best_idx = np.argmax(f1_scores)
+                best_f1 = float(f1_scores[best_idx])
+                opt_thresh = float(thresholds[best_idx]) if best_idx < len(thresholds) else 0.5
+            except Exception:
+                best_f1 = 0.0
+                opt_thresh = 0.5
+
+            method_opt_thresholds[method_name] = opt_thresh
+
+            # Apply calibrated threshold for clinical policy actions
+            all_policy_acts = (all_admin_probs >= opt_thresh).astype(int)
 
             matches = (all_policy_acts == all_clin_acts).sum()
             accuracy = (matches / total_steps) * 100.0
@@ -297,17 +376,6 @@ class ClinicalAlignmentPlotter(BasePlotter):
                 auprc = float(average_precision_score(all_clin_acts, all_admin_probs))
             except Exception:
                 auprc = float('nan')
-
-            # Best F1 threshold sweep
-            try:
-                p_thresh, r_thresh, thresholds = precision_recall_curve(all_clin_acts, all_admin_probs)
-                f1_scores = 2 * (p_thresh * r_thresh) / (p_thresh + r_thresh + 1e-8)
-                best_idx = np.argmax(f1_scores)
-                best_f1 = float(f1_scores[best_idx])
-                opt_thresh = float(thresholds[best_idx]) if best_idx < len(thresholds) else 0.5
-            except Exception:
-                best_f1 = f1
-                opt_thresh = 0.5
 
             # Windowed agreement calculation (±3 hours)
             step_idx = 0
@@ -364,6 +432,60 @@ class ClinicalAlignmentPlotter(BasePlotter):
                 "Opt Threshold": opt_thresh
             })
 
+        # Evaluate interval checkpoints if discovered
+        new_interval_data = False
+        for method_name, intervals in sorted(method_interval_ckpts.items()):
+            opt_thresh = method_opt_thresholds.get(method_name, 0.5)
+            for ep, ckpt_path in intervals:
+                if method_name in interval_agreements and ep in interval_agreements[method_name]:
+                    continue
+                agent = self._load_agent(ckpt_path, device)
+                if agent is None:
+                    continue
+                all_admin_probs_ep = []
+                with torch.no_grad():
+                    for b_start in range(0, total_steps, batch_size):
+                        b_end = min(b_start + batch_size, total_steps)
+                        obs_batch = torch.tensor(all_obs[b_start:b_end], dtype=torch.float32).to(device)
+                        probs, _ = self._get_probs_and_actions(agent, obs_batch)
+                        if probs.shape[-1] > 1:
+                            p_adm = probs[:, 1].cpu().numpy()
+                        else:
+                            p_adm = probs.squeeze().cpu().numpy()
+                        all_admin_probs_ep.extend(p_adm)
+                all_admin_probs_ep = np.array(all_admin_probs_ep)
+                all_policy_acts = (all_admin_probs_ep >= opt_thresh).astype(int)
+
+                step_idx = 0
+                ep_agrs = []
+                for p_idx in range(num_patients):
+                    p_valid = valid_mask[p_idx]
+                    p_len = p_valid.sum()
+                    if p_len == 0:
+                        continue
+                    p_clin = all_clin_acts[step_idx:step_idx + p_len]
+                    p_pol = all_policy_acts[step_idx:step_idx + p_len]
+                    step_idx += p_len
+                    ep_agrs.append((p_clin == p_pol).mean())
+
+                interval_agreements.setdefault(method_name, {})[ep] = np.array(ep_agrs)
+                new_interval_data = True
+
+        # Ensure patient_agreements models are included in interval_agreements as final if not already present
+        for m_name, p_agr in patient_agreements.items():
+            if m_name not in interval_agreements:
+                interval_agreements[m_name] = {0: p_agr}
+            else:
+                max_ep = max(interval_agreements[m_name].keys()) if interval_agreements[m_name] else 0
+                if max_ep not in interval_agreements[m_name]:
+                    interval_agreements[m_name][max_ep + 1] = p_agr
+
+        # And ensure interval_agreements models are included in patient_agreements (at latest available epoch)
+        for m_name, ep_dict in interval_agreements.items():
+            if m_name not in patient_agreements and ep_dict:
+                latest_ep = max(ep_dict.keys())
+                patient_agreements[m_name] = ep_dict[latest_ep]
+
         if method_ckpts:
             df = pd.DataFrame(results)
             csv_path = output_dir / "method_comparison.csv"
@@ -372,8 +494,18 @@ class ClinicalAlignmentPlotter(BasePlotter):
             np.savez(cache_path, outcomes=outcomes, **patient_agreements)
             print(f"  Cached clinical alignment data: {cache_path}")
 
+        # Save interval history cache
+        if interval_agreements and (new_interval_data or not history_cache_path.exists()):
+            save_hist = {}
+            for m, ep_dict in interval_agreements.items():
+                for ep, p_agr in ep_dict.items():
+                    save_hist[f"{m}__ep__{ep}"] = p_agr
+            np.savez(history_cache_path, **save_hist)
+            print(f"  Cached clinical alignment interval history: {history_cache_path}")
+
         # Color deduplication across active methods
-        color_map = self._deduplicate_colors(list(patient_agreements.keys()))
+        all_active_methods = list(set(list(patient_agreements.keys()) + list(interval_agreements.keys())))
+        color_map = self._deduplicate_colors(all_active_methods)
 
         # 1. Clinician Agreement % Bar Chart (Opt-in only, excluded from defaults)
         requested_plots = cfg.get("plots", [])
@@ -420,18 +552,77 @@ class ClinicalAlignmentPlotter(BasePlotter):
 
         # 2. Clinician Agreement vs Septic Shock Outcome Analysis
         plot_all = len(requested_plots) == 0
-        should_plot_abs = plot_all or any(k in requested_plots for k in ["agreement_vs_shock", "agreement_vs_shock_absolute", "shock", "absolute"])
-        should_plot_dec = plot_all or any(k in requested_plots for k in ["agreement_vs_shock_deciles", "deciles", "shock_deciles"])
+        should_plot_shock = plot_all or any(k in requested_plots for k in [
+            "agreement_vs_shock", "agreement_vs_shock_absolute", "shock", "absolute"
+        ])
+        should_plot_prog = plot_all or any(k in requested_plots for k in [
+            "agreement_vs_shock", "agreement_vs_shock_progression", "interagreement",
+            "progression", "interagreement_vs_shock", "intervals"
+        ])
 
-        has_valid_data = patient_agreements and len(outcomes) == len(next(iter(patient_agreements.values())))
+        n_evals = int(cfg.get("n_evals", cfg.get("num_evals", 100)))
+        has_valid_data = bool(patient_agreements) and len(outcomes) > 0
+        if should_plot_shock and has_valid_data:
+            self._plot_agreement_vs_shock(patient_agreements, outcomes, output_dir, clean_exp, color_map, n_evals=n_evals)
 
-        if should_plot_abs and has_valid_data:
-            self._plot_agreement_vs_shock_absolute(patient_agreements, outcomes, output_dir, clean_exp, color_map)
+        if should_plot_prog and interval_agreements and len(outcomes) > 0:
+            for m_name, epochs_dict in sorted(interval_agreements.items()):
+                self._plot_method_agreement_vs_shock_progression(
+                    m_name, epochs_dict, outcomes, output_dir, clean_exp, color_map, n_evals=n_evals
+                )
 
-        if should_plot_dec and has_valid_data:
-            self._plot_agreement_vs_shock_deciles(patient_agreements, outcomes, output_dir, clean_exp, color_map)
+        if any(k in requested_plots for k in ["agreement_vs_shock_absolute_progression", "combined_progression", "all_progression"]) and interval_agreements and len(outcomes) > 0:
+            self._plot_agreement_vs_shock_absolute_progression(
+                interval_agreements, outcomes, output_dir, clean_exp, color_map, n_evals=n_evals
+            )
 
         print("==========================================================================================\n")
+
+    def _compute_binned_shock_stats(self, p_agr: np.ndarray, outcomes: np.ndarray,
+                                    bins: np.ndarray, n_evals: int = 100,
+                                    seed: int = 42) -> tuple:
+        """Compute mean and standard deviation of septic shock rates across multiple evaluation resamples."""
+        N = len(outcomes)
+        num_bins = len(bins) - 1
+        if N == 0:
+            return np.full(num_bins, np.nan), np.full(num_bins, np.nan)
+
+        agr_pct = p_agr * 100.0 if np.max(p_agr) <= 1.0 else p_agr
+
+        if n_evals <= 1:
+            means, stds = [], []
+            for i in range(num_bins):
+                low, high = bins[i], bins[i+1]
+                m = (agr_pct >= low) & (agr_pct <= high if i == num_bins - 1 else agr_pct < high)
+                pts = outcomes[m]
+                if len(pts) >= 5:
+                    means.append(float(np.mean(pts) * 100.0))
+                    stds.append(float(np.std(pts) / np.sqrt(len(pts))) * 100.0 if len(pts) > 1 else 0.0)
+                else:
+                    means.append(np.nan)
+                    stds.append(np.nan)
+            return np.array(means), np.array(stds)
+
+        rng = np.random.default_rng(seed)
+        boot_idx = rng.choice(N, size=(n_evals, N), replace=True)
+        boot_agrs = agr_pct[boot_idx]
+        boot_outs = outcomes[boot_idx]
+
+        means, stds = [], []
+        for i in range(num_bins):
+            low, high = bins[i], bins[i+1]
+            m = (boot_agrs >= low) & (boot_agrs <= high if i == num_bins - 1 else boot_agrs < high)
+            counts = m.sum(axis=1)
+            sums = (boot_outs * m).sum(axis=1)
+            valid = counts >= 5
+            if valid.sum() >= 5:
+                rates = (sums[valid] / counts[valid]) * 100.0
+                means.append(float(np.mean(rates)))
+                stds.append(float(np.std(rates)))
+            else:
+                means.append(np.nan)
+                stds.append(np.nan)
+        return np.array(means), np.array(stds)
 
     def _deduplicate_colors(self, methods: List[str]) -> Dict[str, str]:
         """Ensures every method plotted has a distinct color, dynamically reassigning duplicates if needed."""
@@ -456,144 +647,284 @@ class ClinicalAlignmentPlotter(BasePlotter):
             used_colors.add(c)
         return color_map
 
-    def _plot_agreement_vs_shock_deciles(self, patient_agreements: dict, outcomes: np.ndarray,
-                                         output_dir: Path, clean_exp: str, color_map: dict):
-        """Plot septic shock incidence across 10 equal patient agreement deciles with background distribution."""
-        fig, ax = plt.subplots(figsize=(11, 6))
-        ax2 = ax.twinx()
+    def _plot_agreement_vs_shock(self, patient_agreements: dict, outcomes: np.ndarray,
+                                 output_dir: Path, clean_exp: str, color_map: dict,
+                                 n_evals: int = 100):
+        """Plot septic shock rate vs clinician agreement across all methods with connected error bands and background histogram."""
+        bins = np.linspace(0, 100, 11)
+        bin_centers = (bins[:-1] + bins[1:]) / 2.0
 
-        num_patients = len(outcomes)
-        decile_labels = [f"D{i+1}\n({i*10}-{(i+1)*10}%)" for i in range(10)]
-        x_indices = np.arange(10)
+        fig, ax1 = plt.subplots(figsize=(10, 6))
+        ax2 = ax1.twinx()
 
-        # Background distribution: in deciles, each bucket has ~N/10 patients
-        patients_per_decile = [num_patients // 10] * 10
-        patients_per_decile[-1] += num_patients % 10
-
-        ax2.bar(x_indices, patients_per_decile, width=0.55, color="#cfd8dc", edgecolor="#90a4ae",
-                alpha=0.40, linewidth=1.0, label="Trajectories per Decile", zorder=1)
-        ax2.set_ylabel("Number of Trajectories", fontsize=11, fontweight="bold", color="#546e7a")
-        ax2.tick_params(axis='y', labelcolor="#546e7a")
-        ax2.set_ylim(0, max(patients_per_decile) * 1.55)
-
-        # Foreground lines
-        ax.set_zorder(ax2.get_zorder() + 1)
-        ax.patch.set_visible(False)
-
-        for m_name, p_agr in sorted(patient_agreements.items()):
-            color = color_map.get(m_name) or get_method_style(m_name).get("color") or "tab:blue"
-            marker = get_method_style(m_name).get("marker") or "o"
-            ls = get_method_style(m_name).get("linestyle") or "-"
-
-            # Equal frequency rank deciles (0 to 9)
-            ranks = pd.Series(p_agr).rank(method="first").values
-            decile_assignments = pd.qcut(ranks, q=10, labels=False)
-
-            shock_rates = []
-            for d in range(10):
-                m = (decile_assignments == d)
-                shock_rates.append(outcomes[m].mean() * 100.0)
-
-            ax.plot(x_indices, shock_rates, marker=marker, linestyle=ls, linewidth=2.2, markersize=7,
-                    label=clean_label(m_name), color=color, zorder=5)
-
-        ax.set_xlabel("Patient Agreement Decile (Lowest → Highest Clinician Alignment)", fontsize=11, fontweight="bold")
-        ax.set_ylabel("Septic Shock Incidence (%)", fontsize=11, fontweight="bold")
-        ax.set_title(f"Septic Shock Incidence vs Clinician Agreement Deciles ({clean_exp})", fontsize=13, fontweight="bold")
-        ax.set_xticks(x_indices)
-        ax.set_xticklabels(decile_labels, fontsize=9.5, fontweight="bold")
-        ax.grid(True, linestyle="--", alpha=0.35, zorder=0)
-        ax.set_ylim(0, 105)
-
-        lines1, labels1 = ax.get_legend_handles_labels()
-        lines2, labels2 = ax2.get_legend_handles_labels()
-        ax.legend(lines1 + lines2, labels1 + labels2, loc="upper left", bbox_to_anchor=(1.08, 1),
-                  fontsize=9.5, framealpha=0.95)
-
-        fig.tight_layout()
-        decile_plot_path = output_dir / "clinician_agreement_vs_shock_deciles.png"
-        plt.savefig(decile_plot_path, dpi=200, bbox_inches="tight")
-        plt.close()
-        print(f"  Saved Decile Shock Plot:   {decile_plot_path}")
-
-    def _plot_agreement_vs_shock_absolute(self, patient_agreements: dict, outcomes: np.ndarray,
-                                          output_dir: Path, clean_exp: str, color_map: dict):
-        """Plot septic shock incidence across standardized absolute clinician agreement intervals."""
-        from matplotlib.patches import Patch
-
-        fig, ax = plt.subplots(figsize=(11, 6))
-        ax2 = ax.twinx()
-
-        bin_edges = np.linspace(0.0, 1.0, 11)  # 0.0, 0.1, ..., 1.0
-        bin_labels = [f"{int(bin_edges[i]*100)}-{int(bin_edges[i+1]*100)}%" for i in range(10)]
-        x_indices = np.arange(10)
-        n_methods = len(patient_agreements)
-        bar_width = 0.8 / max(1, n_methods)
-
-        max_count = 0
         method_items = sorted(patient_agreements.items())
+        K = len(method_items)
+        total_bar_width = 7.5
+        bar_width = total_bar_width / max(K, 1)
 
-        # Plot background trajectory distribution grouped bars for each method
-        for idx, (m_name, p_agr) in enumerate(method_items):
+        # Background histogram
+        for k_idx, (m_name, p_agr) in enumerate(method_items):
+            agr_pct = p_agr * 100.0 if np.max(p_agr) <= 1.0 else p_agr
             color = color_map.get(m_name) or get_method_style(m_name).get("color") or "tab:blue"
-            counts = []
-            for i in range(10):
-                low = bin_edges[i]
-                high = bin_edges[i+1]
-                m = (p_agr >= low) & (p_agr <= high if i == 9 else p_agr < high)
-                counts.append(m.sum())
-            max_count = max(max_count, max(counts) if counts else 0)
 
-            x_pos = x_indices + (idx - (n_methods - 1) / 2.0) * bar_width
-            ax2.bar(x_pos, counts, width=bar_width * 0.9, color=color, alpha=0.20,
+            counts = []
+            for b_idx in range(10):
+                low, high = bins[b_idx], bins[b_idx + 1]
+                mask_bin = (agr_pct >= low) & (agr_pct <= high if b_idx == 9 else agr_pct < high)
+                counts.append(mask_bin.sum())
+
+            offset = (k_idx - (K - 1) / 2.0) * bar_width
+            bar_x = bin_centers + offset
+            ax2.bar(bar_x, counts, width=bar_width * 0.9, color=color, alpha=0.18,
                     edgecolor=color, linewidth=0.8, zorder=1)
 
-        ax2.set_ylabel("Number of Trajectories in Bucket", fontsize=11, fontweight="bold", color="#546e7a")
+        ax2.set_ylabel("Patient Trajectory Count (Histogram)", fontsize=12, fontweight="bold", color="#555555")
+        ax2.tick_params(axis='y', labelcolor="#555555")
+
+        ax1.set_zorder(ax2.get_zorder() + 1)
+        ax1.patch.set_visible(False)
+
+        # Foreground lines with connected error bands
+        for k_idx, (m_name, p_agr) in enumerate(method_items):
+            color = color_map.get(m_name) or get_method_style(m_name).get("color") or "tab:blue"
+            marker = get_method_style(m_name).get("marker") or "o"
+            ls = get_method_style(m_name).get("linestyle") or "-"
+            label = clean_label(m_name)
+
+            means, stds = self._compute_binned_shock_stats(p_agr, outcomes, bins, n_evals=n_evals)
+            valid = ~np.isnan(means)
+            if valid.sum() > 0:
+                ax1.plot(bin_centers[valid], means[valid], marker=marker, color=color,
+                         linestyle=ls, label=label, linewidth=2.5, markersize=7, zorder=3)
+                ax1.fill_between(bin_centers[valid],
+                                 np.maximum(0, means[valid] - stds[valid]),
+                                 np.minimum(100, means[valid] + stds[valid]),
+                                 color=color, alpha=0.12, zorder=2)
+
+        ax1.set_xlabel("Clinician – RL Policy Agreement (%)", fontsize=12, fontweight="bold")
+        ax1.set_ylabel("True Septic Shock Rate (%)", fontsize=12, fontweight="bold")
+        ax1.set_xticks(np.arange(0, 101, 10))
+        ax1.set_xlim(-2, 102)
+        ax1.set_ylim(0, 105)
+        ax1.grid(True, linestyle="--", alpha=0.4, zorder=0)
+
+        lines1, labels1 = ax1.get_legend_handles_labels()
+        ax1.legend(lines1, labels1, fontsize=10, loc="best", framealpha=0.9)
+        ax1.set_title(f"Septic Shock Rate vs. Clinician Agreement ({clean_exp})", fontsize=13, fontweight="bold")
+
+        fig.tight_layout()
+        plot_path = output_dir / "agreement_vs_shock.png"
+        plt.savefig(plot_path, dpi=200)
+        # Also save clinician_agreement_vs_shock_absolute.png for backward compatibility
+        abs_path = output_dir / "clinician_agreement_vs_shock_absolute.png"
+        plt.savefig(abs_path, dpi=200)
+        plt.close()
+        print(f"  Saved Agreement Plot:      {plot_path}")
+
+    def _plot_method_agreement_vs_shock_progression(self, m_name: str, epochs_dict: dict,
+                                                    outcomes: np.ndarray, output_dir: Path,
+                                                    clean_exp: str, color_map: dict,
+                                                    n_evals: int = 100):
+        """Plot septic shock rate progression for a single method across training intervals/epochs with connected error bands,
+        saved to intervals/interagreement_vs_shock_[method]_progression.png."""
+        from matplotlib.patches import Patch
+
+        if not epochs_dict or len(outcomes) == 0:
+            return
+
+        intervals_dir = output_dir / "intervals"
+        intervals_dir.mkdir(parents=True, exist_ok=True)
+
+        bins = np.linspace(0, 100, 11)
+        bin_centers = (bins[:-1] + bins[1:]) / 2.0
+
+        fig, ax1 = plt.subplots(figsize=(10, 6))
+        ax2 = ax1.twinx()
+
+        # Background trajectory distribution for this method at its latest epoch
+        sorted_epochs = sorted(epochs_dict.keys())
+        latest_ep = sorted_epochs[-1]
+        p_agr_latest = epochs_dict[latest_ep]
+        agr_pct_latest = p_agr_latest * 100.0 if np.max(p_agr_latest) <= 1.0 else p_agr_latest
+
+        counts = []
+        for b_idx in range(10):
+            low, high = bins[b_idx], bins[b_idx + 1]
+            m = (agr_pct_latest >= low) & (agr_pct_latest <= high if b_idx == 9 else agr_pct_latest < high)
+            counts.append(m.sum())
+
+        ax2.bar(bin_centers, counts, width=7.5, color="#cfd8dc", alpha=0.35,
+                edgecolor="#90a4ae", linewidth=1.0, zorder=1)
+        ax2.set_ylabel("Patient Trajectory Count (Histogram)", fontsize=12, fontweight="bold", color="#555555")
+        ax2.tick_params(axis='y', labelcolor="#555555")
+        ax2.set_ylim(0, max(1, max(counts)) * 1.35)
+
+        ax1.set_zorder(ax2.get_zorder() + 1)
+        ax1.patch.set_visible(False)
+
+        base_color = color_map.get(m_name) or get_method_style(m_name).get("color") or "tab:blue"
+        marker = get_method_style(m_name).get("marker") or "o"
+        ls = get_method_style(m_name).get("linestyle") or "-"
+
+        K = len(sorted_epochs)
+        for idx, ep in enumerate(sorted_epochs):
+            p_agr = epochs_dict[ep]
+            means, stds = self._compute_binned_shock_stats(p_agr, outcomes, bins, n_evals=n_evals)
+
+            valid = ~np.isnan(means)
+            if valid.sum() > 0:
+                ratio = idx / (K - 1) if K > 1 else 1.0
+                alpha = 0.25 + 0.75 * ratio if K > 1 else 1.0
+                lw = 1.4 + 1.2 * ratio if K > 1 else 2.2
+                ms = 4.5 + 2.5 * ratio if K > 1 else 6.5
+                zorder = 5 + idx
+
+                if K == 1:
+                    lbl = f"Epoch {ep}"
+                elif K <= 8:
+                    lbl = f"Epoch {ep} (Initial)" if idx == 0 else f"Epoch {ep} (Final)" if idx == K - 1 else f"Epoch {ep}"
+                else:
+                    step = max(1, K // 5)
+                    if idx == 0:
+                        lbl = f"Epoch {ep} (Initial)"
+                    elif idx == K - 1:
+                        lbl = f"Epoch {ep} (Final)"
+                    elif idx % step == 0:
+                        lbl = f"Epoch {ep}"
+                    else:
+                        lbl = None
+
+                ax1.plot(bin_centers[valid], means[valid], marker=marker, linestyle=ls, linewidth=lw,
+                         markersize=ms, label=lbl, color=base_color, alpha=alpha, zorder=zorder)
+                ax1.fill_between(bin_centers[valid],
+                                 np.maximum(0, means[valid] - stds[valid]),
+                                 np.minimum(100, means[valid] + stds[valid]),
+                                 color=base_color, alpha=0.12 * alpha, zorder=zorder - 1)
+
+        ax1.set_xlabel("Clinician – RL Policy Agreement (%)", fontsize=12, fontweight="bold")
+        ax1.set_ylabel("True Septic Shock Rate (%)", fontsize=12, fontweight="bold")
+        ax1.set_xticks(np.arange(0, 101, 10))
+        ax1.set_xlim(-2, 102)
+        ax1.set_ylim(0, 105)
+        ax1.grid(True, linestyle="--", alpha=0.4, zorder=0)
+
+        display_name = clean_label(m_name)
+        ax1.set_title(f"Septic Shock Rate vs. Clinician Agreement — {display_name} Progression ({clean_exp})",
+                      fontsize=12.5, fontweight="bold")
+
+        lines1, labels1 = ax1.get_legend_handles_labels()
+        dist_patch = Patch(facecolor="#90a4ae", alpha=0.35, label="Trajectory Count (Histogram)")
+        ax1.legend(lines1 + [dist_patch], labels1 + ["Trajectory Count (Histogram)"],
+                   loc="lower left", fontsize=9.5, framealpha=0.92)
+
+        fig.tight_layout()
+        safe_m_name = m_name.replace("/", "_")
+        prog_path = intervals_dir / f"interagreement_vs_shock_{safe_m_name}_progression.png"
+        plt.savefig(prog_path, dpi=200, bbox_inches="tight")
+        plt.close()
+        print(f"  Saved Progression Plot:    {prog_path}")
+
+    def _plot_agreement_vs_shock_absolute_progression(self, interval_agreements: dict, outcomes: np.ndarray,
+                                                      output_dir: Path, clean_exp: str, color_map: dict,
+                                                      filename: Optional[str] = None,
+                                                      n_evals: int = 100):
+        """Plot septic shock rate progression across training intervals for all methods with connected error bands."""
+        from matplotlib.patches import Patch
+
+        bins = np.linspace(0, 100, 11)
+        bin_centers = (bins[:-1] + bins[1:]) / 2.0
+
+        fig, ax1 = plt.subplots(figsize=(11, 6))
+        ax2 = ax1.twinx()
+
+        # Background trajectory distribution across all methods at their final available interval
+        counts_list = []
+        for m_name, ep_dict in interval_agreements.items():
+            if ep_dict:
+                latest_ep = max(ep_dict.keys())
+                p_agr = ep_dict[latest_ep]
+                agr_pct = p_agr * 100.0 if np.max(p_agr) <= 1.0 else p_agr
+                c = []
+                for i in range(10):
+                    low, high = bins[i], bins[i+1]
+                    m = (agr_pct >= low) & (agr_pct <= high if i == 9 else agr_pct < high)
+                    c.append(m.sum())
+                counts_list.append(c)
+        if counts_list:
+            counts = np.mean(counts_list, axis=0)
+        else:
+            counts = np.zeros(10)
+
+        ax2.bar(bin_centers, counts, width=7.5, color="#cfd8dc", alpha=0.35,
+                edgecolor="#90a4ae", linewidth=1.0, zorder=1)
+        ax2.set_ylabel("Patient Trajectory Count (Histogram)", fontsize=12, fontweight="bold", color="#546e7a")
         ax2.tick_params(axis='y', labelcolor="#546e7a")
-        ax2.set_ylim(0, max(1, max_count) * 1.35)
+        ax2.set_ylim(0, max(1, max(counts)) * 1.35)
 
-        # Foreground shock incidence lines
-        ax.set_zorder(ax2.get_zorder() + 1)
-        ax.patch.set_visible(False)
+        ax1.set_zorder(ax2.get_zorder() + 1)
+        ax1.patch.set_visible(False)
 
-        for m_name, p_agr in method_items:
+        for m_name, epochs_dict in sorted(interval_agreements.items()):
             color = color_map.get(m_name) or get_method_style(m_name).get("color") or "tab:blue"
             marker = get_method_style(m_name).get("marker") or "o"
             ls = get_method_style(m_name).get("linestyle") or "-"
 
-            shock_rates = []
-            for i in range(10):
-                low = bin_edges[i]
-                high = bin_edges[i+1]
-                m = (p_agr >= low) & (p_agr <= high if i == 9 else p_agr < high)
-                if m.sum() >= 5:  # Require at least 5 patients to plot reliable point
-                    shock_rates.append(outcomes[m].mean() * 100.0)
-                else:
-                    shock_rates.append(np.nan)
+            sorted_epochs = sorted(epochs_dict.keys())
+            K = len(sorted_epochs)
 
-            valid_mask = ~np.isnan(shock_rates)
-            if valid_mask.sum() > 0:
-                ax.plot(x_indices[valid_mask], np.array(shock_rates)[valid_mask],
-                        marker=marker, linestyle=ls, linewidth=2.2, markersize=7,
-                        label=clean_label(m_name), color=color, zorder=5)
+            for idx, ep in enumerate(sorted_epochs):
+                p_agr = epochs_dict[ep]
+                means, stds = self._compute_binned_shock_stats(p_agr, outcomes, bins, n_evals=n_evals)
 
-        ax.set_xlabel("Clinician Agreement Rate Interval (%)", fontsize=11, fontweight="bold")
-        ax.set_ylabel("Septic Shock Incidence (%)", fontsize=11, fontweight="bold")
-        ax.set_title(f"Septic Shock Incidence vs Absolute Clinician Agreement ({clean_exp})", fontsize=13, fontweight="bold")
-        ax.set_xticks(x_indices)
-        ax.set_xticklabels(bin_labels, fontsize=9.5, fontweight="bold")
-        ax.grid(True, linestyle="--", alpha=0.35, zorder=0)
-        ax.set_ylim(0, 105)
+                valid = ~np.isnan(means)
+                if valid.sum() > 0:
+                    ratio = idx / (K - 1) if K > 1 else 1.0
+                    alpha = 0.20 + 0.80 * ratio if K > 1 else 1.0
+                    lw = 1.2 + 1.0 * ratio if K > 1 else 2.2
+                    ms = 3.5 + 2.5 * ratio if K > 1 else 6.5
+                    zorder = 5 + idx
 
-        lines1, labels1 = ax.get_legend_handles_labels()
-        dist_patch = Patch(facecolor="#90a4ae", alpha=0.35, label="Trajectory Distribution (Bars)")
-        ax.legend(lines1 + [dist_patch], labels1 + ["Trajectory Distribution (Bars)"],
-                  loc="upper left", bbox_to_anchor=(1.08, 1), fontsize=9.5, framealpha=0.95)
+                    if K == 1:
+                        lbl = clean_label(m_name)
+                    elif K <= 6:
+                        if idx == 0:
+                            lbl = f"{clean_label(m_name)} (Ep {ep} - Initial)"
+                        elif idx == K - 1:
+                            lbl = f"{clean_label(m_name)} (Ep {ep} - Final)"
+                        else:
+                            lbl = f"{clean_label(m_name)} (Ep {ep})"
+                    elif idx == 0:
+                        lbl = f"{clean_label(m_name)} (Ep {ep} - Initial)"
+                    elif idx == K - 1:
+                        lbl = f"{clean_label(m_name)} (Ep {ep} - Final)"
+                    else:
+                        lbl = None
+
+                    ax1.plot(bin_centers[valid], means[valid], marker=marker, linestyle=ls,
+                             linewidth=lw, markersize=ms, label=lbl, color=color, alpha=alpha, zorder=zorder)
+                    ax1.fill_between(bin_centers[valid],
+                                     np.maximum(0, means[valid] - stds[valid]),
+                                     np.minimum(100, means[valid] + stds[valid]),
+                                     color=color, alpha=0.10 * alpha, zorder=zorder - 1)
+
+        ax1.set_xlabel("Clinician – RL Policy Agreement (%)", fontsize=12, fontweight="bold")
+        ax1.set_ylabel("True Septic Shock Rate (%)", fontsize=12, fontweight="bold")
+        ax1.set_xticks(np.arange(0, 101, 10))
+        ax1.set_xlim(-2, 102)
+        ax1.set_ylim(0, 105)
+        ax1.grid(True, linestyle="--", alpha=0.35, zorder=0)
+        ax1.set_title(f"Septic Shock Rate vs. Clinician Agreement — Progression ({clean_exp})", fontsize=13, fontweight="bold")
+
+        lines1, labels1 = ax1.get_legend_handles_labels()
+        dist_patch = Patch(facecolor="#90a4ae", alpha=0.35, label="Trajectory Count (Histogram)")
+        ax1.legend(lines1 + [dist_patch], labels1 + ["Trajectory Count (Histogram)"],
+                   loc="upper left", bbox_to_anchor=(1.08, 1), fontsize=9.5, framealpha=0.95)
 
         fig.tight_layout()
-        abs_plot_path = output_dir / "clinician_agreement_vs_shock_absolute.png"
-        plt.savefig(abs_plot_path, dpi=200, bbox_inches="tight")
+        prog_name = filename or "clinician_agreement_vs_shock_absolute_progression.png"
+        prog_path = output_dir / prog_name
+        plt.savefig(prog_path, dpi=200, bbox_inches="tight")
         plt.close()
-        print(f"  Saved Absolute Shock Plot: {abs_plot_path}")
+        print(f"  Saved Combined Progression Plot: {prog_path}")
 
 

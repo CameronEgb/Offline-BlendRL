@@ -15,7 +15,6 @@ agent:
   eval_interval_epochs: 1
   weight_decay: 1e-4
   ent_coef: 0.05
-  pos_action_weight: 20.0
   hidden_sizes: [512, 512, 256, 128]
 
   # CQL algorithm settings
@@ -45,7 +44,6 @@ plots:
   clinical_alignment:
     plots:
       - agreement_vs_shock
-      - agreement_vs_shock_deciles
   clinical: {}
   reports:
     include_hyperparameters: true

@@ -31,6 +31,12 @@ class SaveInitialCheckpointCallback(Callback):
         named_ckpt = os.path.join(parent_ckpt_root, f"{self.cfg.agent.name}.ckpt")
         import shutil
         shutil.copy2(init_ckpt, named_ckpt)
+
+        # Also save interval_epoch_000.ckpt for interval tracking
+        interval_dir = os.path.join(self.ckpt_dir, "intervals")
+        os.makedirs(interval_dir, exist_ok=True)
+        init_interval = os.path.join(interval_dir, "interval_epoch_000.ckpt")
+        trainer.save_checkpoint(init_interval)
         print(f"[Init Checkpoint] Saved initial model checkpoint to: {init_ckpt}")
 
 def print_hardware_diagnostics():
@@ -125,19 +131,34 @@ def build_trainer(cfg, model=None):
         pass 
 
     is_offline_only = cfg.env.get("offline_only", False)
-
     callbacks = [SaveInitialCheckpointCallback(ckpt_dir, cfg)]
+
     if is_offline_only:
+        monitor_metric = cfg.env.get("monitor_metric", "val/loss")
+        monitor_mode = "max" if any(k in str(monitor_metric).lower() for k in ["f1", "reward", "auc", "acc"]) else "min"
         callbacks.append(
             ModelCheckpoint(
                 dirpath=ckpt_dir,
                 filename="best_model",
-                monitor="val/loss",
-                mode="min",
+                monitor=monitor_metric,
+                mode=monitor_mode,
                 save_top_k=1,
+                save_last=True,
                 enable_version_counter=False
             )
         )
+        eval_interval_epochs = cfg.agent.get("eval_interval_epochs", 1) if hasattr(cfg, "agent") else 1
+        if eval_interval_epochs:
+            interval_dir = os.path.join(ckpt_dir, "intervals")
+            callbacks.append(
+                ModelCheckpoint(
+                    dirpath=interval_dir,
+                    filename="interval_epoch_{epoch:03d}",
+                    every_n_epochs=eval_interval_epochs,
+                    save_top_k=-1,
+                    save_on_train_epoch_end=False
+                )
+            )
     else:
         from src.core.callbacks import EnvironmentEvaluatorCallback
         callbacks.extend([

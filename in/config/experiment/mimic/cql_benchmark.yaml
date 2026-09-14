@@ -26,7 +26,6 @@ agent:
   batch_size: 1024
   lr: 2e-4
   cql_alpha: 2.0
-  pos_action_weight: 5.0
   reward_scale: 0.1
   bellman_loss: smooth_l1
   weight_decay: 1e-4

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from plot.base import BasePlotter
 from plot.ep_cache import get_ep_eval_data
-from src.early_prediction.eval_logic import plot_agreement_vs_shock, plot_agreement_vs_shock_deciles
+from src.early_prediction.eval_logic import plot_agreement_vs_shock
 
 class EpAgreementPlotter(BasePlotter):
     def __init__(self):
@@ -25,4 +25,3 @@ class EpAgreementPlotter(BasePlotter):
         if rl_agreements:
             print(f"Generating Agreement Plots in {output_dir}")
             plot_agreement_vs_shock(rl_agreements, y, output_dir)
-            plot_agreement_vs_shock_deciles(rl_agreements, y, output_dir)

@@ -15,7 +15,6 @@ agent:
   eval_interval_epochs: 5
   lr: 2e-4
   cql_alpha: 2.0
-  pos_action_weight: 5.0
   reward_scale: 0.1
   bellman_loss: smooth_l1
   blend_ent_coef: 0.1

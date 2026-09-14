@@ -10,8 +10,8 @@ from typing import Tuple, Optional
 
 METHOD_STYLE = {
     # Clean harness/architecture keys
-    "cql":                          {"label": "CQL (Neural)",         "color": "#1f77b4",    "marker": "o", "linestyle": "-"},
-    "cql_dnn":                      {"label": "CQL (Standard MLP)",   "color": "#1f77b4",    "marker": "o", "linestyle": "-"},
+    "cql":                          {"label": "DNN",                  "color": "#1f77b4",    "marker": "o", "linestyle": "-"},
+    "cql_dnn":                      {"label": "DNN",                  "color": "#1f77b4",    "marker": "o", "linestyle": "-"},
     "cql_dueling_resnet":           {"label": "CQL (Dueling ResNet)",  "color": "#08519c",    "marker": "D", "linestyle": "-"},
     "cql_transformer":              {"label": "CQL (Transformer)",    "color": "#e377c2",    "marker": "p", "linestyle": "-"},
     "cql_blendrl_human_neural":     {"label": "BlendRL (MLP, Human, MLP)", "color": "#fdbf6f", "marker": "s", "linestyle": "-"},

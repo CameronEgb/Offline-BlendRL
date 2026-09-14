@@ -183,7 +183,6 @@ def run_reciprocal_refinement(cfg, local_val):
             from src.early_prediction.eval_logic import (
                 compute_ep_eval_data,
                 plot_agreement_vs_shock,
-                plot_agreement_vs_shock_deciles,
                 plot_ep_shock_over_tau,
                 write_counterfactual_table
             )
@@ -195,7 +194,6 @@ def run_reciprocal_refinement(cfg, local_val):
                 )
                 
                 plot_agreement_vs_shock(eval_results["rl_agreements"], eval_results["y"], round_results_dir)
-                plot_agreement_vs_shock_deciles(eval_results["rl_agreements"], eval_results["y"], round_results_dir)
                 plot_ep_shock_over_tau(eval_results["ep_shock_results"], round_results_dir)
                 write_counterfactual_table(
                     eval_results["cf_data"], 
