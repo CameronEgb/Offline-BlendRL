@@ -721,6 +721,32 @@ class ClinicalAlignmentPlotter(BasePlotter):
         plt.close()
         print(f"  Saved Agreement Plot:      {plot_path}")
 
+    @staticmethod
+    def _get_progression_color(base_color, ratio: float):
+        """Generate a smooth chromatic color shift along training progression.
+        
+        Shifts the hue and saturation from a distinct, brighter starting tint
+        at ratio=0.0 (initial training epoch) towards the method's deep, saturated signature
+        base color at ratio=1.0 (final converged epoch), making the direction of convergence
+        immediately distinguishable.
+        """
+        import matplotlib.colors as mcolors
+        rgb = mcolors.to_rgb(base_color)
+        h, s, v = mcolors.rgb_to_hsv(rgb)
+        
+        # Warm/cool hue rotation:
+        # Warm colors (reds, oranges, h < 0.25) shift towards bright gold/yellow (h ~ 0.16)
+        # Cool colors (greens, blues, purples, h >= 0.25) shift towards bright cyan/teal/lime (h - 0.12)
+        if h < 0.25:
+            h_start = min(0.18, h + 0.08)
+        else:
+            h_start = (h - 0.12) % 1.0
+
+        h_curr = (h_start + ratio * (h - h_start)) % 1.0
+        s_curr = 0.48 + (s - 0.48) * (ratio ** 0.8)
+        v_curr = 0.88 + (v - 0.88) * (ratio ** 0.8)
+        return mcolors.hsv_to_rgb((h_curr, s_curr, v_curr))
+
     def _plot_method_agreement_vs_shock_progression(self, m_name: str, epochs_dict: dict,
                                                     outcomes: np.ndarray, output_dir: Path,
                                                     clean_exp: str, color_map: dict,
@@ -774,8 +800,9 @@ class ClinicalAlignmentPlotter(BasePlotter):
             valid = ~np.isnan(means)
             if valid.sum() > 0:
                 ratio = idx / (K - 1) if K > 1 else 1.0
-                alpha = 0.25 + 0.75 * ratio if K > 1 else 1.0
-                lw = 1.4 + 1.2 * ratio if K > 1 else 2.2
+                c = self._get_progression_color(base_color, ratio) if K > 1 else base_color
+                alpha = 0.45 + 0.55 * ratio if K > 1 else 1.0
+                lw = 1.5 + 1.2 * ratio if K > 1 else 2.2
                 ms = 4.5 + 2.5 * ratio if K > 1 else 6.5
                 zorder = 5 + idx
 
@@ -795,11 +822,11 @@ class ClinicalAlignmentPlotter(BasePlotter):
                         lbl = None
 
                 ax1.plot(bin_centers[valid], means[valid], marker=marker, linestyle=ls, linewidth=lw,
-                         markersize=ms, label=lbl, color=base_color, alpha=alpha, zorder=zorder)
+                         markersize=ms, label=lbl, color=c, alpha=alpha, zorder=zorder)
                 ax1.fill_between(bin_centers[valid],
                                  np.maximum(0, means[valid] - stds[valid]),
                                  np.minimum(100, means[valid] + stds[valid]),
-                                 color=base_color, alpha=0.12 * alpha, zorder=zorder - 1)
+                                 color=c, alpha=0.14 * alpha, zorder=zorder - 1)
 
         ax1.set_xlabel("Clinician – RL Policy Agreement (%)", fontsize=12, fontweight="bold")
         ax1.set_ylabel("True Septic Shock Rate (%)", fontsize=12, fontweight="bold")
@@ -879,8 +906,9 @@ class ClinicalAlignmentPlotter(BasePlotter):
                 valid = ~np.isnan(means)
                 if valid.sum() > 0:
                     ratio = idx / (K - 1) if K > 1 else 1.0
-                    alpha = 0.20 + 0.80 * ratio if K > 1 else 1.0
-                    lw = 1.2 + 1.0 * ratio if K > 1 else 2.2
+                    c = self._get_progression_color(color, ratio) if K > 1 else color
+                    alpha = 0.40 + 0.60 * ratio if K > 1 else 1.0
+                    lw = 1.3 + 1.1 * ratio if K > 1 else 2.2
                     ms = 3.5 + 2.5 * ratio if K > 1 else 6.5
                     zorder = 5 + idx
 
@@ -901,11 +929,11 @@ class ClinicalAlignmentPlotter(BasePlotter):
                         lbl = None
 
                     ax1.plot(bin_centers[valid], means[valid], marker=marker, linestyle=ls,
-                             linewidth=lw, markersize=ms, label=lbl, color=color, alpha=alpha, zorder=zorder)
+                             linewidth=lw, markersize=ms, label=lbl, color=c, alpha=alpha, zorder=zorder)
                     ax1.fill_between(bin_centers[valid],
                                      np.maximum(0, means[valid] - stds[valid]),
                                      np.minimum(100, means[valid] + stds[valid]),
-                                     color=color, alpha=0.10 * alpha, zorder=zorder - 1)
+                                     color=c, alpha=0.12 * alpha, zorder=zorder - 1)
 
         ax1.set_xlabel("Clinician – RL Policy Agreement (%)", fontsize=12, fontweight="bold")
         ax1.set_ylabel("True Septic Shock Rate (%)", fontsize=12, fontweight="bold")
