@@ -129,34 +129,8 @@ class BasePlotter:
         elif exp_config_name and "/" in exp_config_name:
             group_hint = exp_config_name.split("/")[0]
 
-        # 1. First find live experiment YAML candidates
-        candidates = []
-        if exp_config_name:
-            clean_base = Path(exp_config_name).stem
-            candidates.extend([
-                Path(f"in/config/experiment/{exp_config_name}.yaml"),
-                Path(f"in/config/experiment/{clean_base}.yaml"),
-            ])
-            if group_hint:
-                candidates.append(Path(f"in/config/experiment/{group_hint}/{clean_base}.yaml"))
-            candidates.extend(list(Path("in/config/experiment").glob(f"**/{clean_base}.yaml")))
-
-        if group_hint:
-            candidates.append(Path(f"in/config/experiment/{group_hint}/{clean_exp}.yaml"))
-        candidates.extend([
-            Path(f"in/config/experiment/{exp_id}.yaml"),
-            Path(f"in/config/experiment/{clean_exp}.yaml"),
-        ])
-        candidates.extend(list(Path("in/config/experiment").glob(f"**/{clean_exp}.yaml")))
-
-        live_cfg = {}
-        for cand in candidates:
-            if cand.exists():
-                raw = self._load_yaml(cand)
-                live_cfg = self._resolve_config_defaults(raw)
-                break
-
-        # 2. Check saved config.yaml from the experiment's log or checkpoint directory
+        # 1. Check saved config.yaml from the experiment's log or checkpoint directory first
+        # to ensure we capture the true group and execution hyperparameters
         saved_cfg = {}
         for base_dir in [Path("results/logs"), Path("results/checkpoints")]:
             if base_dir.exists():
@@ -178,9 +152,56 @@ class BasePlotter:
                     saved_cfg = self._load_yaml(matches_nested[0])
                     break
 
+        if not group_hint:
+            if saved_cfg and saved_cfg.get("group"):
+                group_hint = str(saved_cfg.get("group"))
+            else:
+                for base_dir in [Path("results/logs"), Path("results/checkpoints"), Path("results/plots")]:
+                    if base_dir.exists():
+                        for g_dir in base_dir.iterdir():
+                            if g_dir.is_dir() and (g_dir / clean_exp).exists():
+                                group_hint = g_dir.name
+                                break
+                        if group_hint:
+                            break
+
+        # 2. Find live experiment YAML candidates
+        candidates = []
+        if exp_config_name:
+            clean_base = Path(exp_config_name).stem
+            candidates.extend([
+                Path(f"in/config/experiment/{exp_config_name}.yaml"),
+                Path(f"in/config/experiment/{clean_base}.yaml"),
+            ])
+            if group_hint:
+                candidates.append(Path(f"in/config/experiment/{group_hint}/{clean_base}.yaml"))
+            candidates.extend(list(Path("in/config/experiment").glob(f"**/{clean_base}.yaml")))
+
+        if group_hint:
+            candidates.append(Path(f"in/config/experiment/{group_hint}/{clean_exp}.yaml"))
+        candidates.extend([
+            Path(f"in/config/experiment/{exp_id}.yaml"),
+            Path(f"in/config/experiment/{clean_exp}.yaml"),
+        ])
+        if not group_hint:
+            candidates.extend(list(Path("in/config/experiment").glob(f"**/{clean_exp}.yaml")))
+
+        live_cfg = {}
+        for cand in candidates:
+            if cand.exists():
+                raw = self._load_yaml(cand)
+                live_cfg = self._resolve_config_defaults(raw)
+                break
+
         if live_cfg and saved_cfg:
+            # Saved config represents the ground-truth hyperparameters and methods executed.
+            # Live config allows overriding visualization-only keys (plots, default_plots, etc.).
             merged = dict(saved_cfg)
-            merged.update(live_cfg)
+            for k, v in live_cfg.items():
+                if k in ("plots", "default_plots", "style", "plot_style"):
+                    merged[k] = v
+                elif k not in merged:
+                    merged[k] = v
             return merged
         elif live_cfg:
             return live_cfg

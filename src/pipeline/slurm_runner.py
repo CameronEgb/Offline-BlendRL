@@ -141,7 +141,7 @@ def run_slurm_training(cfg, context):
 
         # 3. Final Plotting
         if not cfg.get("no_plot", False):
-            plot_cmd = f"{python_cmd} plot/manager.py {cfg.experiment_id}"
+            plot_cmd = f"{python_cmd} plot/manager.py {cfg.group}/{cfg.experiment_id}"
             if cfg.get("plot_style", None):
                 plot_cmd += f" --style {cfg.get('plot_style', None)}"
             script_content += f'echo "=== [Generating Final Plots] ==="\n'
@@ -300,7 +300,7 @@ def run_slurm_training(cfg, context):
             dependency=dependency_str,
         )
         python_cmd = get_shell_python_cmd(site_cfg)
-        plot_cmd = f"{python_cmd} plot/manager.py {cfg.experiment_id}"
+        plot_cmd = f"{python_cmd} plot/manager.py {cfg.group}/{cfg.experiment_id}"
         if cfg.get("plot_style", None):
             plot_cmd += f" --style {cfg.get('plot_style', None)}"
         plot_content = plot_header + "\n" + get_shell_env_block(site_cfg) + f"\n\necho \"=== [Generating Final Plots] ===\"\n{plot_cmd}\n"

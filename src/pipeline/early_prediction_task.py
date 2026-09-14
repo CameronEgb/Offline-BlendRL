@@ -104,7 +104,7 @@ date
             if not cfg.get("no_plot", False) and job_ids:
                 plot_slurm_script = slurm_dir / "early_pred_sweep_plot.slurm"
                 dep_str = ":".join(job_ids)
-                plot_cmd_str = f"{get_shell_python_cmd(site_cfg)} plot/manager.py {cfg.experiment_id}"
+                plot_cmd_str = f"{get_shell_python_cmd(site_cfg)} plot/manager.py {cfg.group}/{cfg.experiment_id}"
                 if cfg.get("plot_style", None):
                     plot_cmd_str += f" --style {cfg.get('plot_style', None)}"
 
@@ -149,7 +149,7 @@ date
     elif task_name == "early_prediction_eval":
         print(f"\n=== Running Early Prediction Checkpoint Evaluation ({cfg.experiment_id}) ===")
         if local_val:
-            cmd = [get_python_executable(site_cfg), "-u", "plot/manager.py", str(cfg.experiment_id)]
+            cmd = [get_python_executable(site_cfg), "-u", "plot/manager.py", f"{cfg.group}/{cfg.experiment_id}"]
             print(f"Executing: {' '.join(cmd)}")
             res = subprocess.run(cmd)
             sys.exit(res.returncode)
@@ -177,7 +177,7 @@ date
             script_content = f"""{header}
 {env_block}
 
-{python_cmd} -u plot/manager.py {cfg.experiment_id}
+{python_cmd} -u plot/manager.py {cfg.group}/{cfg.experiment_id}
 """
             with open(slurm_script_path, "w") as f:
                 f.write(script_content)
