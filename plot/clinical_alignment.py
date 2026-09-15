@@ -286,7 +286,15 @@ class ClinicalAlignmentPlotter(BasePlotter):
         results = []
         if csv_path.exists() and not remake:
             try:
-                results = pd.read_csv(csv_path).to_dict("records")
+                raw_records = pd.read_csv(csv_path).to_dict("records")
+                seen_methods = {}
+                for r in raw_records:
+                    orig_m = str(r.get("Method", "")).strip()
+                    clean_m = orig_m if orig_m == "Clinician (Baseline)" else clean_label(orig_m)
+                    r["Method"] = clean_m
+                    # Later records for the same method replace earlier ones (e.g. replacing old CQL (Standard MLP) with DNN)
+                    seen_methods[clean_m] = r
+                results = list(seen_methods.values())
             except Exception:
                 results = []
 
@@ -486,11 +494,13 @@ class ClinicalAlignmentPlotter(BasePlotter):
                 latest_ep = max(ep_dict.keys())
                 patient_agreements[m_name] = ep_dict[latest_ep]
 
-        if method_ckpts:
+        if results:
             df = pd.DataFrame(results)
             csv_path = output_dir / "method_comparison.csv"
             df.to_csv(csv_path, index=False)
             print(f"  Saved MIMIC method comparison: {csv_path}")
+
+        if method_ckpts or patient_agreements:
             np.savez(cache_path, outcomes=outcomes, **patient_agreements)
             print(f"  Cached clinical alignment data: {cache_path}")
 

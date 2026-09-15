@@ -94,8 +94,8 @@ def get_style_info(name: str) -> Tuple[Optional[str], str, str]:
 
 
 def get_canonical_method_name(name: str) -> str:
-    """Map method aliases to canonical registered name."""
-    name = str(name).replace("/", "_")
+    """Map method aliases and historical display names to canonical registered name."""
+    s = str(name).replace("/", "_")
     alias_map = {
         "blendrl_cql_human_neural": "cql_blendrl_human_neural",
         "blendrl_cql_human_transformer": "cql_blendrl_human_transformer",
@@ -105,6 +105,9 @@ def get_canonical_method_name(name: str) -> str:
         "blendrl_ppo_human_neural": "ppo_blendrl_human_neural",
         "cql": "cql_dnn",
         "dnn": "cql_dnn",
+        "cql (standard mlp)": "cql_dnn",
+        "cql (dueling resnet)": "cql_dueling_resnet",
+        "cql (transformer)": "cql_transformer",
         "dueling_resnet": "cql_dueling_resnet",
         "cql_dueling_resnet": "cql_dueling_resnet",
         "transformer": "cql_transformer",
@@ -112,7 +115,12 @@ def get_canonical_method_name(name: str) -> str:
         "iql": "iql_dnn",
         "ppo": "ppo_dnn",
     }
-    return alias_map.get(name, name)
+    if s in alias_map:
+        return alias_map[s]
+    s_lower = s.lower()
+    if s_lower in alias_map:
+        return alias_map[s_lower]
+    return s
 
 
 def get_method_aliases(name: str) -> set:
