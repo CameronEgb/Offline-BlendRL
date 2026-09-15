@@ -12,8 +12,11 @@ METHOD_STYLE = {
     # Clean harness/architecture keys
     "cql":                          {"label": "DNN",                  "color": "#1f77b4",    "marker": "o", "linestyle": "-"},
     "cql_dnn":                      {"label": "DNN",                  "color": "#1f77b4",    "marker": "o", "linestyle": "-"},
-    "cql_dueling_resnet":           {"label": "CQL (Dueling ResNet)",  "color": "#08519c",    "marker": "D", "linestyle": "-"},
-    "cql_transformer":              {"label": "CQL (Transformer)",    "color": "#e377c2",    "marker": "p", "linestyle": "-"},
+    "dnn":                          {"label": "DNN",                  "color": "#1f77b4",    "marker": "o", "linestyle": "-"},
+    "cql_dueling_resnet":           {"label": "Dueling ResNet",       "color": "#08519c",    "marker": "D", "linestyle": "-"},
+    "dueling_resnet":               {"label": "Dueling ResNet",       "color": "#08519c",    "marker": "D", "linestyle": "-"},
+    "cql_transformer":              {"label": "Transformer",          "color": "#e377c2",    "marker": "p", "linestyle": "-"},
+    "transformer":                  {"label": "Transformer",          "color": "#e377c2",    "marker": "p", "linestyle": "-"},
     "cql_blendrl_human_neural":     {"label": "BlendRL (MLP, Human, MLP)", "color": "#fdbf6f", "marker": "s", "linestyle": "-"},
     "blendrl_cql_human_neural":     {"label": "BlendRL (MLP, Human, MLP)", "color": "#fdbf6f", "marker": "s", "linestyle": "-"},
     "cql_blendrl_human_neural_logic": {"label": "BlendRL (MLP, Human, Human)", "color": "#b2df8a", "marker": "^", "linestyle": "--"},
@@ -53,20 +56,29 @@ _DEFAULT_STYLE = {"label": None, "color": None, "marker": "o", "linestyle": "-"}
 
 
 def get_style(name: str) -> dict:
-    """Look up style by exact match, then by longest prefix match.
+    """Look up style by exact match, canonical name, or longest prefix match.
     
     Examples:
-        get_style("cql")                  -> exact match
+        get_style("cql")                  -> exact match (DNN)
+        get_style("cql/dueling_resnet")   -> normalized match (Dueling ResNet)
         get_style("ppo_cp_tuned")          -> prefix match on "ppo"
         get_style("blendrl_iql_cp_tuned")  -> prefix match on "blendrl_iql"
         get_style("unknown_method")        -> default with label=name
     """
-    if name in METHOD_STYLE:
-        return METHOD_STYLE[name]
-    # Prefix match: longest key that is a prefix of name wins
-    for key in sorted(METHOD_STYLE.keys(), key=len, reverse=True):
-        if name.startswith(key + "_") or name == key:
-            return METHOD_STYLE[key]
+    raw = str(name)
+    normalized = raw.replace("/", "_")
+    canon = get_canonical_method_name(normalized)
+
+    for cand in [canon, normalized, raw]:
+        if cand in METHOD_STYLE:
+            return METHOD_STYLE[cand]
+
+    # Prefix match: longest key that is a prefix of candidate wins
+    for cand in [canon, normalized, raw]:
+        for key in sorted(METHOD_STYLE.keys(), key=len, reverse=True):
+            if cand.startswith(key + "_") or cand == key:
+                return METHOD_STYLE[key]
+
     return {**_DEFAULT_STYLE, "label": name}
 
 
@@ -92,6 +104,10 @@ def get_canonical_method_name(name: str) -> str:
         "blendrl_iql_human_neural": "iql_blendrl_human_neural",
         "blendrl_ppo_human_neural": "ppo_blendrl_human_neural",
         "cql": "cql_dnn",
+        "dnn": "cql_dnn",
+        "dueling_resnet": "cql_dueling_resnet",
+        "cql_dueling_resnet": "cql_dueling_resnet",
+        "transformer": "cql_transformer",
         "cql_transformer": "cql_transformer",
         "iql": "iql_dnn",
         "ppo": "ppo_dnn",
@@ -109,11 +125,13 @@ def get_method_aliases(name: str) -> set:
     elif "blendrl_cql_" in canon:
         aliases.add(canon.replace("blendrl_cql_", "cql_blendrl_"))
     if canon == "cql_dnn":
-        aliases.add("cql")
-    elif canon == "cql":
-        aliases.add("cql_dnn")
-    if canon == "iql_dnn":
-        aliases.add("iql")
+        aliases.update({"cql", "dnn", "cql/dnn"})
+    elif canon == "cql_dueling_resnet":
+        aliases.update({"dueling_resnet", "cql/dueling_resnet"})
+    elif canon == "cql_transformer":
+        aliases.update({"transformer", "cql/transformer"})
+    elif canon == "iql_dnn":
+        aliases.update({"iql", "iql/dnn"})
     elif canon == "ppo_dnn":
-        aliases.add("ppo")
+        aliases.update({"ppo", "ppo/dnn"})
     return aliases
