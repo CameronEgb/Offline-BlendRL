@@ -21,8 +21,8 @@ offline_methods:
   - cql/blendrl_cew_dueling_resnet
 
 agent:
-  epochs_per_interval: 50
-  eval_interval_epochs: 10
+  epochs_per_interval: 75 
+  eval_interval_epochs: 15
   batch_size: 1024
   lr: 2e-4
   cql_alpha: 2.0

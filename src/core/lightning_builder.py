@@ -29,8 +29,12 @@ class SaveInitialCheckpointCallback(Callback):
         parent_ckpt_root = os.path.join(base_root, "results/checkpoints", self.cfg.group, self.cfg.experiment_id)
         os.makedirs(parent_ckpt_root, exist_ok=True)
         named_ckpt = os.path.join(parent_ckpt_root, f"{self.cfg.agent.name}.ckpt")
-        import shutil
-        shutil.copy2(init_ckpt, named_ckpt)
+        if os.path.exists(init_ckpt):
+            import shutil
+            try:
+                shutil.copy2(init_ckpt, named_ckpt)
+            except Exception as e:
+                print(f"[Init Checkpoint] Warning: could not copy to {named_ckpt}: {e}")
 
         # Also save interval_epoch_000.ckpt for interval tracking
         interval_dir = os.path.join(self.ckpt_dir, "intervals")
