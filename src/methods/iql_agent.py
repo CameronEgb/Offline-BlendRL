@@ -8,7 +8,6 @@ from typing import Any, Dict, Optional
 
 from src.methods.registry import register_agent
 from src.methods.base_agent import OfflineAgentBase
-from blendrl.agents.blender_agent import BlenderActorCritic
 
 
 @register_agent(
@@ -56,10 +55,12 @@ class IQLAgent(OfflineAgentBase):
 
         # Check if modular/hybrid actor is configured
         has_modules = bool(self.get_cfg("modules", []))
-        is_hybrid = self.get_cfg("actor_mode", "neural") in ["hybrid", "logic"] or "blendrl" in str(algorithm)
+        algo_name = str(cfg.agent.get("algorithm", cfg.agent.get("name", "")))
+        is_hybrid = self.get_cfg("actor_mode", "neural") in ["hybrid", "logic"] or "blendrl" in algo_name
         self.is_modular = has_modules or is_hybrid
 
         if self.is_modular:
+            from src.blendrl.agents.blender_agent import BlenderActorCritic
             self.model = BlenderActorCritic(
                 self.env,
                 self.get_cfg("rules", cfg.env.rules),
@@ -165,9 +166,12 @@ class IQLAgent(OfflineAgentBase):
             
         if self.is_modular:
             logic_obs = self._prepare_logic_obs(obs, real_batch.get("logic_obs"))
-            _, log_probs, _, blend_entropy, _ = self.model(obs, logic_obs, action=actions)
+            res = self.model(obs, logic_obs, action=actions)
+            log_probs = getattr(res, "logprob", res[1])
+            blend_entropy = res.aux.get("blend_entropy") if hasattr(res, "aux") else None
         else:
-            _, log_probs, _, _ = self.actor.get_action_and_value(obs, actions)
+            res = self.actor.get_action_and_value(obs, actions)
+            log_probs = getattr(res, "logprob", res[1])
             blend_entropy = None
             
         actor_loss = -(weights * log_probs).mean()

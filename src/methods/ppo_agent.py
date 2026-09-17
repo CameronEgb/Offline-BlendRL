@@ -1,16 +1,15 @@
+import os
+from typing import Any
+
+import lightning as L
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import lightning as L
-import numpy as np
-import os
 from omegaconf import DictConfig
-from typing import Any, Dict, Optional
-from blendrl.env_vectorized import VectorizedNudgeBaseEnv
-from blendrl.agents.blender_agent import BlenderActorCritic
 
-from src.methods.registry import register_agent
 from src.methods.base_agent import BaseAgent
+from src.methods.registry import register_agent
 
 
 @register_agent(
@@ -31,7 +30,7 @@ class PPOAgent(BaseAgent):
     
     Supports pure neural actor-critic baselines as well as hybrid modular BlendRL policies.
     """
-    def __init__(self, cfg: Dict[str, Any]):
+    def __init__(self, cfg: dict[str, Any]):
         super().__init__(cfg)
         self.save_hyperparameters()
         
@@ -60,6 +59,11 @@ class PPOAgent(BaseAgent):
 
         self._init_env(n_envs=self.num_envs)
         algorithm = self.get_cfg("algorithm", self.get_cfg("name", "ppo"))
+
+        self.dataset_writer = None
+        if (getattr(cfg, "save_dataset", False) or getattr(cfg.mode, "save_dataset", False)) and getattr(cfg, "dataset_path", None):
+            from src.dataset_utils import DatasetWriter
+            self.dataset_writer = DatasetWriter(save_dir=cfg.dataset_path, env_name=cfg.env.name, cfg=cfg)
         
         # Check if modular/hybrid policy is configured
         has_modules = bool(self.get_cfg("modules", []))
@@ -67,6 +71,7 @@ class PPOAgent(BaseAgent):
         self.is_modular = has_modules or is_hybrid
 
         if self.is_modular:
+            from src.blendrl.agents.blender_agent import BlenderActorCritic
             self.model = BlenderActorCritic(
                 self.env,
                 self.get_cfg("rules", cfg.env.rules),
@@ -78,13 +83,14 @@ class PPOAgent(BaseAgent):
                 architecture=self.get_cfg("architecture", cfg.env.architecture),
                 cfg=cfg.agent
             )
-            self.register_buffer("logic_obs", torch.zeros((self.num_steps, self.num_envs) + self.logic_observation_space))
+            self.logic_shape = (2, self.observation_space[-1]) if len(self.observation_space) == 1 else self.observation_space
+            self.register_buffer("logic_obs", torch.zeros((self.num_steps, self.num_envs) + self.logic_shape))
         else:
             from src.core.factories import get_neural_agent
             self.model = get_neural_agent(
-                cfg.env.name, 
-                self.n_actions, 
-                self.device, 
+                cfg.env.name,
+                self.n_actions,
+                self.device,
                 arch_name=cfg.env.architecture,
                 hidden_sizes=self.get_cfg("hidden_sizes", [64, 64])
             )
@@ -98,16 +104,23 @@ class PPOAgent(BaseAgent):
         self.register_buffer("truncations", torch.zeros((self.num_steps, self.num_envs)))
         self.register_buffer("values", torch.zeros((self.num_steps, self.num_envs)))
         
-        if hasattr(self, 'dummy_neural'):
-            self.next_obs = self.dummy_neural
-        else:
-            self.next_obs = self.env.reset()[0] if not isinstance(self.env.reset(), tuple) else self.env.reset()[1]
-        self.next_logic_obs = getattr(self, 'dummy_logic', torch.zeros((self.num_envs,) + self.logic_observation_space))
+        init_obs = self.env.reset()
+        if isinstance(init_obs, tuple):
+            init_obs = init_obs[1] if len(init_obs) == 2 and isinstance(init_obs[1], torch.Tensor) else init_obs[0]
+        self.next_obs = torch.as_tensor(init_obs, dtype=torch.float32)
+        self.next_logic_obs = self._prepare_logic_obs(self.next_obs) if self.is_modular else None
         self.next_done = torch.zeros(self.num_envs)
         self.next_terminated = torch.zeros(self.num_envs)
         self.next_truncated = torch.zeros(self.num_envs)
         
         self.global_step_count = 0
+
+    def _prepare_logic_obs(self, obs, logic_obs=None):
+        if logic_obs is not None:
+            return logic_obs.to(self.device)
+        if obs.ndim == 2:
+            return obs.unsqueeze(1).repeat(1, 2, 1).to(self.device)
+        return obs.to(self.device)
 
     def forward(self, x, logic_x=None):
         if self.is_modular:
@@ -158,45 +171,55 @@ class PPOAgent(BaseAgent):
         for step in range(self.num_steps):
             self.global_step_count += self.num_envs
             self.obs[step] = self.next_obs
-            if self.is_modular:
+            if self.is_modular and self.next_logic_obs is not None:
                 self.logic_obs[step] = self.next_logic_obs
             self.terminations[step] = self.next_terminated
             self.truncations[step] = self.next_truncated
 
             with torch.no_grad():
                 if self.is_modular:
-                    action, logprob, _, _, value = self.model.get_action_and_value(
+                    res = self.model.get_action_and_value(
                         self.next_obs.to(self.device),
-                        self.next_logic_obs.to(self.device)
+                        self.next_logic_obs.to(self.device) if self.next_logic_obs is not None else None,
                     )
                 else:
-                    action, logprob, _, value = self.model.get_action_and_value(self.next_obs.to(self.device))
-                    
+                    res = self.model.get_action_and_value(self.next_obs.to(self.device))
+
+                action = getattr(res, "action", res[0])
+                logprob = getattr(res, "logprob", res[1])
+                value = getattr(res, "value", res[3])
                 self.values[step] = value.flatten()
             self.actions[step] = action
             self.logprobs[step] = logprob
 
-            (next_logic, next_neural), reward, terminated, truncated, infos = self.env.step(action.cpu().numpy())
-            
-            reward = torch.tensor(reward, dtype=torch.float32).to(self.device)
-            terminated = torch.tensor(terminated, dtype=torch.bool).to(self.device)
-            truncated = torch.tensor(truncated, dtype=torch.bool).to(self.device)
+            step_res = self.env.step(action.cpu().numpy())
+            if len(step_res) == 5:
+                next_obs, reward, terminated, truncated, infos = step_res
+            else:
+                next_obs, reward, terminated = step_res[:3]
+                truncated = [False] * len(reward)
+
+            next_obs = torch.as_tensor(next_obs, dtype=torch.float32)
+            reward = torch.as_tensor(reward, dtype=torch.float32, device=self.device)
+            terminated = torch.as_tensor(terminated, dtype=torch.bool, device=self.device)
+            truncated = torch.as_tensor(truncated, dtype=torch.bool, device=self.device)
             
             # Save dataset transitions if configured
             if hasattr(self, "dataset_writer") and self.dataset_writer is not None:
                 self.dataset_writer.write(
                     obs=self.next_obs.cpu().numpy(),
-                    logic_obs=self.next_logic_obs.cpu().numpy(),
                     action=action.cpu().numpy(),
                     reward=reward.cpu().numpy(),
                     done=(terminated | truncated).cpu().numpy(),
-                    next_obs=next_neural.cpu().numpy(),
-                    next_logic_obs=next_logic.cpu().numpy(),
+                    next_obs=next_obs.cpu().numpy(),
+                    logic_obs=self.next_logic_obs.cpu().numpy() if (self.is_modular and self.next_logic_obs is not None) else None,
+                    next_logic_obs=self._prepare_logic_obs(next_obs).cpu().numpy() if self.is_modular else None,
                 )
 
             self.rewards[step] = reward.view(-1)
-            self.next_obs = next_neural
-            self.next_logic_obs = next_logic
+            self.next_obs = next_obs
+            if self.is_modular:
+                self.next_logic_obs = self._prepare_logic_obs(next_obs)
             self.next_terminated = terminated
             self.next_truncated = truncated
             self.next_done = terminated | truncated
@@ -206,7 +229,7 @@ class PPOAgent(BaseAgent):
             if self.is_modular:
                 next_value = self.model.get_value(
                     self.next_obs.to(self.device),
-                    self.next_logic_obs.to(self.device)
+                    self.next_logic_obs.to(self.device) if self.next_logic_obs is not None else None
                 ).reshape(1, -1)
             else:
                 next_value = self.model.get_value(self.next_obs.to(self.device)).reshape(1, -1)
@@ -227,7 +250,7 @@ class PPOAgent(BaseAgent):
         # Flatten the batch
         self.b_obs = self.obs.reshape((-1,) + self.observation_space)
         if self.is_modular:
-            self.b_logic_obs = self.logic_obs.reshape((-1,) + self.logic_observation_space)
+            self.b_logic_obs = self.logic_obs.reshape((-1,) + self.logic_shape)
         self.b_logprobs = self.logprobs.reshape(-1)
         self.b_actions = self.actions.reshape(-1)
         self.b_advantages = advantages.reshape(-1)
@@ -253,12 +276,12 @@ class PPOAgent(BaseAgent):
             
             if self.is_modular:
                 mb_logic_obs = self.b_logic_obs[mb_inds].to(self.device)
-                _, newlogprob, entropy, blend_entropy, newvalue = self.model.get_action_and_value(
-                    mb_obs, mb_logic_obs, mb_actions.long()
-                )
+                res = self.model.get_action_and_value(mb_obs, mb_logic_obs, mb_actions.long())
             else:
-                _, newlogprob, entropy, newvalue = self.model.get_action_and_value(mb_obs, mb_actions.long())
-                blend_entropy = torch.tensor(0.0, device=self.device)
+                res = self.model.get_action_and_value(mb_obs, mb_actions.long())
+
+            _, newlogprob, entropy, newvalue = res[:4]
+            blend_entropy = getattr(res, "blend_entropy", None)
 
             logratio = newlogprob - self.b_logprobs[mb_inds].to(self.device)
             ratio = logratio.exp()
@@ -329,3 +352,9 @@ class PPOAgent(BaseAgent):
                 params = self.model.parameters()
             return optim.Adam(params, eps=1e-5)
         return optim.Adam(self.model.parameters(), lr=self.lr, eps=1e-5)
+
+    def on_fit_end(self):
+        if hasattr(self, "dataset_writer") and self.dataset_writer is not None:
+            self.dataset_writer.close()
+        super().on_fit_end()
+

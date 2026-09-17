@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch.distributions.categorical import Categorical
 import numpy as np
+from src.core.types import ActionResult
 
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)
@@ -93,7 +94,12 @@ class CNNActor(nn.Module):
         probs = Categorical(logits=logits)
         if action is None:
             action = probs.sample()
-        return action, probs.log_prob(action), probs.entropy(), self.critic(hidden)
+        return ActionResult(
+            action=action,
+            logprob=probs.log_prob(action),
+            entropy=probs.entropy(),
+            value=self.critic(hidden),
+        )
 
     def forward(self, x):
         hidden = self.network(x / 255.0)
@@ -242,4 +248,10 @@ class QNetwork(nn.Module):
 
     def forward(self, x):
         return self.network(x / 255.0)
+
+
+# Standard architecture aliases (decoupled from BlendRL legacy naming)
+NatureCNN = NeuralBlenderActor
+StandardMLP = NeuralBlenderMLP
+
 

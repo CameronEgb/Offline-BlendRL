@@ -9,7 +9,6 @@ from typing import Any, Dict, Optional
 
 from src.methods.base_agent import OfflineAgentBase
 from src.methods.registry import register_agent
-from blendrl.agents.blender_agent import BlenderActorCritic
 
 
 @register_agent(
@@ -61,6 +60,7 @@ class CQLAgent(OfflineAgentBase):
         self.is_modular = has_modules or is_hybrid
 
         if self.is_modular:
+            from src.blendrl.agents.blender_agent import BlenderActorCritic
             self.model = BlenderActorCritic(
                 self.env,
                 self.get_cfg("rules", cfg.env.rules),

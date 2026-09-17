@@ -1,0 +1,24 @@
+# @package _global_
+defaults:
+  - override /env: cartpole
+
+paradigm: online_v_offline
+
+save_dataset: true
+seed: 42
+recover: false
+
+plots:
+  convergence:
+    smoothing_window: 3
+    metrics:
+      - eval/reward
+  losses:
+    smoothing_window: 3
+    metrics:
+      - losses/total_loss
+      - losses/policy_loss
+      - losses/value_loss
+      - losses/entropy
+  reports:
+    include_hyperparameters: true

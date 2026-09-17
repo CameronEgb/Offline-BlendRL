@@ -4,6 +4,8 @@ defaults:
   - override /agent: cql/dnn
   - override /mode: offline
 
+paradigm: offline_only
+
 
 offline_datasets:
   - problem

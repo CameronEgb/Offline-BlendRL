@@ -1,7 +1,10 @@
-import torch as th
-from blendrl.env_vectorized import VectorizedNudgeBaseEnv
-import numpy as np
 import os
+
+import numpy as np
+import torch as th
+
+from src.core.env_vectorized import VectorizedBaseEnv
+
 
 def compute_tqn_stage_severity(obs):
     """
@@ -101,7 +104,7 @@ def compute_tqn_action_cost(policy_action, obs=None):
         if len(policy_action) >= 3 and policy_action[2] == 1: cost += 0.2
     return cost
 
-class VectorizedNudgeEnv(VectorizedNudgeBaseEnv):
+class VectorizedNudgeEnv(VectorizedBaseEnv):
     name = "mimic"
     pred2action = {
         "withhold": 0,
@@ -167,48 +170,41 @@ class VectorizedNudgeEnv(VectorizedNudgeBaseEnv):
         self.current_traj_idx[env_idx] = idx
         self.current_step_idx[env_idx] = 0
 
-    def reset(self):
-        logic_states = []
-        neural_states = []
-        
+    def reset(self, seed=None):
+        obs_list = []
         for i in range(self.n_envs):
             self._reset_env_slot(i)
             traj = self.current_traj_idx[i]
             step_t = self.valid_steps_by_patient[traj][0]
             obs = self.states[traj, step_t]
-            
-            logic_state, neural_state = self.extract_logic_state(obs), self.extract_neural_state(obs)
-            logic_states.append(logic_state)
-            neural_states.append(neural_state)
-            
-        return th.stack(logic_states), th.stack(neural_states)
+            obs_list.append(th.tensor(obs, dtype=th.float32))
+        return th.stack(obs_list)
 
     def step(self, actions, is_mapped: bool = False):
         rewards = []
         terminations = []
         truncations = []
         infos = []
-        logic_states = []
-        neural_states = []
-        
+        obs_list = []
+
         for i in range(self.n_envs):
             traj = self.current_traj_idx[i]
             step_idx = self.current_step_idx[i]
             valid_steps = self.valid_steps_by_patient[traj]
-            
+
             t = valid_steps[step_idx]
             obs = self.states[traj, t]
-            
+
             # Action taken by policy
             policy_action = actions[i]
             if hasattr(policy_action, "item"):
                 policy_action = policy_action.item()
-                
+
             # Historical action taken by clinician
             clinician_action = int(self.actions_antibiotics[traj, t])
-            
+
             is_done = (step_idx == len(valid_steps) - 1)
-            
+
             reward_type = os.environ.get("MIMIC_REWARD_TYPE", "tqn").lower()
             if reward_type == "outcome":
                 outcome = self.y[traj, 0]
@@ -224,7 +220,7 @@ class VectorizedNudgeEnv(VectorizedNudgeBaseEnv):
                     prev_sev = compute_tqn_stage_severity(prev_obs)
                 else:
                     prev_sev = 0.0
-                
+
                 stage_reward = curr_sev - prev_sev
                 act_cost = compute_tqn_action_cost(policy_action, obs)
                 reward = stage_reward - act_cost
@@ -236,7 +232,7 @@ class VectorizedNudgeEnv(VectorizedNudgeBaseEnv):
                     reward = 1.0 / T if policy_action == clinician_action else 0.0
                 else:  # Patient died
                     reward = 0.0
-            
+
             if is_done:
                 terminated = True
                 self._reset_env_slot(i)
@@ -248,29 +244,27 @@ class VectorizedNudgeEnv(VectorizedNudgeBaseEnv):
                 self.current_step_idx[i] += 1
                 next_t = valid_steps[self.current_step_idx[i]]
                 next_obs = self.states[traj, next_t]
-                
-            logic_state, neural_state = self.extract_logic_state(next_obs), self.extract_neural_state(next_obs)
-            logic_states.append(logic_state)
-            neural_states.append(neural_state)
-            
+
+            obs_list.append(th.tensor(next_obs, dtype=th.float32))
             rewards.append(reward)
             terminations.append(terminated)
             truncations.append(False)
             infos.append({})
-            
-        return (th.stack(logic_states), th.stack(neural_states)), np.array(rewards, dtype=np.float32), np.array(terminations, dtype=bool), np.array(truncations, dtype=bool), infos
 
-    def extract_logic_state(self, obs):
-        state = th.zeros((2, 46), dtype=th.float32)
-        state[0] = th.tensor(obs, dtype=th.float32)
-        state[1] = th.tensor(obs, dtype=th.float32)
-        return state
-
-    def extract_neural_state(self, obs):
-        return th.tensor(obs, dtype=th.float32)
+        return (
+            th.stack(obs_list),
+            np.array(rewards, dtype=np.float32),
+            np.array(terminations, dtype=bool),
+            np.array(truncations, dtype=bool),
+            infos,
+        )
 
     def get_action_meanings(self):
         return ["withhold", "administer"]
 
     def close(self):
         pass
+
+
+VectorizedEnv = VectorizedNudgeEnv
+

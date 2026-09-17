@@ -9,11 +9,11 @@ def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
     return layer
 
 class MLP(nn.Module):
-    def __init__(self, device, has_softmax=False, has_sigmoid=False, out_size=3, as_dict=False, logic=False):
+    def __init__(self, device, has_softmax=False, has_sigmoid=False, out_size=3, as_dict=False, logic=False, num_in_features=None, **kwargs):
         super().__init__()
         self.device = device
         self.logic = logic
-        self.num_in_features = 4
+        self.num_in_features = num_in_features if num_in_features is not None else (4 if logic else 2)
 
         # Backbone: Feature extraction
         self.network = nn.Sequential(

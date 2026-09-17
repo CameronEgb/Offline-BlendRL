@@ -33,15 +33,33 @@ class DatasetWriter:
         else:
             self.chunk_idx = 0
 
-    def add(self, obs, logic_obs, action, reward, next_obs, next_logic_obs, done):
+    def add(self, *args, **kwargs):
+        """Add a single transition to the buffer.
+        
+        Supports both modern 5-param clean RL:
+            add(obs, action, reward, next_obs, done, logic_obs=None, next_logic_obs=None)
+        and legacy 7-param:
+            add(obs, logic_obs, action, reward, next_obs, next_logic_obs, done)
         """
-        Add a single transition to the buffer.
-        """
+        if len(args) == 7:
+            obs, logic_obs, action, reward, next_obs, next_logic_obs, done = args
+        elif len(args) == 5:
+            obs, action, reward, next_obs, done = args
+            logic_obs = kwargs.get("logic_obs", None)
+            next_logic_obs = kwargs.get("next_logic_obs", None)
+        else:
+            obs = kwargs["obs"]
+            action = kwargs["action"]
+            reward = kwargs["reward"]
+            next_obs = kwargs["next_obs"]
+            done = kwargs["done"]
+            logic_obs = kwargs.get("logic_obs", None)
+            next_logic_obs = kwargs.get("next_logic_obs", None)
+
         def to_cpu(x, is_obs=False):
             if isinstance(x, torch.Tensor):
                 x = x.detach().cpu().numpy()
             if is_obs and x is not None:
-                # Use float32 for vector environments, uint8 only for images (> 2D)
                 if len(x.shape) > 2:
                     return x.astype(np.uint8)
                 return x.astype(np.float32)
@@ -49,42 +67,57 @@ class DatasetWriter:
 
         transition = {
             "obs": to_cpu(obs, is_obs=True),
-            "logic_obs": to_cpu(logic_obs) if logic_obs is not None else None,
             "action": to_cpu(action),
             "reward": to_cpu(reward),
             "next_obs": to_cpu(next_obs, is_obs=True),
-            "next_logic_obs": to_cpu(next_logic_obs) if next_logic_obs is not None else None,
-            "done": to_cpu(done)
+            "done": to_cpu(done),
         }
+        if logic_obs is not None:
+            transition["logic_obs"] = to_cpu(logic_obs)
+        if next_logic_obs is not None:
+            transition["next_logic_obs"] = to_cpu(next_logic_obs)
+
         self.buffer.append(transition)
-        
         if len(self.buffer) >= self.chunk_size:
             self.flush()
 
-    def batch_add(self, obs, logic_obs, action, reward, next_obs, next_logic_obs, done):
-        """
-        Add a batch of transitions to the buffer.
-        """
+    def batch_add(self, *args, **kwargs):
+        """Add a batch of transitions to the buffer."""
+        if len(args) == 7:
+            obs, logic_obs, action, reward, next_obs, next_logic_obs, done = args
+        elif len(args) == 5:
+            obs, action, reward, next_obs, done = args
+            logic_obs = kwargs.get("logic_obs", None)
+            next_logic_obs = kwargs.get("next_logic_obs", None)
+        else:
+            obs = kwargs["obs"]
+            action = kwargs["action"]
+            reward = kwargs["reward"]
+            next_obs = kwargs["next_obs"]
+            done = kwargs["done"]
+            logic_obs = kwargs.get("logic_obs", None)
+            next_logic_obs = kwargs.get("next_logic_obs", None)
+
         # Ensure input is batch-like (at least 1D)
-        if len(obs.shape) == 1: # Single vector obs
-             batch_size = 1
-             obs = obs.unsqueeze(0)
-             if logic_obs is not None: logic_obs = logic_obs.unsqueeze(0)
-             action = action.unsqueeze(0)
-             reward = torch.tensor([reward]) if not isinstance(reward, torch.Tensor) else reward.unsqueeze(0)
-             next_obs = next_obs.unsqueeze(0)
-             if next_logic_obs is not None: next_logic_obs = next_logic_obs.unsqueeze(0)
-             done = torch.tensor([done]) if not isinstance(done, torch.Tensor) else done.unsqueeze(0)
+        if len(obs.shape) == 1:
+            batch_size = 1
+            obs = obs.unsqueeze(0) if isinstance(obs, torch.Tensor) else np.expand_dims(obs, 0)
+            if logic_obs is not None:
+                logic_obs = logic_obs.unsqueeze(0) if isinstance(logic_obs, torch.Tensor) else np.expand_dims(logic_obs, 0)
+            action = action.unsqueeze(0) if isinstance(action, torch.Tensor) else np.expand_dims(action, 0)
+            reward = torch.tensor([reward]) if not isinstance(reward, torch.Tensor) else reward.unsqueeze(0)
+            next_obs = next_obs.unsqueeze(0) if isinstance(next_obs, torch.Tensor) else np.expand_dims(next_obs, 0)
+            if next_logic_obs is not None:
+                next_logic_obs = next_logic_obs.unsqueeze(0) if isinstance(next_logic_obs, torch.Tensor) else np.expand_dims(next_logic_obs, 0)
+            done = torch.tensor([done]) if not isinstance(done, torch.Tensor) else done.unsqueeze(0)
         else:
             batch_size = len(obs)
-        
+
         def to_cpu(x, is_obs=False):
             if isinstance(x, torch.Tensor):
                 x = x.detach().cpu().numpy()
             if is_obs and x is not None:
-                # Use float32 for vector environments like CartPole/MountainCar
-                # Use uint8 only for images
-                if len(x.shape) > 2: # Image-like (H, W, C)
+                if len(x.shape) > 2:
                     return x.astype(np.uint8)
                 return x.astype(np.float32)
             return x
@@ -100,17 +133,42 @@ class DatasetWriter:
         for i in range(batch_size):
             transition = {
                 "obs": obs_cpu[i],
-                "logic_obs": logic_obs_cpu[i] if logic_obs_cpu is not None else None,
                 "action": action_cpu[i],
                 "reward": reward_cpu[i],
                 "next_obs": next_obs_cpu[i],
-                "next_logic_obs": next_logic_obs_cpu[i] if next_logic_obs_cpu is not None else None,
-                "done": done_cpu[i]
+                "done": done_cpu[i],
             }
+            if logic_obs_cpu is not None:
+                transition["logic_obs"] = logic_obs_cpu[i]
+            if next_logic_obs_cpu is not None:
+                transition["next_logic_obs"] = next_logic_obs_cpu[i]
             self.buffer.append(transition)
-        
+
         if len(self.buffer) >= self.chunk_size:
             self.flush()
+
+    def write(self, obs, action, reward, next_obs, done, logic_obs=None, next_logic_obs=None):
+        """Standard keyword-based write interface for online RL agents."""
+        if hasattr(obs, "shape") and len(obs.shape) > 1 and not (len(obs.shape) == 3 and obs.shape[0] in [1, 3, 4]):
+            self.batch_add(
+                obs=obs,
+                action=action,
+                reward=reward,
+                next_obs=next_obs,
+                done=done,
+                logic_obs=logic_obs,
+                next_logic_obs=next_logic_obs,
+            )
+        else:
+            self.add(
+                obs=obs,
+                action=action,
+                reward=reward,
+                next_obs=next_obs,
+                done=done,
+                logic_obs=logic_obs,
+                next_logic_obs=next_logic_obs,
+            )
 
     def flush(self):
         """

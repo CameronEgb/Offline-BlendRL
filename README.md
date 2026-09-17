@@ -1,6 +1,36 @@
-# BlendRL: Neural-Symbolic Reinforcement Learning Framework
+# NeSyRL: Modular Reinforcement Learning & Architecture Benchmark Framework
 
-A PyTorch Lightning & Hydra-powered framework for joint symbolic (logic) and neural policy learning, comparing Online vs. Offline learning efficiency across benchmark environments.
+[![CI](https://github.com/CameronEgb/Offline-BlendRL/actions/workflows/ci.yml/badge.svg)](https://github.com/CameronEgb/Offline-BlendRL/actions/workflows/ci.yml)
+[![Tests](https://github.com/CameronEgb/Offline-BlendRL/actions/workflows/ci.yml/badge.svg?event=push&branch=main)](https://github.com/CameronEgb/Offline-BlendRL/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/CameronEgb/Offline-BlendRL/branch/main/graph/badge.svg)](https://codecov.io/gh/CameronEgb/Offline-BlendRL)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+
+A PyTorch Lightning & Hydra-powered framework for training and evaluating modular RL policies across standard neural (MLP, ResNet, Transformer) and hybrid neural-symbolic (BlendRL) architectures, comparing Online vs. Offline learning efficiency across benchmark environments.
+
+---
+
+## Installation & Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/CameronEgb/Offline-BlendRL.git
+cd Offline-BlendRL
+
+# Create and activate virtual environment
+python -m venv venv
+source venv/bin/activate
+
+# Install in development mode
+pip install -e ".[dev]"
+
+# (Optional) Install Atari environments
+pip install -e ".[atari]"
+
+# Run test suite to verify setup
+pytest tests/ -v
+```
 
 ---
 
@@ -10,21 +40,26 @@ A PyTorch Lightning & Hydra-powered framework for joint symbolic (logic) and neu
 ├── run_pipeline.py                 # Primary entry point (orchestrates online/offline phases & sweeps)
 ├── src/                            # Core package source code
 │   ├── train.py                    # PyTorch Lightning driver script
-│   ├── methods/                    # RL agents (PPO, IQL, CQL, BlendRL, BlendRL-IQL, BlendRL-CQL)
-│   ├── blendrl/                    # Environment vectorization & reasoner interfaces
+│   ├── methods/                    # RL agents (PPO, IQL, CQL, BlendRL variants)
+│   ├── core/                       # Environment vectorizer, architecture factories, callbacks
 │   ├── data/                       # Offline replay data modules & transition readers
+│   ├── blendrl/                    # BlendRL hybrid neural-symbolic architecture
 │   ├── nsfr/                       # Neural-Symbolic Forward Reasoner engine
 │   └── nudge/                      # Logic predicate & rule evaluation wrappers
 ├── in/                             # All input specifications & datasets
 │   ├── config/                     # Hydra configuration system (agent, env, experiment, mode)
 │   ├── datasets/                   # Static offline datasets (MIMIC, Pyrenees, generated replay buffers)
-│   ├── envs/                       # Custom environment reward functions & MLP models
+│   ├── envs/                       # Custom environment reward functions & model definitions
 │   └── rules/                      # Symbolic logic rulesets (.prolog / .nudge)
 ├── plot/                           # Modular plotting framework
 │   ├── manager.py                  # Auto-dispatcher called by run_pipeline.py
 │   ├── convergence.py              # Convergence reward & episode length curves
 │   ├── losses.py                   # Loss metric curves with per-metric filtering
 │   └── reports.py                  # Markdown hyperparameter & comparison report generator
+├── tests/                          # Automated test suite
+│   ├── conftest.py                 # Pytest fixtures and discovery configuration
+│   ├── test_method_registry.py     # Registry and style lookup unit tests
+│   └── test_pipeline_config.py     # Pipeline naming and config unit tests
 ├── scripts/                        # Maintenance & pre-processing tools
 │   ├── reorganize_results.py       # Reorganizes results/ folder to match experiment group specs
 │   └── preprocess_pyrenees.py      # Pyrenees dataset conversion utility

@@ -10,6 +10,7 @@ if PROJECT_ROOT not in sys.path:
 import argparse
 import importlib
 import pkgutil
+import shutil
 
 from plot.base import BasePlotter
 
@@ -63,7 +64,7 @@ def get_requested_plots(exp_cfg: dict, exp_id: str) -> dict:
     return result
 
 
-def run_experiment_plots(exp_id: str, exp_config_name: str = None, style: str = None):
+def run_experiment_plots(exp_id: str, exp_config_name: str = None, style: str = None, wipe: bool = False):
     print(f"\n==================================================")
     print(f"=== Auto-Generating Plots for Experiment: {exp_id} ===")
     print(f"==================================================")
@@ -74,6 +75,9 @@ def run_experiment_plots(exp_id: str, exp_config_name: str = None, style: str = 
     clean_exp = Path(exp_id).stem
     output_dir = Path("results/plots") / group / clean_exp
 
+    if wipe and output_dir.exists():
+        print(f"Wiping existing plot directory: {output_dir}")
+        shutil.rmtree(output_dir, ignore_errors=True)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     registry = discover_plotters()
@@ -98,6 +102,7 @@ if __name__ == "__main__":
     parser.add_argument("experiment_id", type=str, help="Experiment ID to generate plots for")
     parser.add_argument("--experiment", "-c", "--config", dest="experiment", type=str, default=None, help="Base experiment config name if different from experiment_id")
     parser.add_argument("--style", type=str, default=None, help="Plot style config")
+    parser.add_argument("--wipe", "-w", action="store_true", help="Wipe existing plot directory before generating plots")
     args = parser.parse_args()
 
-    run_experiment_plots(args.experiment_id, exp_config_name=args.experiment, style=args.style)
+    run_experiment_plots(args.experiment_id, exp_config_name=args.experiment, style=args.style, wipe=args.wipe)

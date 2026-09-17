@@ -31,7 +31,7 @@ def run_slurm_training(cfg, context):
     fast_purge_dir(log_dir)
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    # Hard-overwrite checkpoints and logs on re-run unless recover=true is explicitly set
+    # Hard-overwrite checkpoints, logs, and plots on re-run unless recover=true is explicitly set
     if not cfg.get("recover", False):
         ckpt_dir = Path("results/checkpoints") / cfg.group / cfg.experiment_id
         fast_purge_dir(ckpt_dir)
@@ -40,6 +40,11 @@ def run_slurm_training(cfg, context):
         exp_log_dir = Path("results/logs") / cfg.group / cfg.experiment_id
         fast_purge_dir(exp_log_dir)
         exp_log_dir.mkdir(parents=True, exist_ok=True)
+
+        clean_exp = Path(cfg.experiment_id).stem
+        exp_plot_dir = Path("results/plots") / cfg.group / clean_exp
+        fast_purge_dir(exp_plot_dir)
+        exp_plot_dir.mkdir(parents=True, exist_ok=True)
 
     resources = cfg.get("resources", {})
     cfg_consolidate = cfg.get("consolidate", None)

@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from src.pipeline.datasets import run_plotting
+from src.pipeline.datasets import fast_purge_dir, run_plotting
 from src.pipeline.runtime import get_python_executable, get_shell_python_cmd, get_shell_env_block
 from src.pipeline.slurm import generate_sbatch_header, submit_sbatch
 from src.pipeline.task_registry import register_task
@@ -35,6 +35,12 @@ def run_early_prediction_task(cfg, local_val, sanitized_extra_args, storage_url,
     site_cfg = cfg.get("site", None)
 
     if task_name == "early_prediction_sweep":
+        if not cfg.get("recover", False):
+            clean_exp = Path(cfg.experiment_id).stem
+            plot_dir = Path("results/plots") / cfg.group / clean_exp
+            fast_purge_dir(plot_dir)
+            plot_dir.mkdir(parents=True, exist_ok=True)
+
         if local_val:
             print(f"Running Local Sweep for {cfg.experiment_id}...")
             venv_python = get_python_executable(site_cfg)

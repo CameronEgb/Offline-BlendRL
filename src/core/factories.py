@@ -1,10 +1,16 @@
+import logging
 import os
-import torch
-import numpy as np
-import gymnasium as gym
-from nsfr.utils.common import load_module
 from collections import OrderedDict
+
+import gymnasium as gym
+import numpy as np
+import torch
+
+from src.core.utils import load_module
 from src.models.architectures import CNNActor, NeuralBlenderActor, NeuralBlenderMLP
+
+logger = logging.getLogger(__name__)
+
 
 def _safe_instantiate(module_class, **kwargs):
     import inspect
@@ -17,14 +23,14 @@ def _safe_instantiate(module_class, **kwargs):
 
 def get_neural_agent(env_name, n_actions, device, arch_name=None, hidden_sizes=[64, 64], num_in_features=None, **kwargs):
     if num_in_features is None:
-        from blendrl.env_vectorized import VectorizedNudgeBaseEnv
+        from src.core.env_vectorized import VectorizedBaseEnv
         try:
-            temp_env = VectorizedNudgeBaseEnv.from_name(env_name, n_envs=1, mode="eval")
-            _, dummy_neural = temp_env.reset()
-            num_in_features = dummy_neural.shape[-1]
+            temp_env = VectorizedBaseEnv.from_name(env_name, n_envs=1, mode="eval")
+            obs = temp_env.reset()
+            num_in_features = obs.shape[-1]
             temp_env.close()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Could not infer num_in_features by instantiating %s: %s", env_name, e)
 
     if arch_name in ["cross_attention", "cross_attention_transformer", "sepsis_cross_attention"]:
         transformer_module_path = f"in/envs/{env_name}/transformer.py"
@@ -57,7 +63,7 @@ def get_neural_agent(env_name, n_actions, device, arch_name=None, hidden_sizes=[
         module = load_module(mlp_module_path)
         cls = getattr(module, "StandardMLP", None) or getattr(module, "MLP")
         return _safe_instantiate(cls, device=device, out_size=n_actions, hidden_sizes=hidden_sizes, num_in_features=num_in_features, **kwargs).to(device)
-    
+
     if arch_name == "cnn":
         return CNNActor(n_actions=n_actions).to(device)
 
@@ -70,20 +76,20 @@ def get_blender(env, blender_rules, device, train=True, blender_mode="logic", re
             from nsfr.common import get_blender_nsfr_model
             return get_blender_nsfr_model(env.name, blender_rules, device, train=train, explain=explain)
         elif reasoner == "neumann":
-            from neumann.common import get_neumann_model, get_blender_neumann_model
+            from neumann.common import get_blender_neumann_model, get_neumann_model
             return get_blender_neumann_model(env.name, blender_rules, device, train=train, explain=explain)
     if blender_mode == "neural":
         if architecture == "cnn":
             net = NeuralBlenderActor(out_size=out_size)
         else:
-            dummy_logic, dummy_neural = env.reset()
-            num_in_features = np.prod(dummy_logic.shape[1:]) 
+            obs = env.reset()
+            num_in_features = np.prod(obs.shape[1:])
             net = NeuralBlenderMLP(num_in_features=num_in_features, out_size=out_size)
         net.to(device)
         return net
 
 def load_cleanrl_envs(env_id, run_name=None, capture_video=False, num_envs=1):
-    from src.blendrl.env_utils import make_env as apply_wrappers
+    from src.core.atari_wrappers import make_atari_env as apply_wrappers
 
     def make_env(env_id, seed, capture_video, run_name):
         def thunk():
@@ -96,16 +102,19 @@ def load_cleanrl_envs(env_id, run_name=None, capture_video=False, num_envs=1):
     )
     return envs
 
-def load_cleanrl_agent(pretrained, device):
+def load_cleanrl_agent(pretrained: bool = False, device: str | torch.device = "cpu", model_path: str | None = None):
+    """Load CleanRL CNNActor, optionally restoring weights from a checkpoint path."""
     agent = CNNActor(n_actions=18)
     if pretrained:
+        if not model_path or not os.path.exists(model_path):
+            raise FileNotFoundError(
+                f"Cannot load pretrained CleanRL weights: model path '{model_path}' does not exist."
+            )
         try:
-            agent.load_state_dict(torch.load("cleanrl/out/ppo_Seaquest-v4_1.pth"))
-            agent.to(device)
-        except RuntimeError:
-            agent.load_state_dict(torch.load("cleanrl/out/ppo_Seaquest-v4_1.pth", map_location=torch.device("cpu")))
-    else:
-        agent.to(device)
+            agent.load_state_dict(torch.load(model_path, map_location=device))
+        except Exception as e:
+            raise RuntimeError(f"Failed loading CleanRL weights from '{model_path}': {e}")
+    agent.to(device)
     return agent
 
 def load_logic_ppo(agent, path):

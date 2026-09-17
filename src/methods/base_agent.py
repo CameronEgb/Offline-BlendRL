@@ -8,12 +8,13 @@ Hierarchy:
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
+
+import lightning as L
+import numpy as np
 import torch
 import torch.optim as optim
-import lightning as L
 from omegaconf import DictConfig
-import numpy as np
 
 
 class BaseAgent(L.LightningModule, ABC):
@@ -21,12 +22,12 @@ class BaseAgent(L.LightningModule, ABC):
     
     Provides:
         - Unified config traversal (get_cfg)
-        - Soft target network updates (_soft_update)  
+        - Soft target network updates (_soft_update)
         - Standard interface contract via abstract methods
         - Common environment initialization helpers
     """
 
-    def __init__(self, cfg: Dict[str, Any]):
+    def __init__(self, cfg: dict[str, Any]):
         super().__init__()
         self.cfg = cfg
         self.automatic_optimization = False
@@ -93,7 +94,7 @@ class BaseAgent(L.LightningModule, ABC):
     # Network Utilities
     # ──────────────────────────────────────────────
 
-    def _soft_update(self, model, target_model, tau: Optional[float] = None):
+    def _soft_update(self, model, target_model, tau: float | None = None):
         """Polyak averaging for target network updates."""
         if tau is None:
             tau = self.get_cfg("soft_target_tau", 0.005)
@@ -112,28 +113,29 @@ class BaseAgent(L.LightningModule, ABC):
                     1 for offline (evaluation only).
         
         Returns:
-            Tuple of (dummy_logic_obs, dummy_neural_obs) from env.reset().
+            Observation tensor from env.reset().
         """
-        from blendrl.env_vectorized import VectorizedNudgeBaseEnv
+        from src.core.env_vectorized import VectorizedBaseEnv
         
         if n_envs is None:
             n_envs = self.get_cfg("num_envs", 4)
         
         algorithm = self.get_cfg("algorithm", self.get_cfg("name", self.cfg.env.name))
         
-        self.env = VectorizedNudgeBaseEnv.from_name(
+        self.env = VectorizedBaseEnv.from_name(
             self.cfg.env.name,
             n_envs=n_envs,
             mode=algorithm,
             seed=self.get_cfg("seed", getattr(self.cfg, "seed", 1))
         )
         
-        dummy_logic, dummy_neural = self.env.reset()
-        self.observation_space = dummy_neural.shape[1:]
-        self.logic_observation_space = dummy_logic.shape[1:]
+        obs = self.env.reset()
+        if isinstance(obs, tuple):
+            obs = obs[0]
+        self.observation_space = obs.shape[1:]
         self.n_actions = self.env.n_actions if not callable(self.env.n_actions) else self.env.n_actions()
         
-        return dummy_logic, dummy_neural
+        return obs
 
     # ──────────────────────────────────────────────
     # Abstract Interface (enforced contract)
@@ -167,7 +169,7 @@ class BaseAgent(L.LightningModule, ABC):
         probs = self.get_action_probs(obs, logic_obs)
         return torch.argmax(probs, dim=-1)
 
-    def get_blending_weights(self, obs: torch.Tensor, logic_obs: Optional[torch.Tensor] = None) -> Optional[torch.Tensor]:
+    def get_blending_weights(self, obs: torch.Tensor, logic_obs: torch.Tensor | None = None) -> torch.Tensor | None:
         """Return blending weights for hybrid/modular architectures if applicable, else None."""
         if hasattr(self, "model") and hasattr(self.model, "actor") and hasattr(self.model.actor, "to_blender_policy_distribution"):
             if getattr(self, "is_modular", False) and hasattr(self, "_prepare_logic_obs"):

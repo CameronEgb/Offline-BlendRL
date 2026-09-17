@@ -3,12 +3,15 @@
 Provides functions for querying best trials, managing studies,
 and launching the Optuna dashboard.
 """
+import logging
 import os
 import subprocess
 import sys
 import time
 import threading
 import webbrowser
+
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_OPTUNA_DB_URL = "sqlite:///results/optuna/optuna.db"
@@ -39,7 +42,17 @@ def get_best_trial_id(storage_url, study_name):
         try:
             study = optuna.load_study(study_name=study_name, storage=storage_url)
             return str(study.best_trial.number)
-        except Exception:
+        except KeyError as e:
+            logger.debug("Study '%s' not found directly, checking versioned studies: %s", study_name, e)
+            all_studies = optuna.get_all_study_summaries(storage=storage_url)
+            matches = [s for s in all_studies if s.study_name == study_name or s.study_name.startswith(f"{study_name}_v")]
+            if matches:
+                matches.sort(key=lambda s: s.study_name, reverse=True)
+                target_study = optuna.load_study(study_name=matches[0].study_name, storage=storage_url)
+                return str(target_study.best_trial.number)
+            raise
+        except Exception as e:
+            logger.debug("Could not load study '%s' directly: %s", study_name, e)
             all_studies = optuna.get_all_study_summaries(storage=storage_url)
             matches = [s for s in all_studies if s.study_name == study_name or s.study_name.startswith(f"{study_name}_v")]
             if matches:
@@ -69,8 +82,10 @@ def launch_optuna_dashboard(storage_url):
         if storage_url in ps_output and "optuna_dashboard" in ps_output:
             print(f"Optuna Dashboard already running for: {storage_url}. Skipping launch.")
             return
-    except Exception:
-        pass
+    except (subprocess.SubprocessError, OSError) as e:
+        logger.debug("Could not check running processes via ps aux: %s", e)
+    except Exception as e:
+        logger.debug("Unexpected error checking running processes: %s", e)
 
     print(f"Launching Optuna Dashboard for: {storage_url}")
 
@@ -89,7 +104,12 @@ def launch_optuna_dashboard(storage_url):
                 # Use a dummy check to see if port is in use
                 subprocess.run(["nc", "-z", "localhost", str(p)], capture_output=True, check=True)
                 continue # Port is in use
-            except Exception:
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                # CalledProcessError means port is not in use; FileNotFoundError means nc is missing
+                port = p
+                break
+            except subprocess.SubprocessError as e:
+                logger.debug("Subprocess error checking port %s: %s; selecting port", p, e)
                 port = p
                 break
 
@@ -135,16 +155,18 @@ def get_optuna_storage(storage_url: str):
         if os.path.exists(db_raw) and os.path.getsize(db_raw) == 0:
             try:
                 os.remove(db_raw)
-            except OSError:
-                pass
+            except OSError as e:
+                logger.debug("Could not remove 0-byte SQLite DB %s: %s", db_raw, e)
         # Pre-configure SQLite database with WAL journal mode and busy timeout via Python
         try:
             conn = sqlite3.connect(db_raw, timeout=120.0)
             conn.execute("PRAGMA journal_mode=WAL;")
             conn.execute("PRAGMA busy_timeout=120000;")
             conn.close()
-        except Exception:
-            pass
+        except sqlite3.Error as e:
+            logger.debug("Could not pre-configure SQLite WAL/busy timeout on %s: %s", db_raw, e)
+        except Exception as e:
+            logger.debug("Unexpected error configuring SQLite DB %s: %s", db_raw, e)
         return optuna.storages.RDBStorage(
             url=f"sqlite:///{db_raw}",
             engine_kwargs={"connect_args": {"timeout": 120}}
@@ -185,8 +207,10 @@ def delete_optuna_study(storage_url, study_name):
         storage = get_optuna_storage(storage_url)
         optuna.delete_study(study_name=study_name, storage=storage)
         print(f"Reset existing Optuna study: {study_name}")
-    except Exception:
-        pass
+    except KeyError:
+        logger.debug("Optuna study '%s' does not exist to delete.", study_name)
+    except Exception as e:
+        logger.warning("Could not delete Optuna study '%s': %s", study_name, e)
 
 
 def create_optuna_study(storage_url, study_name, direction="minimize"):
@@ -231,8 +255,12 @@ def find_best_trial_from_logs(group: str, experiment_id: str, agent_name: str, d
                 if (direction == "minimize" and val < best_val) or (direction == "maximize" and val > best_val):
                     best_val = val
                     best_id = trial_num
-        except Exception:
-            pass
+        except (pd.errors.EmptyDataError, pd.errors.ParserError) as e:
+            logger.debug("Skipping unparseable metrics file %s: %s", metrics_file, e)
+        except (KeyError, ValueError, OSError) as e:
+            logger.warning("Error reading metrics from %s: %s", metrics_file, e)
+        except Exception as e:
+            logger.warning("Unexpected error reading metrics from %s: %s", metrics_file, e)
             
     return best_id, (best_val if best_val != float("inf") and best_val != float("-inf") else None)
 

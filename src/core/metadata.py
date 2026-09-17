@@ -1,8 +1,12 @@
+import logging
 import os
-import sys
-import subprocess
-import socket
 import platform
+import socket
+import subprocess
+import sys
+
+logger = logging.getLogger(__name__)
+
 
 def get_git_info():
     """Retrieve current git commit, branch, and dirty status.
@@ -18,8 +22,10 @@ def get_git_info():
         git_branch = subprocess.check_output(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], stderr=subprocess.DEVNULL, timeout=5).decode('utf-8').strip()
         status = subprocess.check_output(['git', 'status', '--porcelain'], stderr=subprocess.DEVNULL, timeout=5).decode('utf-8').strip()
         git_dirty = len(status) > 0
-    except Exception:
-        pass
+    except (subprocess.SubprocessError, FileNotFoundError, OSError) as e:
+        logger.debug("Failed to retrieve git info: %s", e)
+    except Exception as e:
+        logger.debug("Unexpected error retrieving git info: %s", e)
     return git_commit, git_branch, git_dirty
 
 def save_git_diff(output_dir, git_dirty=None):
@@ -41,8 +47,10 @@ def save_git_diff(output_dir, git_dirty=None):
             with open(diff_path, 'w') as f:
                 f.write(diff)
             return 'git_patch.diff'
-    except Exception:
-        pass
+    except (subprocess.SubprocessError, FileNotFoundError, OSError) as e:
+        logger.warning("Could not save git diff to %s: %s", output_dir, e)
+    except Exception as e:
+        logger.warning("Unexpected error saving git diff to %s: %s", output_dir, e)
     return None
 
 def collect_run_metadata(cfg=None):
@@ -58,7 +66,7 @@ def collect_run_metadata(cfg=None):
     git_diff_path = None
     if git_dirty:
         git_diff_path = "git_patch.diff" # Will be saved by save_git_diff
-        
+
     try:
         import torch
         torch_version = torch.__version__
@@ -66,15 +74,15 @@ def collect_run_metadata(cfg=None):
     except ImportError:
         torch_version = "N/A"
         cuda_version = "N/A"
-        
+
     try:
         import lightning as L
         lightning_version = L.__version__
     except ImportError:
         lightning_version = "N/A"
-        
+
     seed = getattr(cfg, "seed", None) if cfg else None
-        
+
     return {
         "git_commit": git_commit,
         "git_branch": git_branch,

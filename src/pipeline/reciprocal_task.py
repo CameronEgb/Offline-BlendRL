@@ -32,6 +32,7 @@ from datetime import datetime
 
 
 
+from src.pipeline.datasets import fast_purge_dir
 from src.pipeline.runtime import get_python_executable, get_subprocess_env
 from src.pipeline.task_registry import register_task
 
@@ -68,7 +69,14 @@ def run_reciprocal_refinement(cfg, local_val):
     base_results_dir = Path("results/plots") / group / exp_id
     convergence_log = base_results_dir / "convergence_log.json"
     
-    base_results_dir.mkdir(parents=True, exist_ok=True)
+    # Hard-overwrite checkpoints and plots on re-run unless recover=true is explicitly set
+    if not cfg.get("recover", False):
+        fast_purge_dir(base_ckpt_dir)
+        base_ckpt_dir.mkdir(parents=True, exist_ok=True)
+        fast_purge_dir(base_results_dir)
+        base_results_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        base_results_dir.mkdir(parents=True, exist_ok=True)
     
     # Convergence tracking
     round_metrics = []
@@ -98,7 +106,6 @@ def run_reciprocal_refinement(cfg, local_val):
         print(f"\n--- Round {round_k}: Step 1 — Train CQL ---")
         
         env_vars = get_subprocess_env(site_cfg)
-        env_vars["BLENDRL_ENV_NAME"] = "mimic"
         
         if round_k == 0:
             # Bootstrap: standard TQN reward
@@ -308,8 +315,10 @@ def _collect_round_metrics(results_dir, round_k):
                     metrics[f"ep_{key}_auc_mean"] = float(sum(ep_data["auc"]) / len(ep_data["auc"]))
                     if ep_data.get("auprc"):
                         metrics[f"ep_{key}_auprc_mean"] = float(sum(ep_data["auprc"]) / len(ep_data["auprc"]))
-        except Exception:
-            pass
+        except (json.JSONDecodeError, KeyError, ZeroDivisionError, OSError) as e:
+            print(f"  WARNING: Could not parse EP metrics from {json_file}: {e}")
+        except Exception as e:
+            print(f"  WARNING: Unexpected error parsing EP metrics from {json_file}: {e}")
     
     return metrics
 

@@ -3,6 +3,7 @@
 Provides functions for finding datasets, running experiments, and triggering plots.
 """
 import functools
+import logging
 import os
 import shutil
 import subprocess
@@ -11,6 +12,8 @@ import uuid
 from pathlib import Path
 
 from src.pipeline.runtime import get_python_executable
+
+logger = logging.getLogger(__name__)
 
 
 def fast_purge_dir(path: Path):
@@ -21,7 +24,11 @@ def fast_purge_dir(path: Path):
     try:
         path.rename(trash_path)
         threading.Thread(target=shutil.rmtree, args=(trash_path, True), daemon=True).start()
-    except Exception:
+    except OSError as e:
+        logger.debug("Fast purge rename failed for %s (%s), falling back to synchronous rmtree", path, e)
+        shutil.rmtree(path, ignore_errors=True)
+    except Exception as e:
+        logger.debug("Unexpected error in fast_purge_dir for %s (%s), falling back to rmtree", path, e)
         shutil.rmtree(path, ignore_errors=True)
 
 
@@ -170,7 +177,7 @@ def run_experiment(overrides, site_cfg=None):
     subprocess.run(cmd, check=True, env=env)
 
 
-def run_plotting(experiment, style=None, base_experiment=None, site_cfg=None):
+def run_plotting(experiment, style=None, base_experiment=None, site_cfg=None, wipe=False):
     """Run plot/manager.py for the given experiment."""
     from src.pipeline.runtime import get_subprocess_env
     env = get_subprocess_env(site_cfg)
@@ -181,6 +188,8 @@ def run_plotting(experiment, style=None, base_experiment=None, site_cfg=None):
         cmd.extend(["--experiment", str(base_experiment)])
     if style:
         cmd.extend(["--style", str(style)])
+    if wipe:
+        cmd.append("--wipe")
         
     print(f"\n=== Auto-Generating Modular Plots for experiment: {experiment} ===")
     subprocess.run(cmd, check=True, env=env)

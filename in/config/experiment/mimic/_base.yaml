@@ -4,6 +4,8 @@ defaults:
   - override /agent: cql/dnn
   - override /mode: offline
 
+paradigm: offline_only
+
 offline_datasets: [mimic_lazy_0_interventions_balanced]
 offline_methods: [cql/dnn, cql/blendrl_human_neural, cql/blendrl_human_cew, cew/fyd]
 

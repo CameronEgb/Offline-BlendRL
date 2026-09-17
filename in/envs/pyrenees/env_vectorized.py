@@ -12,12 +12,14 @@ Supports both:
 
 import os
 from pathlib import Path
+
 import numpy as np
 import torch as th
-from blendrl.env_vectorized import VectorizedNudgeBaseEnv
+
+from src.core.env_vectorized import VectorizedBaseEnv
 
 
-class VectorizedNudgeEnv(VectorizedNudgeBaseEnv):
+class VectorizedNudgeEnv(VectorizedBaseEnv):
     name = "pyrenees"
 
     def __init__(
@@ -149,29 +151,24 @@ class VectorizedNudgeEnv(VectorizedNudgeBaseEnv):
             aug[self.action_to_slot[last_action]] = 1.0
         return aug
 
-    def reset(self):
-        logic_states = []
-        neural_states = []
-
+    def reset(self, seed=None):
+        obs_list = []
         for i in range(self.n_envs):
             self._reset_env_slot(i)
             traj = self.current_traj_idx[i]
             step = self.current_step_idx[i]
             raw_obs = self.states[traj][step]
             aug_obs = self._augment(raw_obs, self._last_action[i])
+            obs_list.append(th.tensor(aug_obs, dtype=th.float32))
 
-            logic_states.append(self.extract_logic_state(aug_obs))
-            neural_states.append(self.extract_neural_state(aug_obs))
-
-        return th.stack(logic_states), th.stack(neural_states)
+        return th.stack(obs_list)
 
     def step(self, actions, is_mapped: bool = False):
         rewards = []
         terminations = []
         truncations = []
         infos = []
-        logic_states = []
-        neural_states = []
+        obs_list = []
 
         for i in range(self.n_envs):
             traj = self.current_traj_idx[i]
@@ -194,8 +191,7 @@ class VectorizedNudgeEnv(VectorizedNudgeBaseEnv):
                 raw_next = self.states[traj][self.current_step_idx[i]]
 
             aug_next = self._augment(raw_next, self._last_action[i])
-            logic_states.append(self.extract_logic_state(aug_next))
-            neural_states.append(self.extract_neural_state(aug_next))
+            obs_list.append(th.tensor(aug_next, dtype=th.float32))
 
             rewards.append(reward)
             terminations.append(terminated)
@@ -203,22 +199,12 @@ class VectorizedNudgeEnv(VectorizedNudgeBaseEnv):
             infos.append({})
 
         return (
-            (th.stack(logic_states), th.stack(neural_states)),
+            th.stack(obs_list),
             np.array(rewards, dtype=np.float32),
             np.array(terminations, dtype=bool),
             np.array(truncations, dtype=bool),
             infos,
         )
-
-    def extract_logic_state(self, obs_aug: np.ndarray) -> th.Tensor:
-        state = th.zeros((2, self.aug_dim), dtype=th.float32)
-        t = th.tensor(obs_aug, dtype=th.float32)
-        state[0] = t  # student
-        state[1] = t  # env
-        return state
-
-    def extract_neural_state(self, obs_aug: np.ndarray) -> th.Tensor:
-        return th.tensor(obs_aug, dtype=th.float32)
 
     def get_action_meanings(self):
         if self.is_problem_level:
@@ -227,3 +213,7 @@ class VectorizedNudgeEnv(VectorizedNudgeBaseEnv):
 
     def close(self):
         pass
+
+
+VectorizedEnv = VectorizedNudgeEnv
+

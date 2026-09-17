@@ -1,0 +1,147 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nesyrl"
+version = "0.1.0"
+description = "Neural-Symbolic Reinforcement Learning Framework"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = [
+    # Core ML
+    "torch>=2.0,<3",
+    "torchvision>=0.15,<1",
+    "torchaudio>=2.0,<3",
+    "pytorch-lightning>=2.0,<3",
+    "lightning>=2.0,<3",
+    # Config & Sweeps
+    "hydra-core>=1.3,<2",
+    "hydra-optuna-sweeper>=1.2",
+    "optuna>=3.0,<5",
+    "omegaconf>=2.3,<3",
+    # RL & Environments
+    "gymnasium[atari,accept-rom-license]>=0.28",
+    "stable-baselines3>=2.0",
+    # Logic & Symbolic
+    "lark>=1.1",
+    "igraph>=0.10",
+    # Data & Visualization
+    "numpy>=1.24,<3",
+    "pandas>=2.0,<3",
+    "matplotlib>=3.7,<4",
+    "seaborn>=0.12",
+    "scipy>=1.10",
+    "scikit-learn>=1.2",
+    "tqdm>=4.60",
+    "tabulate>=0.9",
+    "pillow>=9.0",
+    "pyyaml>=6.0",
+    "tensorboard>=2.12",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.5",
+    "mypy>=1.0",
+    "pre-commit>=3.0",
+]
+api = [
+    "fastapi>=0.100",
+    "uvicorn[standard]>=0.20",
+]
+atari = [
+    "ocatari",
+    "hackatari @ git+https://github.com/k4ntz/HackAtari.git",
+]
+video = [
+    "pygame",
+    "vidmaker",
+    "opencv-python",
+]
+all = [
+    "nesyrl[dev,api,atari,video]",
+]
+
+# ── Package discovery ────────────────────────────────────────
+[tool.setuptools.packages.find]
+where = ["."]
+include = [
+    "src", "src.*",
+    "plot", "plot.*",
+]
+exclude = [
+    "src.fyd_repo", "src.fyd_repo.*",
+    "src.cew_repo", "src.cew_repo.*",
+]
+
+# ── Ruff (linting + formatting) ─────────────────────────────
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+extend-exclude = [
+    "src/fyd_repo",
+    "src/cew_repo",
+    "in/envs",
+    "venv",
+]
+
+[tool.ruff.lint]
+# Start lenient — tighten incrementally
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+    "E701",  # multiple statements on one line
+    "E741",  # ambiguous variable names (common in math-heavy RL code)
+    "F401",  # unused imports (too noisy during initial adoption)
+    "F841",  # unused local variables (too noisy during initial adoption)
+    "W293",  # blank line contains whitespace
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src", "plot", "blendrl", "nsfr", "neumann", "nudge"]
+
+# ── Mypy (type checking) ────────────────────────────────────
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+exclude = [
+    "src/fyd_repo",
+    "src/cew_repo",
+    "in/envs",
+    "venv",
+]
+
+# ── Coverage ─────────────────────────────────────────────────
+[tool.coverage.run]
+source = ["src", "plot"]
+omit = [
+    "src/fyd_repo/*",
+    "src/cew_repo/*",
+    "src/nsfr/*",
+    "src/neumann/*",
+    "src/nudge/*",
+    "*/test_*",
+    "*/conftest.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.",
+    "if TYPE_CHECKING:",
+]
+

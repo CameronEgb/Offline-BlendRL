@@ -36,3 +36,27 @@ scratch/
 # Local datasets
 in/datasets/
 
+# Packaging / Distribution
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Type checking
+.mypy_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Leftover artifacts
+temp/
+.src/

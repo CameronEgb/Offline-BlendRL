@@ -55,20 +55,20 @@ def get_agent_class(algo_name: str):
     # Try exact match first
     if algo_name in AGENT_REGISTRY:
         return AGENT_REGISTRY[algo_name]
-    
+
     # Longest-prefix match: sort by key length descending, check startswith
     matches = [
         (prefix, cls) for prefix, cls in AGENT_REGISTRY.items()
         if algo_name == prefix or algo_name.startswith(prefix + "_")
     ]
-    
+
     if not matches:
         registered = sorted(AGENT_REGISTRY.keys())
         raise ValueError(
             f"Unknown agent algorithm: '{algo_name}'. "
             f"Registered prefixes: {registered}"
         )
-    
+
     # Return the class with the longest matching prefix
     return max(matches, key=lambda x: len(x[0]))[1]
 
@@ -86,7 +86,7 @@ def auto_discover():
     for p in (project_root, src_dir):
         if p not in sys.path:
             sys.path.insert(0, p)
-            
+
     for module_info in pkgutil.iter_modules([methods_dir]):
         if module_info.name.startswith("_") or module_info.name in ("registry", "base_agent"):
             continue

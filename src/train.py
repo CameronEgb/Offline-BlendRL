@@ -8,12 +8,16 @@ if PROJECT_ROOT not in sys.path:
 if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
 
+import logging
 import hydra
 import time
 from pathlib import Path
 from omegaconf import DictConfig, OmegaConf
 import torch
 import omegaconf
+
+logger = logging.getLogger(__name__)
+
 try:
     torch.serialization.add_safe_globals([
         omegaconf.dictconfig.DictConfig,
@@ -21,8 +25,10 @@ try:
         omegaconf.base.Container,
         omegaconf.nodes.UntypedNode,
     ])
-except Exception:
-    pass
+except (AttributeError, TypeError) as e:
+    logger.debug("PyTorch safe globals registration skipped: %s", e)
+except Exception as e:
+    logger.debug("Unexpected error registering safe globals: %s", e)
 
 from src.core.lightning_builder import build_trainer, finalize_training
 from src.methods.registry import auto_discover, get_agent_class
@@ -39,8 +45,8 @@ def main(cfg: DictConfig):
                         exp_stem = Path(override.split("=")[-1]).stem
                         cfg.experiment_id = exp_stem
                         break
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Could not infer experiment_id from Hydra task overrides: %s", e)
 
     print(OmegaConf.to_yaml(cfg))
     
@@ -50,8 +56,6 @@ def main(cfg: DictConfig):
     # While some components have been refactored to read from `cfg`, others still rely on this.
     if "env" in cfg and "reward_type" in cfg.env:
         os.environ["MIMIC_REWARD_TYPE"] = str(cfg.env.reward_type)
-    if "env" in cfg and "name" in cfg.env:
-        os.environ["BLENDRL_ENV_NAME"] = str(cfg.env.name)
 
 
     auto_discover()

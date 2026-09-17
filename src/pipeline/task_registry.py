@@ -1,6 +1,9 @@
 import importlib
+import logging
 import os
 import pkgutil
+
+logger = logging.getLogger(__name__)
 
 TASK_REGISTRY = {}
 
@@ -68,8 +71,12 @@ def auto_discover_tasks():
             continue
         try:
             importlib.import_module(f"src.pipeline.{module_info.name}")
-        except Exception:
+        except (ImportError, ModuleNotFoundError):
             try:
                 importlib.import_module(f"pipeline.{module_info.name}")
+            except (ImportError, ModuleNotFoundError) as e:
+                logger.debug("Could not import %s: %s", module_info.name, e)
             except Exception as e:
-                import logging; logging.getLogger(__name__).debug(f"Could not import {module_info.name}: {e}")
+                logger.warning("Error importing pipeline.%s: %s", module_info.name, e)
+        except Exception as e:
+            logger.warning("Error importing src.pipeline.%s: %s", module_info.name, e)

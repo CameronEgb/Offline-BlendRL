@@ -24,7 +24,7 @@ def run_local_training(cfg, context):
     """Execute online and offline training phases locally as blocking subprocesses."""
     best_online_trial_ids = {}
 
-    # Hard-overwrite checkpoints and logs on re-run unless recover=true is explicitly set
+    # Hard-overwrite checkpoints, logs, and plots on re-run unless recover=true is explicitly set
     if not cfg.get("recover", False):
         ckpt_dir = Path("results/checkpoints") / cfg.group / cfg.experiment_id
         fast_purge_dir(ckpt_dir)
@@ -33,6 +33,11 @@ def run_local_training(cfg, context):
         exp_log_dir = Path("results/logs") / cfg.group / cfg.experiment_id
         fast_purge_dir(exp_log_dir)
         exp_log_dir.mkdir(parents=True, exist_ok=True)
+
+        clean_exp = Path(cfg.experiment_id).stem
+        exp_plot_dir = Path("results/plots") / cfg.group / clean_exp
+        fast_purge_dir(exp_plot_dir)
+        exp_plot_dir.mkdir(parents=True, exist_ok=True)
 
     # 1. Online Training Phases
     if not cfg.get("no_online", False):
@@ -130,3 +135,14 @@ def run_local_training(cfg, context):
                     promote_best_trial_checkpoint(cfg.group, cfg.experiment_id, target_agent_name, storage_url, study_name)
     else:
         print("\n=== Skipping Offline Training Phase ===")
+
+    # 3. Automated Plotting (if not disabled)
+    if not cfg.get("no_plot", False):
+        from src.pipeline.datasets import run_plotting
+        site_cfg = getattr(cfg, "site", None)
+        run_plotting(
+            cfg.experiment_id,
+            style=cfg.get("plot_style", None),
+            base_experiment=cfg.get("experiment_name", ""),
+            site_cfg=site_cfg,
+        )

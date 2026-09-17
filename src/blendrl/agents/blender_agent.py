@@ -17,7 +17,8 @@ from torch.distributions.categorical import Categorical
 from nsfr.utils.common import load_module
 from nsfr.common import get_nsfr_model
 
-from src.core.factories import get_blender, load_cleanrl_agent, get_neural_agent
+from src.core.factories import get_blender, get_neural_agent
+from src.core.types import ActionResult
 from nudge.utils import print_program
 
 from src.methods.cew_utils import run_CLIP, run_ECM, rule_creation, run_FYD, MultiFLC
@@ -366,8 +367,10 @@ class BlenderActorCritic(nn.Module):
         self.policy_modules = nn.ModuleList()
         self.module_types = []
         
-        dummy_logic, dummy_neural = env.reset()
-        neural_in_features = dummy_neural.shape[-1]
+        obs = env.reset()
+        if isinstance(obs, tuple):
+            obs = obs[0]
+        neural_in_features = obs.shape[-1]
 
         # 1. Parse modules from argument or config
         modules_list = modules if modules is not None else (cfg.get("modules") if cfg and "modules" in cfg else None)
@@ -387,7 +390,7 @@ class BlenderActorCritic(nn.Module):
                 elif m_type == "cew":
                     # Placeholder CEW module, will be self-organized later
                     # Determine input size from env
-                    n_inputs = np.prod(dummy_logic.shape[1:])
+                    n_inputs = np.prod(obs.shape[1:])
                     m = MultiFLC(
                         n_inputs=n_inputs, 
                         n_outputs=env.n_actions,
@@ -551,7 +554,16 @@ class BlenderActorCritic(nn.Module):
 
         blended_value = self.get_value(neural_state, logic_state, blending_weights=blending_weights)
 
-        return action, logprob, dist.entropy(), blend_dist.entropy(), blended_value
+        return ActionResult(
+            action=action,
+            logprob=logprob,
+            entropy=dist.entropy(),
+            value=blended_value,
+            aux={
+                "blend_entropy": blend_dist.entropy(),
+                "blending_weights": blending_weights,
+            },
+        )
 
     def get_q_values(self, neural_state, logic_state=None):
         if self.get_cfg("blend_q_values", True):

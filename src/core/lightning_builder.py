@@ -1,14 +1,18 @@
+import json
+import logging
 import os
+import signal
 import sys
 import time
-import json
-import torch
-import signal
 
-from omegaconf import OmegaConf, DictConfig
 import lightning as L
+import torch
+from lightning.pytorch.callbacks import Callback, ModelCheckpoint
 from lightning.pytorch.loggers import CSVLogger, TensorBoardLogger
-from lightning.pytorch.callbacks import ModelCheckpoint, Callback
+from omegaconf import DictConfig, OmegaConf
+
+logger = logging.getLogger(__name__)
+
 
 class SaveInitialCheckpointCallback(Callback):
     """Callback to save an initial, untrained model checkpoint before training starts."""
@@ -24,7 +28,11 @@ class SaveInitialCheckpointCallback(Callback):
         from hydra.utils import get_original_cwd
         try:
             base_root = get_original_cwd()
-        except Exception:
+        except (ValueError, AttributeError) as e:
+            logger.debug("Hydra original cwd unavailable (%s), using os.getcwd()", e)
+            base_root = os.getcwd()
+        except Exception as e:
+            logger.debug("Unexpected error getting Hydra original cwd (%s), using os.getcwd()", e)
             base_root = os.getcwd()
         parent_ckpt_root = os.path.join(base_root, "results/checkpoints", self.cfg.group, self.cfg.experiment_id)
         os.makedirs(parent_ckpt_root, exist_ok=True)
@@ -82,7 +90,7 @@ def infer_dynamic_timesteps(cfg):
 def setup_loggers(cfg, base_root):
     log_dir = os.path.join(base_root, "results/logs", cfg.group, cfg.experiment_id)
     loggers = [CSVLogger(log_dir, name=cfg.agent.name)]
-    
+
     use_tb = False
     if "tensorboard" in cfg:
         use_tb = bool(cfg.tensorboard)
@@ -108,18 +116,22 @@ def build_trainer(cfg, model=None):
     from hydra.utils import get_original_cwd
     try:
         base_root = get_original_cwd()
-    except Exception:
+    except (ValueError, AttributeError) as e:
+        logger.debug("Hydra original cwd unavailable (%s), using os.getcwd()", e)
+        base_root = os.getcwd()
+    except Exception as e:
+        logger.debug("Unexpected error getting Hydra original cwd (%s), using os.getcwd()", e)
         base_root = os.getcwd()
 
     loggers = setup_loggers(cfg, base_root)
-    
+
     from hydra.core.hydra_config import HydraConfig
     trial_id = "0"
     if HydraConfig.initialized():
         try:
             trial_id = str(HydraConfig.get().job.num)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Could not inspect Hydra job num: %s", e)
     ckpt_dir = os.path.join(base_root, "results/checkpoints", cfg.group, cfg.experiment_id, cfg.agent.name, trial_id)
 
     def graceful_shutdown(signum, frame):
@@ -131,8 +143,10 @@ def build_trainer(cfg, model=None):
     try:
         signal.signal(signal.SIGTERM, graceful_shutdown)
         signal.signal(signal.SIGUSR1, graceful_shutdown)
-    except Exception:
-        pass 
+    except (ValueError, AttributeError, OSError) as e:
+        logger.debug("Could not register shutdown signal handlers: %s", e)
+    except Exception as e:
+        logger.debug("Unexpected error registering shutdown signal handlers: %s", e)
 
     is_offline_only = cfg.env.get("offline_only", False)
     callbacks = [SaveInitialCheckpointCallback(ckpt_dir, cfg)]
@@ -181,13 +195,13 @@ def build_trainer(cfg, model=None):
         num_envs = getattr(model, "num_envs", cfg.env.num_envs) if model else cfg.env.num_envs
         num_steps = getattr(model, "num_steps", cfg.env.num_steps) if model else getattr(cfg.env, "num_steps", 256)
         batch_size = num_envs * num_steps
-        
+
         import math
         max_epochs = math.ceil(cfg.total_timesteps / batch_size) if batch_size > 0 else 1
         if max_epochs == 0: max_epochs = 1
-        
+
         limit_val_batches = 0
-        check_val_every_n_epoch = 1000000 
+        check_val_every_n_epoch = 1000000
     else:
         epochs_per_interval = cfg.agent.get("epochs_per_interval", 1)
         intervals_count = 1 if is_offline_only else cfg.get("intervals_count", 1)
@@ -211,7 +225,7 @@ def build_trainer(cfg, model=None):
         torch.backends.cudnn.benchmark = True
         precision_setting = cfg.get("precision", "bf16-mixed" if torch.cuda.is_bf16_supported() else "16-mixed")
         trainer_kwargs["precision"] = precision_setting
-    
+
     if "trainer" in cfg and cfg.trainer is not None:
         trainer_overrides = OmegaConf.to_container(cfg.trainer, resolve=True)
         trainer_kwargs.update(trainer_overrides)
@@ -269,21 +283,23 @@ def finalize_training(trainer, cfg, ckpt_dir, training_time, start_time, end_tim
                         "gpu/peak_reserved_gb": gpu_stats["gpu_peak_reserved_gb"],
                     })
                 lg.log_metrics(metrics_to_log, step=trainer.global_step)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to log metrics to %s: %s", lg, e)
 
     os.makedirs(ckpt_dir, exist_ok=True)
-    
-    from src.core.metadata import collect_run_metadata, save_git_diff
+
     import datetime
+
     from hydra.core.hydra_config import HydraConfig
-    
+
+    from src.core.metadata import collect_run_metadata, save_git_diff
+
     hydra_output_dir = None
     if HydraConfig.initialized():
         try:
             hydra_output_dir = HydraConfig.get().runtime.output_dir
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Could not inspect Hydra runtime output_dir: %s", e)
 
     start_time_iso = datetime.datetime.fromtimestamp(start_time, datetime.timezone.utc).isoformat() if start_time else None
     end_time_iso = datetime.datetime.fromtimestamp(end_time, datetime.timezone.utc).isoformat() if end_time else None
@@ -328,7 +344,7 @@ def finalize_training(trainer, cfg, ckpt_dir, training_time, start_time, end_tim
         exp_ckpt_root = os.path.join("results/checkpoints", cfg.group, cfg.experiment_id)
         os.makedirs(exp_ckpt_root, exist_ok=True)
         atomic_yaml_save(cfg, os.path.join(exp_ckpt_root, "config.yaml"))
-        
+
         if hydra_output_dir:
             import shutil
             overrides_path = os.path.join(hydra_output_dir, ".hydra", "overrides.yaml")
@@ -348,13 +364,13 @@ def finalize_training(trainer, cfg, ckpt_dir, training_time, start_time, end_tim
                     if os.path.exists(overrides_path):
                         import shutil
                         shutil.copy2(overrides_path, os.path.join(lg.log_dir, "overrides.yaml"))
-            except Exception:
-                pass
+            except (OSError, Exception) as e:
+                logger.warning("Could not save config or overrides to log_dir %s: %s", lg.log_dir, e)
         if hasattr(lg, "save"):
             try:
                 lg.save()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Failed to save/flush logger %s: %s", lg, e)
 
     exp_log_root = os.path.join("results/logs", cfg.group, cfg.experiment_id)
     os.makedirs(exp_log_root, exist_ok=True)

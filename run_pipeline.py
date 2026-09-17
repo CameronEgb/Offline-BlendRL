@@ -11,16 +11,14 @@ from pathlib import Path
 import hydra
 from hydra import compose, initialize
 
-from src.method_registry import clean_label
 from src.pipeline.config import (
     normalize_agent_name, parse_method_list, resolve_experiment_config_name
 )
 from src.pipeline.datasets import run_plotting
-from src.pipeline.local_runner import run_local_training
 from src.pipeline.optuna_utils import launch_optuna_dashboard
 from src.pipeline.slurm import generate_sbatch_header, submit_sbatch
-from src.pipeline.slurm_runner import run_slurm_training
 from src.pipeline.validation import validate_experiment_config
+from src.pipeline.exceptions import ConfigurationError
 
 
 def main():
@@ -92,7 +90,7 @@ def main():
         notices = validate_experiment_config(cfg, experiment_arg, is_sweep=is_sweep)
         for n in notices:
             print(f"[Config Notice] {n}")
-    except ValueError as e:
+    except ConfigurationError as e:
         print(f"\n{e}\n")
         sys.exit(1)
 
@@ -158,18 +156,10 @@ def main():
     if not task_name:
         task_name = "rl"
 
-    from src.pipeline.task_registry import get_task, register_task
+    from src.pipeline.task_registry import get_task
 
-    @register_task("rl")
-    def run_standard_rl_task(cfg, context):
-        if context["is_interactive"]:
-            run_local_training(cfg, context)
-        else:
-            run_slurm_training(cfg, context)
-
-    
     task_fn = get_task(task_name)
-    
+
     # Introspect task_fn to see if it accepts args (backwards compatibility for custom tasks)
     import inspect
     sig = inspect.signature(task_fn)

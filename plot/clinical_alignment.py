@@ -319,8 +319,19 @@ class ClinicalAlignmentPlotter(BasePlotter):
         batch_size = 10000
         method_opt_thresholds = {}
         for method_name, ckpt_path in sorted(method_ckpts.items()):
-            if method_name in patient_agreements and any(r.get("Method") == clean_label(method_name) for r in results):
+            ckpt_p = Path(ckpt_path)
+            ckpt_newer = (
+                cache_path.exists() and ckpt_p.exists()
+                and (ckpt_p.stat().st_mtime > cache_path.stat().st_mtime)
+            )
+            if (
+                not ckpt_newer
+                and method_name in patient_agreements
+                and any(r.get("Method") == clean_label(method_name) for r in results)
+            ):
                 continue
+            if ckpt_newer:
+                results = [r for r in results if r.get("Method") != clean_label(method_name)]
             agent = self._load_agent(ckpt_path, device)
             if agent is None:
                 print(f"  Warning [clinical_alignment]: Could not load checkpoint {ckpt_path}")
@@ -445,8 +456,15 @@ class ClinicalAlignmentPlotter(BasePlotter):
         for method_name, intervals in sorted(method_interval_ckpts.items()):
             opt_thresh = method_opt_thresholds.get(method_name, 0.5)
             for ep, ckpt_path in intervals:
-                if method_name in interval_agreements and ep in interval_agreements[method_name]:
+                ckpt_p = Path(ckpt_path)
+                hist_newer = (
+                    history_cache_path.exists() and ckpt_p.exists()
+                    and (ckpt_p.stat().st_mtime > history_cache_path.stat().st_mtime)
+                )
+                if not hist_newer and method_name in interval_agreements and ep in interval_agreements[method_name]:
                     continue
+                if hist_newer:
+                    new_interval_data = True
                 agent = self._load_agent(ckpt_path, device)
                 if agent is None:
                     continue
