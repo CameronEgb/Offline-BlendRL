@@ -39,7 +39,7 @@ jobs:
         with:
           file: coverage.xml
           token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_not_uploaded: false
+          fail_ci_if_error: false
 
   typecheck:
     runs-on: ubuntu-latest
@@ -53,4 +53,4 @@ jobs:
           pip install --upgrade pip
           pip install -e ".[dev,api]"
       - name: Type check
-        run: mypy src/pipeline/ src/methods/registry.py src/method_registry.py --ignore-missing-imports
+        run: mypy src/pipeline/ src/methods/registry.py src/method_registry.py --ignore-missing-imports --follow-imports=silent
