@@ -31,7 +31,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install -e ".[dev,api]"
       - name: Run tests
         run: pytest tests/ -v --tb=short --cov=src --cov-report=xml
       - name: Upload coverage
@@ -51,6 +51,6 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install -e ".[dev,api]"
       - name: Type check
         run: mypy src/pipeline/ src/methods/registry.py src/method_registry.py --ignore-missing-imports
