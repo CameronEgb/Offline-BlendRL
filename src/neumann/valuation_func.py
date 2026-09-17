@@ -1,8 +1,6 @@
 import torch
 import torch.nn as nn
-
 from neural_utils import MLP, LogisticRegression
-
 
 ################################
 # Valuation functions for YOLO #
@@ -13,7 +11,7 @@ class YOLOColorValuationFunction(nn.Module):
     """
 
     def __init__(self):
-        super(YOLOColorValuationFunction, self).__init__()
+        super().__init__()
 
     def forward(self, z, a):
         """
@@ -35,7 +33,7 @@ class YOLOShapeValuationFunction(nn.Module):
     """
 
     def __init__(self):
-        super(YOLOShapeValuationFunction, self).__init__()
+        super().__init__()
 
     def forward(self, z, a):
         """
@@ -58,7 +56,7 @@ class YOLOInValuationFunction(nn.Module):
     """
 
     def __init__(self):
-        super(YOLOInValuationFunction, self).__init__()
+        super().__init__()
 
     def forward(self, z, x):
         """
@@ -79,7 +77,7 @@ class YOLOClosebyValuationFunction(nn.Module):
     """
 
     def __init__(self, device):
-        super(YOLOClosebyValuationFunction, self).__init__()
+        super().__init__()
         self.device = device
         self.logi = LogisticRegression(input_dim=1)
         self.logi.to(device)
@@ -113,7 +111,7 @@ class YOLOOnlineValuationFunction(nn.Module):
     """
 
     def __init__(self, device):
-        super(YOLOOnlineValuationFunction, self).__init__()
+        super().__init__()
         self.logi = LogisticRegression(input_dim=1)
         self.logi.to(device)
 
@@ -165,7 +163,7 @@ class SlotAttentionInValuationFunction(nn.Module):
     """
 
     def __init__(self, device):
-        super(SlotAttentionInValuationFunction, self).__init__()
+        super().__init__()
 
     def forward(self, z, x):
         """
@@ -194,7 +192,7 @@ class SlotAttentionShapeValuationFunction(nn.Module):
     """
 
     def __init__(self, device):
-        super(SlotAttentionShapeValuationFunction, self).__init__()
+        super().__init__()
 
     def forward(self, z, a):
         """
@@ -217,7 +215,7 @@ class SlotAttentionSizeValuationFunction(nn.Module):
     """
 
     def __init__(self, device):
-        super(SlotAttentionSizeValuationFunction, self).__init__()
+        super().__init__()
 
     def forward(self, z, a):
         """
@@ -240,7 +238,7 @@ class SlotAttentionMaterialValuationFunction(nn.Module):
     """
 
     def __init__(self, device):
-        super(SlotAttentionMaterialValuationFunction, self).__init__()
+        super().__init__()
 
     def forward(self, z, a):
         """
@@ -263,7 +261,7 @@ class SlotAttentionColorValuationFunction(nn.Module):
     """
 
     def __init__(self, device):
-        super(SlotAttentionColorValuationFunction, self).__init__()
+        super().__init__()
 
     def forward(self, z, a):
         """
@@ -285,7 +283,7 @@ class SlotAttentionLessColorValuationFunction(nn.Module):
     """
 
     def __init__(self, device):
-        super(SlotAttentionLessColorValuationFunction, self).__init__()
+        super().__init__()
 
     def forward(self, z, a):
         """
@@ -308,7 +306,7 @@ class SlotAttentionColor1ValuationFunction(nn.Module):
     """
 
     def __init__(self, device):
-        super(SlotAttentionColor1ValuationFunction, self).__init__()
+        super().__init__()
 
     def forward(self, z, a):
         """
@@ -330,7 +328,7 @@ class SlotAttentionRightSideValuationFunction(nn.Module):
     """
 
     def __init__(self, device):
-        super(SlotAttentionRightSideValuationFunction, self).__init__()
+        super().__init__()
         self.logi = LogisticRegression(input_dim=1, output_dim=1)
         self.logi.to(device)
 
@@ -355,7 +353,7 @@ class SlotAttentionLeftSideValuationFunction(nn.Module):
     """
 
     def __init__(self, device):
-        super(SlotAttentionLeftSideValuationFunction, self).__init__()
+        super().__init__()
         self.logi = LogisticRegression(input_dim=1, output_dim=1)
         self.logi.to(device)
 
@@ -379,7 +377,7 @@ class SlotAttentionMoreThanTwoObjectsValuationFunction(nn.Module):
     """
 
     def __init__(self, device):
-        super(SlotAttentionMoreThanTwoObjectsValuationFunction, self).__init__()
+        super().__init__()
         self.logi = LogisticRegression(input_dim=1, output_dim=1)
         self.logi.to(device)
 
@@ -405,7 +403,7 @@ class SlotAttentionFrontValuationFunction(nn.Module):
     """
 
     def __init__(self, device):
-        super(SlotAttentionFrontValuationFunction, self).__init__()
+        super().__init__()
         self.logi = LogisticRegression(input_dim=6, output_dim=1)
         self.logi.to(device)
 
@@ -432,7 +430,7 @@ class SlotAttentionLeftOfValuationFunction(nn.Module):
     """
 
     def __init__(self, device):
-        super(SlotAttentionLeftOfValuationFunction, self).__init__()
+        super().__init__()
         self.logi = LogisticRegression(input_dim=1, output_dim=1)
         self.logi.to(device)
 
@@ -472,7 +470,7 @@ class SlotAttentionCountValuationFunction(nn.Module):
     """
 
     def __init__(self, device):
-        super(SlotAttentionCountValuationFunction, self).__init__()
+        super().__init__()
         self.logi = LogisticRegression(input_dim=1, output_dim=1)
         self.logi.to(device)
         self.beta = 1e-2
@@ -500,7 +498,7 @@ class SlotAttentionQuery3ValuationFunction(nn.Module):
     """
 
     def __init__(self, device):
-        super(SlotAttentionQuery3ValuationFunction, self).__init__()
+        super().__init__()
         self.device = device
 
     def forward(self, query, a_query_type, a_query_color, a_query_position):
@@ -530,7 +528,7 @@ class SlotAttentionQuery2ValuationFunction(nn.Module):
     """The function v_query3(query, Querytype, QueryColor, QueryPosition).
     """
     def __init__(self, device):
-        super(SlotAttentionQuery2ValuationFunction, self).__init__()
+        super().__init__()
         self.device = device
 
     def forward(self, query, a_query_type, a_query_position):

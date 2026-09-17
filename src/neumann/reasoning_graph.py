@@ -8,11 +8,11 @@ from torch_geometric.utils import from_networkx
 from tqdm import tqdm
 
 from neumann.fol.logic import Clause, Conjunction
-from nsfr.fol.logic_ops import subs_list, unify
 from neumann.logic_utils import generate_substitutions
+from nsfr.fol.logic_ops import subs_list, unify
 
 
-class ReasoningGraphModule(object):
+class ReasoningGraphModule:
     """Reasoning graph, which represents a forward-reasoning process as a bipartite graph.
 
     Args:
@@ -64,13 +64,13 @@ class ReasoningGraphModule(object):
     def __str__(self):
         N_atom_nodes = len(self.atom_node_idxs)
         N_conj_nodes = len(self.conj_node_idxs)
-        return "Reasoning Graph(N_atom_nodes={}, N_conj_nodes={})".format(N_atom_nodes, N_conj_nodes)
+        return f"Reasoning Graph(N_atom_nodes={N_atom_nodes}, N_conj_nodes={N_conj_nodes})"
 
     def __repr__(self):
         return self.__str__()
 
     def _get_fact_idx(self, fact):
-        if not fact in self.fact_index_dict:
+        if fact not in self.fact_index_dict:
             return False, -1
         else:
             return True, self.fact_index_dict[fact]
@@ -173,7 +173,7 @@ class ReasoningGraphModule(object):
             if gc.head in self.fact_set:
                 body_flag = True
                 for bi in gc.body:
-                    if not bi in self.fact_set:
+                    if bi not in self.fact_set:
                         body_flag = False
                 if body_flag:
                     pruned_ground_clauses.append(gc)
@@ -200,7 +200,7 @@ class ReasoningGraphModule(object):
                     body_fact_idx = self.facts.index(bi)
                     #G.add_edge(body_node_idx, conj_node_idx, etype=0, color='b')
                     new_edge = [body_fact_idx, conj_idx]
-                    if not new_edge in edge_index:
+                    if new_edge not in edge_index:
                         edge_index.append([body_fact_idx, conj_idx])
                         edge_type.append(0)  # edge: atom_node -> conj_node
                         edge_clause_index.append(i)

@@ -6,11 +6,10 @@ import torch as th
 
 # import pygame
 # import vidmaker
-
 from nudge.agents.logic_agent import NsfrActorCritic
 from nudge.agents.neural_agent import ActorCritic
-from nudge.utils import load_model, yellow
 from nudge.env import NudgeBaseEnv
+from nudge.utils import load_model, yellow
 
 SCREENSHOTS_BASE_PATH = "out/screenshots/"
 PREDICATE_PROBS_COL_WIDTH = 500 * 2
@@ -26,7 +25,7 @@ torch.set_num_threads(5)
 
 
 class Evaluator:
-    model: Union[NsfrActorCritic, ActorCritic]
+    model: NsfrActorCritic | ActorCritic
     # window: pygame.Surface
     # clock: pygame.time.Clock
 

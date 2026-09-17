@@ -6,6 +6,7 @@ Single source of truth for:
   - PYTHONPATH for subprocesses
   - Shell-embeddable environment setup block for Slurm scripts
 """
+
 import os
 import sys
 from pathlib import Path

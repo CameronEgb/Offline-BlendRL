@@ -1,7 +1,8 @@
-import torch
-import numpy as np
 import importlib.util
 import sys
+
+import numpy as np
+import torch
 
 
 def explaining_nsfr(NSFR, extracted_states):

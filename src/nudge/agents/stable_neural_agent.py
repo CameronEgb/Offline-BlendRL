@@ -1,13 +1,15 @@
 import os
-import torch
-import torch.nn as nn
-import random
 import pickle
+import random
 from pathlib import Path
 
-from nsfr.utils.common import load_module
+import torch
+import torch.nn as nn
 from torch.distributions import Categorical
+
+from nsfr.utils.common import load_module
 from nudge.env import NudgeBaseEnv
+
 
 def load_stable_neural_model(raw_env, model_path, device):
     model = PPO("MlpPolicy", raw_env, verbose=1)
@@ -15,7 +17,7 @@ def load_stable_neural_model(raw_env, model_path, device):
 
 class ActorCritic(nn.Module):
     def __init__(self, env: NudgeBaseEnv, rng=None, device=None):
-        super(ActorCritic, self).__init__()
+        super().__init__()
 
         self.device = device
         self.rng = random.Random() if rng is None else rng

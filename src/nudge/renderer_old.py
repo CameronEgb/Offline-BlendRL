@@ -2,8 +2,8 @@ from datetime import datetime
 from typing import Union
 
 import numpy as np
-import torch as th
 import pygame
+import torch as th
 
 from nudge.agents.logic_agent import NsfrActorCritic
 from nudge.agents.neural_agent import ActorCritic
@@ -16,7 +16,7 @@ CELL_BACKGROUND_HIGHLIGHT = np.array([40, 150, 255])
 
 
 class Renderer:
-    model: Union[NsfrActorCritic, ActorCritic]
+    model: NsfrActorCritic | ActorCritic
     window: pygame.Surface
     clock: pygame.time.Clock
 

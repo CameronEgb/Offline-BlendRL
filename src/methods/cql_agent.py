@@ -1,11 +1,12 @@
 import math
+from typing import Any, Dict, Optional
+
+import lightning as L
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-import lightning as L
-import numpy as np
-from typing import Any, Dict, Optional
 
 from src.methods.base_agent import OfflineAgentBase
 from src.methods.registry import register_agent
@@ -41,15 +42,16 @@ from src.methods.registry import register_agent
 )
 class CQLAgent(OfflineAgentBase):
     """Unified Conservative Q-Learning (CQL) Offline RL Agent.
-    
+
     Supports pure neural architectures (MLP, Dueling ResNet, Sepsis Transformer),
     logic-guided policies, neuro-fuzzy CEW modules, and hybrid BlendRL mixtures.
     """
-    def __init__(self, cfg: Dict[str, Any]):
+
+    def __init__(self, cfg: dict[str, Any]):
         super().__init__(cfg)
         self.save_hyperparameters()
         self.lr = self.get_cfg("lr", 3e-4)
-        
+
         self._init_env(n_envs=1)
         algorithm = self.get_cfg("algorithm", self.get_cfg("name", cfg.env.name))
 
@@ -61,6 +63,7 @@ class CQLAgent(OfflineAgentBase):
 
         if self.is_modular:
             from src.blendrl.agents.blender_agent import BlenderActorCritic
+
             self.model = BlenderActorCritic(
                 self.env,
                 self.get_cfg("rules", cfg.env.rules),
@@ -70,7 +73,7 @@ class CQLAgent(OfflineAgentBase):
                 self.get_cfg("reasoner", cfg.env.reasoner),
                 self.device,
                 architecture=self.get_cfg("architecture", cfg.env.architecture),
-                cfg=cfg.agent
+                cfg=cfg.agent,
             )
             self.target_model = BlenderActorCritic(
                 self.env,
@@ -81,7 +84,7 @@ class CQLAgent(OfflineAgentBase):
                 self.get_cfg("reasoner", cfg.env.reasoner),
                 self.device,
                 architecture=self.get_cfg("architecture", cfg.env.architecture),
-                cfg=cfg.agent
+                cfg=cfg.agent,
             )
             self.target_model.load_state_dict(self.model.state_dict())
         else:
@@ -90,11 +93,27 @@ class CQLAgent(OfflineAgentBase):
                 hidden_sizes = list(hidden_sizes)
             architecture = self.get_cfg("architecture", getattr(cfg.env, "architecture", "mlp"))
             from src.core.factories import get_neural_agent
-            obs_dim = self.observation_space[-1] if hasattr(self, "observation_space") and self.observation_space else None
-            self.q_network = get_neural_agent(cfg.env.name, self.n_actions, self.device, arch_name=architecture, hidden_sizes=hidden_sizes, num_in_features=obs_dim)
-            self.target_q_network = get_neural_agent(cfg.env.name, self.n_actions, self.device, arch_name=architecture, hidden_sizes=hidden_sizes, num_in_features=obs_dim)
-            self.target_q_network.load_state_dict(self.q_network.state_dict())
 
+            obs_dim = (
+                self.observation_space[-1] if hasattr(self, "observation_space") and self.observation_space else None
+            )
+            self.q_network = get_neural_agent(
+                cfg.env.name,
+                self.n_actions,
+                self.device,
+                arch_name=architecture,
+                hidden_sizes=hidden_sizes,
+                num_in_features=obs_dim,
+            )
+            self.target_q_network = get_neural_agent(
+                cfg.env.name,
+                self.n_actions,
+                self.device,
+                arch_name=architecture,
+                hidden_sizes=hidden_sizes,
+                num_in_features=obs_dim,
+            )
+            self.target_q_network.load_state_dict(self.q_network.state_dict())
 
     def _prepare_logic_obs(self, obs, logic_obs=None):
         if logic_obs is not None:
@@ -135,7 +154,9 @@ class CQLAgent(OfflineAgentBase):
                 return self.model(obs, logic_obs, action=action)
             q_vals = self.model.get_q_values(obs, logic_obs)
         else:
-            q_vals = self.q_network.get_q_values(obs) if hasattr(self.q_network, "get_q_values") else self.q_network(obs)
+            q_vals = (
+                self.q_network.get_q_values(obs) if hasattr(self.q_network, "get_q_values") else self.q_network(obs)
+            )
         probs = torch.softmax(q_vals, dim=-1)
         dist = torch.distributions.Categorical(probs)
         if action is None:
@@ -152,7 +173,7 @@ class CQLAgent(OfflineAgentBase):
         q_vals = self.get_q_values(obs, logic_obs)
         return q_vals.max(dim=-1)[0]
 
-    def setup(self, stage: Optional[str] = None):
+    def setup(self, stage: str | None = None):
         super().setup(stage)
         if self.is_modular and hasattr(self.model, "self_organize_cew_modules"):
             has_cew = any(m_type == "cew" for m_type in getattr(self.model, "module_types", []))
@@ -162,10 +183,16 @@ class CQLAgent(OfflineAgentBase):
                     sample_size = min(len(datamodule.reader), 10000)
                     if sample_size > 0:
                         batch = datamodule.reader.sample(sample_size)
-                        organize_obs = batch["obs"] if ("obs" in batch and batch["obs"] is not None) else batch.get("logic_obs")
+                        organize_obs = (
+                            batch["obs"] if ("obs" in batch and batch["obs"] is not None) else batch.get("logic_obs")
+                        )
                         changed1 = self.model.self_organize_cew_modules(organize_obs)
                         changed2 = False
-                        if hasattr(self, "target_model") and self.target_model is not None and hasattr(self.target_model, "self_organize_cew_modules"):
+                        if (
+                            hasattr(self, "target_model")
+                            and self.target_model is not None
+                            and hasattr(self.target_model, "self_organize_cew_modules")
+                        ):
                             changed2 = self.target_model.self_organize_cew_modules(organize_obs)
                         if changed1 or changed2:
                             if hasattr(self, "target_model") and self.target_model is not None:
@@ -189,22 +216,34 @@ class CQLAgent(OfflineAgentBase):
                         sample_size = min(len(datamodule.reader), 10000)
                         if sample_size > 0:
                             batch = datamodule.reader.sample(sample_size)
-                            organize_obs = batch["obs"] if ("obs" in batch and batch["obs"] is not None) else batch.get("logic_obs")
+                            organize_obs = (
+                                batch["obs"]
+                                if ("obs" in batch and batch["obs"] is not None)
+                                else batch.get("logic_obs")
+                            )
                             changed1 = self.model.self_organize_cew_modules(organize_obs)
                             changed2 = False
-                            if hasattr(self, "target_model") and self.target_model is not None and hasattr(self.target_model, "self_organize_cew_modules"):
+                            if (
+                                hasattr(self, "target_model")
+                                and self.target_model is not None
+                                and hasattr(self.target_model, "self_organize_cew_modules")
+                            ):
                                 changed2 = self.target_model.self_organize_cew_modules(organize_obs)
                             if changed1 or changed2:
                                 if hasattr(self, "target_model") and self.target_model is not None:
                                     self.target_model.load_state_dict(self.model.state_dict())
                                 new_opt = self.configure_optimizers()
-                                if hasattr(self.trainer, "strategy") and hasattr(self.trainer.strategy, "optimizers") and len(self.trainer.strategy.optimizers) > 0:
+                                if (
+                                    hasattr(self.trainer, "strategy")
+                                    and hasattr(self.trainer.strategy, "optimizers")
+                                    and len(self.trainer.strategy.optimizers) > 0
+                                ):
                                     self.trainer.strategy.optimizers[0] = new_opt
 
     def training_step(self, batch, batch_idx):
         datamodule = getattr(self.trainer, "datamodule", None)
         cfg = self.cfg
-        
+
         if isinstance(batch, dict) and "obs" in batch:
             real_batch = batch
         elif datamodule is not None and getattr(datamodule, "reader", None) is not None:
@@ -215,7 +254,7 @@ class CQLAgent(OfflineAgentBase):
                 real_batch = datamodule.reader.sample(batch_size)
         else:
             raise RuntimeError("CQLAgent requires an active offline dataset reader or batched dictionary.")
-        
+
         obs = real_batch["obs"].to(self.device, non_blocking=True)
         actions = real_batch["action"].to(self.device, non_blocking=True)
         rewards = real_batch["reward"].to(self.device, non_blocking=True)
@@ -225,7 +264,7 @@ class CQLAgent(OfflineAgentBase):
 
         next_obs = real_batch["next_obs"].to(self.device, non_blocking=True)
         dones = real_batch["done"].to(self.device, non_blocking=True)
-        
+
         cql_alpha = self.get_cfg("cql_alpha", 1.0)
         gamma = cfg.env.gamma
         bellman_loss_fn = str(self.get_cfg("bellman_loss", "smooth_l1")).lower()
@@ -239,10 +278,10 @@ class CQLAgent(OfflineAgentBase):
                 best_next_action = torch.argmax(online_next_q, dim=1, keepdim=True)
                 next_v = self.target_model.get_q_values(next_obs, next_logic_obs).gather(1, best_next_action).squeeze(1)
                 q_target = rewards + gamma * next_v * (1 - dones)
-                
+
             all_q_values = self.model.get_q_values(obs, logic_obs)
             q_action = all_q_values.gather(1, actions.unsqueeze(1)).squeeze(1)
-            
+
             if bellman_loss_fn in ["smooth_l1", "huber"]:
                 bellman_loss = F.smooth_l1_loss(q_action, q_target, beta=1.0)
             else:
@@ -260,7 +299,7 @@ class CQLAgent(OfflineAgentBase):
                 ent_coef = self.get_cfg("ent_coef", 0.01)
                 blend_ent_coef = self.get_cfg("blend_ent_coef", 0.01)
                 blend_entropy_loss = blend_entropy.mean() if isinstance(blend_entropy, torch.Tensor) else 0.0
-                
+
                 actor_obj = (probs * all_q_values.detach()).sum(dim=1).mean()
                 actor_loss = -actor_obj - ent_coef * entropy.mean() - blend_ent_coef * blend_entropy_loss
                 total_loss = q_loss + actor_loss
@@ -275,7 +314,7 @@ class CQLAgent(OfflineAgentBase):
             opt.zero_grad()
             self.manual_backward(total_loss)
             opt.step()
-            
+
             soft_target_tau = self.get_cfg("soft_target_tau", 0.005)
             self._soft_update(self.model, self.target_model, tau=soft_target_tau)
         else:
@@ -288,10 +327,10 @@ class CQLAgent(OfflineAgentBase):
                 best_next_action = torch.argmax(online_next_q, dim=1, keepdim=True)
                 next_v = self.target_q_network(next_obs).gather(1, best_next_action).squeeze(1)
                 q_target = rewards + gamma * next_v * (1 - dones)
-                
+
             all_q_values = self.q_network(obs)
             q_action = all_q_values.gather(1, actions.unsqueeze(1)).squeeze(1)
-            
+
             if bellman_loss_fn in ["smooth_l1", "huber"]:
                 bellman_loss = F.smooth_l1_loss(q_action, q_target, beta=1.0)
             else:
@@ -299,18 +338,20 @@ class CQLAgent(OfflineAgentBase):
             cql_diff = torch.logsumexp(all_q_values, dim=1) - q_action
             cql_loss = cql_diff.mean()
             q_loss = bellman_loss + cql_alpha * cql_loss
-            
+
             opt.zero_grad()
             self.manual_backward(q_loss)
             opt.step()
-            
+
             soft_target_tau = self.get_cfg("soft_target_tau", 0.005)
             self._soft_update(self.q_network, self.target_q_network, tau=soft_target_tau)
             actor_loss = 0.0
 
         self._log_offline_transitions()
         log_data = {
-            "losses/total_loss": (q_loss + actor_loss).item() if isinstance(q_loss + actor_loss, torch.Tensor) else q_loss + actor_loss,
+            "losses/total_loss": (q_loss + actor_loss).item()
+            if isinstance(q_loss + actor_loss, torch.Tensor)
+            else q_loss + actor_loss,
             "losses/q_loss": q_loss.item() if isinstance(q_loss, torch.Tensor) else q_loss,
             "losses/bellman_loss": bellman_loss.item() if isinstance(bellman_loss, torch.Tensor) else bellman_loss,
             "losses/cql_loss": cql_loss.item() if isinstance(cql_loss, torch.Tensor) else cql_loss,
@@ -344,7 +385,7 @@ class CQLAgent(OfflineAgentBase):
         dones = val_batch["done"].to(self.device, non_blocking=True)
         cql_alpha = self.get_cfg("cql_alpha", 1.0)
         bellman_loss_fn = str(self.get_cfg("bellman_loss", "smooth_l1")).lower()
-            
+
         with torch.no_grad():
             if self.is_modular:
                 logic_obs = self._prepare_logic_obs(obs, val_batch.get("logic_obs"))
@@ -366,7 +407,7 @@ class CQLAgent(OfflineAgentBase):
                 q_target = rewards + self.cfg.env.gamma * next_v * (1 - dones)
                 all_q_values = self.q_network(obs)
                 pred_acts = torch.argmax(all_q_values, dim=-1)
-                
+
             q_action = all_q_values.gather(1, actions.unsqueeze(1)).squeeze(1)
             if bellman_loss_fn in ["smooth_l1", "huber"]:
                 bellman_loss = F.smooth_l1_loss(q_action, q_target, beta=1.0)
@@ -382,7 +423,7 @@ class CQLAgent(OfflineAgentBase):
             prec = tp / (tp + fp + 1e-8)
             rec = tp / (tp + fn + 1e-8)
             val_f1 = 2 * (prec * rec) / (prec + rec + 1e-8)
-            
+
         self.log("val/loss", val_loss, prog_bar=True, on_epoch=True, on_step=False, sync_dist=True)
         self.log("val/bellman_loss", bellman_loss, prog_bar=False, on_epoch=True, on_step=False, sync_dist=True)
         self.log("val/cql_loss", cql_loss, prog_bar=False, on_epoch=True, on_step=False, sync_dist=True)
@@ -419,14 +460,18 @@ class CQLAgent(OfflineAgentBase):
                     if m_type != "neural":
                         m_params = [p for p in m.parameters() if p.requires_grad and id(p) not in used_param_ids]
                         if m_params:
-                            for p in m_params: used_param_ids.add(id(p))
+                            for p in m_params:
+                                used_param_ids.add(id(p))
                             param_groups.append({"params": m_params, "lr": logic_lr, "weight_decay": weight_decay})
 
             # 2. Blender module
             if hasattr(self.model, "blender") and self.model.blender is not None:
-                b_params = [p for p in self.model.blender.parameters() if p.requires_grad and id(p) not in used_param_ids]
+                b_params = [
+                    p for p in self.model.blender.parameters() if p.requires_grad and id(p) not in used_param_ids
+                ]
                 if b_params:
-                    for p in b_params: used_param_ids.add(id(p))
+                    for p in b_params:
+                        used_param_ids.add(id(p))
                     param_groups.append({"params": b_params, "lr": blender_lr, "weight_decay": weight_decay})
 
             # 3. All remaining parameters (neural actor, Q-networks, critic)
@@ -439,25 +484,28 @@ class CQLAgent(OfflineAgentBase):
             return optim.Adam(param_groups)
         return optim.Adam(self.q_network.parameters(), lr=lr, weight_decay=weight_decay)
 
-    def on_save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
+    def on_save_checkpoint(self, checkpoint: dict[str, Any]) -> None:
         if self.is_modular:
             cew_states = []
             for i, m in enumerate(self.model.policy_modules):
                 if i < len(self.model.module_types) and self.model.module_types[i] == "cew":
-                    cew_states.append({
-                        "index": i,
-                        "antecedents": getattr(m, "antecedents", None),
-                        "rules": getattr(m, "rules", None),
-                        "n_inputs": getattr(m, "n_inputs", None),
-                        "n_outputs": getattr(m, "n_outputs", None),
-                    })
+                    cew_states.append(
+                        {
+                            "index": i,
+                            "antecedents": getattr(m, "antecedents", None),
+                            "rules": getattr(m, "rules", None),
+                            "n_inputs": getattr(m, "n_inputs", None),
+                            "n_outputs": getattr(m, "n_outputs", None),
+                        }
+                    )
             if cew_states:
                 checkpoint["cew_modules_state"] = cew_states
 
-    def on_load_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
+    def on_load_checkpoint(self, checkpoint: dict[str, Any]) -> None:
         sd = checkpoint.get("state_dict", {})
         if self.is_modular:
             from src.methods.cew_utils import MultiFLC
+
             for i, m_type in enumerate(self.model.module_types):
                 if m_type == "cew":
                     prefix = f"model.policy_modules.{i}."
@@ -466,10 +514,16 @@ class CQLAgent(OfflineAgentBase):
                         self.model.policy_modules[i] = new_m
                         if hasattr(self.model, "actor") and hasattr(self.model.actor, "policy_modules"):
                             self.model.actor.policy_modules[i] = new_m
-                        
+
                         target_prefix = f"target_model.policy_modules.{i}."
-                        if hasattr(self, "target_model") and self.target_model is not None and f"{target_prefix}flcs.0.links" in sd:
+                        if (
+                            hasattr(self, "target_model")
+                            and self.target_model is not None
+                            and f"{target_prefix}flcs.0.links" in sd
+                        ):
                             new_target = MultiFLC.from_state_dict_shapes(target_prefix, sd, self.n_actions)
                             self.target_model.policy_modules[i] = new_target
-                            if hasattr(self.target_model, "actor") and hasattr(self.target_model.actor, "policy_modules"):
+                            if hasattr(self.target_model, "actor") and hasattr(
+                                self.target_model.actor, "policy_modules"
+                            ):
                                 self.target_model.actor.policy_modules[i] = new_target

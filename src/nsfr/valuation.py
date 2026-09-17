@@ -1,10 +1,12 @@
-from typing import Sequence, Dict, Any, Union
-from abc import ABC
 import inspect
 import re
+from abc import ABC
+from collections.abc import Sequence
+from typing import Any, Dict, Union
 
 import torch
 from torch import nn
+
 from nsfr.fol.language import Language
 from nsfr.fol.logic import Atom, Const
 from nsfr.utils.common import load_module
@@ -36,10 +38,10 @@ class ValuationModule(nn.Module, ABC):
     """
 
     lang: Language
-    device: Union[torch.device, str]
-    val_fns: Dict[str, ValuationFunction]  # predicate names to corresponding valuation fn
+    device: torch.device | str
+    val_fns: dict[str, ValuationFunction]  # predicate names to corresponding valuation fn
 
-    def __init__(self, val_fn_path: str, lang: Language, device: Union[torch.device, str],
+    def __init__(self, val_fn_path: str, lang: Language, device: torch.device | str,
                  pretrained: bool = True):
         super().__init__()
 

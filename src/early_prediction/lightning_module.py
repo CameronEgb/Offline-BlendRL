@@ -1,38 +1,42 @@
+import lightning as L
+import numpy as np
 import torch
 import torch.nn as nn
-import lightning as L
-from torch.utils.data import Dataset, DataLoader
-import numpy as np
-from src.early_prediction.model import SepsisLSTM, SepsisTransformer, FocalLoss
+from torch.utils.data import DataLoader, Dataset
+
+from src.early_prediction.model import FocalLoss, SepsisLSTM, SepsisTransformer
+
 
 class EPSepsisDataset(Dataset):
     def __init__(self, X, y, input_dim):
         self.X = X
         self.y = y
         self.input_dim = input_dim
-        
+
     def __len__(self):
         return len(self.X)
-        
+
     def __getitem__(self, idx):
         seq = self.X[idx]
         label = self.y[idx] if self.y is not None else 0.0
         return torch.tensor(seq, dtype=torch.float32), torch.tensor(label, dtype=torch.float32)
+
 
 def collate_ep_batch(batch):
     sequences, labels = zip(*batch)
     lengths = torch.tensor([len(seq) for seq in sequences], dtype=torch.long)
     max_len = max(lengths).item()
     input_dim = sequences[0].shape[-1]
-    
+
     padded_seqs = torch.zeros(len(sequences), max_len, input_dim, dtype=torch.float32)
     padding_mask = torch.ones(len(sequences), max_len, dtype=torch.bool)
-    
+
     for i, seq in enumerate(sequences):
-        padded_seqs[i, :len(seq), :] = seq
-        padding_mask[i, :len(seq)] = False
-        
+        padded_seqs[i, : len(seq), :] = seq
+        padding_mask[i, : len(seq)] = False
+
     return padded_seqs, torch.stack(labels), lengths, padding_mask
+
 
 class EPSepsisLightningModule(L.LightningModule):
     def __init__(self, architecture_name, input_dim, lr=1e-3, **kwargs):
@@ -40,7 +44,7 @@ class EPSepsisLightningModule(L.LightningModule):
         self.save_hyperparameters()
         self.architecture_name = architecture_name
         self.lr = lr
-        
+
         if architecture_name.startswith("lstm"):
             self.model = SepsisLSTM(
                 input_dim=input_dim,
@@ -49,7 +53,7 @@ class EPSepsisLightningModule(L.LightningModule):
                 dropout=kwargs.get("dropout", 0.2),
                 use_dual_pooling=kwargs.get("use_dual_pooling", True),
                 use_tcn_conv=kwargs.get("use_tcn_conv", False),
-                bidirectional=kwargs.get("bidirectional", False)
+                bidirectional=kwargs.get("bidirectional", False),
             )
         elif architecture_name.startswith("transformer"):
             self.model = SepsisTransformer(
@@ -63,7 +67,7 @@ class EPSepsisLightningModule(L.LightningModule):
                 pos_type=kwargs.get("pos_type", "learned"),
                 max_len=240,
                 use_cls_token=kwargs.get("use_cls_token", True),
-                use_tcn_conv=kwargs.get("use_tcn_conv", False)
+                use_tcn_conv=kwargs.get("use_tcn_conv", False),
             )
         else:
             raise ValueError(f"Unknown architecture: {architecture_name}")
@@ -72,7 +76,7 @@ class EPSepsisLightningModule(L.LightningModule):
         pos_weight = kwargs.get("pos_weight", 1.0)
         if isinstance(pos_weight, float):
             pos_weight = torch.tensor([pos_weight], dtype=torch.float32)
-            
+
         if use_focal_loss:
             self.loss_fn = FocalLoss(pos_weight=pos_weight, gamma=2.0)
         else:
@@ -95,8 +99,10 @@ class EPSepsisLightningModule(L.LightningModule):
         weight_decay = self.hparams.get("weight_decay", 1e-4)
         return torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=weight_decay)
 
+
 def build_ep_trainer(epochs, device_str):
     import sys
+
     trainer_kwargs = {
         "max_epochs": epochs,
         "accelerator": "auto",
@@ -109,4 +115,3 @@ def build_ep_trainer(epochs, device_str):
         torch.backends.cudnn.benchmark = True
         trainer_kwargs["precision"] = "bf16-mixed" if torch.cuda.is_bf16_supported() else "16-mixed"
     return L.Trainer(**trainer_kwargs)
-

@@ -10,16 +10,17 @@ Generates comparative trajectory plots across training epochs for clinical RL te
 import os
 import sys
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 # Ensure project root and src are in sys.path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+import matplotlib
 import numpy as np
 import pandas as pd
-import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
@@ -30,7 +31,7 @@ class ClinicalPlotter(BasePlotter):
     def __init__(self):
         super().__init__("clinical")
 
-    def run(self, exp_id: str, cli_overrides: Optional[dict] = None):
+    def run(self, exp_id: str, cli_overrides: dict | None = None):
         cfg, group, output_dir = self.get_effective_config(exp_id, cli_overrides)
         runs_data = self.load_metrics(group, exp_id)
         if not runs_data:
@@ -47,9 +48,9 @@ class ClinicalPlotter(BasePlotter):
         figsize = tuple(cfg.get("figsize", [9, 5]))
         clinician_baseline = cfg.get("clinician_baseline", 1.51)
 
-        print(f"\n==================================================")
+        print("\n==================================================")
         print(f"=== Generating Clinical Telemetry Plots for '{exp_id}' ===")
-        print(f"==================================================")
+        print("==================================================")
 
         # ----------------------------------------------------
         # 1. Validation Antibiotic Administration Rate
@@ -78,19 +79,43 @@ class ClinicalPlotter(BasePlotter):
 
                 if any(len(epoch_data[ep]) > 1 for ep in sorted_epochs):
                     sems = [np.std(epoch_data[ep]) / np.sqrt(len(epoch_data[ep])) for ep in sorted_epochs]
-                    ax.plot(sorted_epochs, means, label=display_name, color=color,
-                            linestyle=ls, linewidth=2.0, marker="o", markersize=6)
-                    ax.fill_between(sorted_epochs,
-                                    np.array(means) - np.array(sems),
-                                    np.array(means) + np.array(sems),
-                                    color=color, alpha=0.15)
+                    ax.plot(
+                        sorted_epochs,
+                        means,
+                        label=display_name,
+                        color=color,
+                        linestyle=ls,
+                        linewidth=2.0,
+                        marker="o",
+                        markersize=6,
+                    )
+                    ax.fill_between(
+                        sorted_epochs,
+                        np.array(means) - np.array(sems),
+                        np.array(means) + np.array(sems),
+                        color=color,
+                        alpha=0.15,
+                    )
                 else:
-                    ax.plot(sorted_epochs, means, label=display_name, color=color,
-                            linestyle=ls, linewidth=2.0, marker="o", markersize=6)
+                    ax.plot(
+                        sorted_epochs,
+                        means,
+                        label=display_name,
+                        color=color,
+                        linestyle=ls,
+                        linewidth=2.0,
+                        marker="o",
+                        markersize=6,
+                    )
 
         if has_admin_data:
-            ax.axhline(clinician_baseline, color="black", linestyle="--", linewidth=1.8,
-                       label=f"ICU Clinician Baseline ({clinician_baseline:.2f}%)")
+            ax.axhline(
+                clinician_baseline,
+                color="black",
+                linestyle="--",
+                linewidth=1.8,
+                label=f"ICU Clinician Baseline ({clinician_baseline:.2f}%)",
+            )
             ax.set_xlabel("Epoch", fontsize=11, fontweight="bold")
             ax.set_ylabel("Antibiotic Administration Rate (%)", fontsize=11, fontweight="bold")
             ax.set_title(f"{clean_title}: Validation Antibiotic Administration Rate", fontsize=12, fontweight="bold")
@@ -131,15 +156,34 @@ class ClinicalPlotter(BasePlotter):
 
                 if any(len(epoch_data[ep]) > 1 for ep in sorted_epochs):
                     sems = [np.std(epoch_data[ep]) / np.sqrt(len(epoch_data[ep])) for ep in sorted_epochs]
-                    ax.plot(sorted_epochs, means, label=display_name, color=color,
-                            linestyle=ls, linewidth=2.0, marker="s", markersize=6)
-                    ax.fill_between(sorted_epochs,
-                                    np.array(means) - np.array(sems),
-                                    np.array(means) + np.array(sems),
-                                    color=color, alpha=0.15)
+                    ax.plot(
+                        sorted_epochs,
+                        means,
+                        label=display_name,
+                        color=color,
+                        linestyle=ls,
+                        linewidth=2.0,
+                        marker="s",
+                        markersize=6,
+                    )
+                    ax.fill_between(
+                        sorted_epochs,
+                        np.array(means) - np.array(sems),
+                        np.array(means) + np.array(sems),
+                        color=color,
+                        alpha=0.15,
+                    )
                 else:
-                    ax.plot(sorted_epochs, means, label=display_name, color=color,
-                            linestyle=ls, linewidth=2.0, marker="s", markersize=6)
+                    ax.plot(
+                        sorted_epochs,
+                        means,
+                        label=display_name,
+                        color=color,
+                        linestyle=ls,
+                        linewidth=2.0,
+                        marker="s",
+                        markersize=6,
+                    )
 
         if has_q_data:
             ax.set_xlabel("Epoch", fontsize=11, fontweight="bold")

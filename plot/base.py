@@ -12,17 +12,20 @@ fyd_path = os.path.join(PROJECT_ROOT, "src", "fyd_repo", "src")
 if fyd_path not in sys.path:
     sys.path.insert(0, fyd_path)
 
-import yaml
-import pandas as pd
-import numpy as np
 import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import yaml
+
+matplotlib.use("Agg")
 from pathlib import Path
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Any, Dict, List, Optional, Tuple
+
+import matplotlib.pyplot as plt
 
 # Import styling and alias resolution from the unified method registry
-from src.method_registry import clean_label, get_style_info, get_method_aliases, get_canonical_method_name
+from src.method_registry import clean_label, get_canonical_method_name, get_method_aliases, get_style_info
+
 
 def moving_average(a: np.ndarray, n: int = 5) -> np.ndarray:
     if len(a) == 0:
@@ -31,7 +34,8 @@ def moving_average(a: np.ndarray, n: int = 5) -> np.ndarray:
     a_padded = np.pad(a, (n - 1, 0), mode="edge")
     ret = np.cumsum(a_padded, dtype=float)
     ret[n:] = ret[n:] - ret[:-n]
-    return ret[n - 1:] / n
+    return ret[n - 1 :] / n
+
 
 def deep_update(base: dict, update: dict) -> dict:
     """Recursively updates a nested dictionary."""
@@ -42,6 +46,7 @@ def deep_update(base: dict, update: dict) -> dict:
         else:
             result[k] = v
     return result
+
 
 class BasePlotter:
     name: str = "base"
@@ -58,7 +63,7 @@ class BasePlotter:
                 return yaml.safe_load(f) or {}
         return {}
 
-    def _resolve_config_defaults(self, raw_cfg: dict, visited: Optional[set] = None) -> dict:
+    def _resolve_config_defaults(self, raw_cfg: dict, visited: set | None = None) -> dict:
         """Recursively resolves Hydra-style defaults entries."""
         if visited is None:
             visited = set()
@@ -119,7 +124,7 @@ class BasePlotter:
 
         return deep_update(base_acc, resolved)
 
-    def get_experiment_config(self, exp_id: str, exp_config_name: Optional[str] = None) -> dict:
+    def get_experiment_config(self, exp_id: str, exp_config_name: str | None = None) -> dict:
         """Finds, resolves, and loads the experiment configuration YAML or saved run config."""
         clean_exp = Path(exp_id).stem
 
@@ -169,20 +174,24 @@ class BasePlotter:
         candidates = []
         if exp_config_name:
             clean_base = Path(exp_config_name).stem
-            candidates.extend([
-                Path(f"in/config/experiment/{exp_config_name}.yaml"),
-                Path(f"in/config/experiment/{clean_base}.yaml"),
-            ])
+            candidates.extend(
+                [
+                    Path(f"in/config/experiment/{exp_config_name}.yaml"),
+                    Path(f"in/config/experiment/{clean_base}.yaml"),
+                ]
+            )
             if group_hint:
                 candidates.append(Path(f"in/config/experiment/{group_hint}/{clean_base}.yaml"))
             candidates.extend(list(Path("in/config/experiment").glob(f"**/{clean_base}.yaml")))
 
         if group_hint:
             candidates.append(Path(f"in/config/experiment/{group_hint}/{clean_exp}.yaml"))
-        candidates.extend([
-            Path(f"in/config/experiment/{exp_id}.yaml"),
-            Path(f"in/config/experiment/{clean_exp}.yaml"),
-        ])
+        candidates.extend(
+            [
+                Path(f"in/config/experiment/{exp_id}.yaml"),
+                Path(f"in/config/experiment/{clean_exp}.yaml"),
+            ]
+        )
         if not group_hint:
             candidates.extend(list(Path("in/config/experiment").glob(f"**/{clean_exp}.yaml")))
 
@@ -229,7 +238,9 @@ class BasePlotter:
                         return g_dir.name
         return "ungrouped"
 
-    def get_effective_config(self, exp_id: str, cli_overrides: Optional[dict] = None, exp_config_name: Optional[str] = None) -> Tuple[dict, str, Path]:
+    def get_effective_config(
+        self, exp_id: str, cli_overrides: dict | None = None, exp_config_name: str | None = None
+    ) -> tuple[dict, str, Path]:
         """
         Merges default module config < default_cfg
                < experiment config plots.<module_name>
@@ -255,7 +266,7 @@ class BasePlotter:
         output_dir.mkdir(parents=True, exist_ok=True)
         return merged, group, output_dir
 
-    def load_metrics(self, group: str, exp_id: str) -> Dict[str, Dict[str, pd.DataFrame]]:
+    def load_metrics(self, group: str, exp_id: str) -> dict[str, dict[str, pd.DataFrame]]:
         """
         Loads metrics.csv files for all runs matching results/logs/[group]/[exp_id]/[method]/*.
         Filters by active online_methods and offline_methods from experiment config if defined.
@@ -288,7 +299,9 @@ class BasePlotter:
             raw_method_name = method_dir.name
             if has_active_filter:
                 parts = raw_method_name.rsplit("_", 1)
-                is_active = (raw_method_name in active_aliases) or (len(parts) == 2 and parts[0] in active_aliases and parts[1].isdigit())
+                is_active = (raw_method_name in active_aliases) or (
+                    len(parts) == 2 and parts[0] in active_aliases and parts[1].isdigit()
+                )
                 if not is_active:
                     continue
 
@@ -307,7 +320,11 @@ class BasePlotter:
                     try:
                         df = pd.read_csv(csv_path)
                         if not df.empty:
-                            v_key = f"{raw_method_name}_{v_dir.name}" if canon_name in results and v_dir.name in results[canon_name] else v_dir.name
+                            v_key = (
+                                f"{raw_method_name}_{v_dir.name}"
+                                if canon_name in results and v_dir.name in results[canon_name]
+                                else v_dir.name
+                            )
                             results[canon_name][v_key] = df
                     except Exception as e:
                         print(f"Error reading {csv_path}: {e}")
@@ -315,10 +332,9 @@ class BasePlotter:
         # Filter out empty method entries
         return {k: v for k, v in results.items() if v}
 
-    def plot_metric_series(self, exp_id: str, group: str, output_dir: Path, 
-                           metrics: list, cfg: dict):
+    def plot_metric_series(self, exp_id: str, group: str, output_dir: Path, metrics: list, cfg: dict):
         """Standard multi-method metric plotting with multi-version mean±SEM.
-        
+
         Shared implementation used by ConvergencePlotter, LossesPlotter, and
         any future plotter that plots time-series metrics from metrics.csv.
         """
@@ -353,7 +369,7 @@ class BasePlotter:
                         if not valid_df.empty:
                             x_vals = None
                             if x_axis_col in df.columns and df[x_axis_col].notna().any():
-                                full_x = df[x_axis_col].interpolate(method='linear').ffill().bfill()
+                                full_x = df[x_axis_col].interpolate(method="linear").ffill().bfill()
                                 s_x = full_x.loc[valid_df.index]
                                 if not s_x.empty and s_x.nunique() > 1 and not s_x.isna().any():
                                     x_vals = s_x.values
@@ -389,17 +405,16 @@ class BasePlotter:
                         y_sem = np.std(trimmed, axis=0) / np.sqrt(len(all_y))
                         y_smoothed = moving_average(y_mean, window)
                         sem_smoothed = moving_average(y_sem, window)
-                        x_plot = all_x[0][:len(y_smoothed)]
-                        plt.plot(x_plot, y_smoothed, label=display_name, color=color,
-                                 linestyle=ls, linewidth=2.0)
-                        plt.fill_between(x_plot, y_smoothed - sem_smoothed,
-                                         y_smoothed + sem_smoothed, color=color, alpha=0.15)
+                        x_plot = all_x[0][: len(y_smoothed)]
+                        plt.plot(x_plot, y_smoothed, label=display_name, color=color, linestyle=ls, linewidth=2.0)
+                        plt.fill_between(
+                            x_plot, y_smoothed - sem_smoothed, y_smoothed + sem_smoothed, color=color, alpha=0.15
+                        )
                     else:
                         # Single version: simple moving average
                         y_smoothed = moving_average(all_y[0], window)
-                        x_plot = all_x[0][:len(y_smoothed)]
-                        plt.plot(x_plot, y_smoothed, label=display_name, color=color,
-                                 linestyle=ls, linewidth=2.0)
+                        x_plot = all_x[0][: len(y_smoothed)]
+                        plt.plot(x_plot, y_smoothed, label=display_name, color=color, linestyle=ls, linewidth=2.0)
 
             if has_data:
                 out_dir.mkdir(parents=True, exist_ok=True)
@@ -407,7 +422,7 @@ class BasePlotter:
                 plt.ylabel(cfg.get("ylabel", metric.replace("_", " ").title()))
                 plt.title(f"{exp_id.upper()}: {metric}")
                 plt.grid(True, alpha=0.3)
-                plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+                plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
                 plt.tight_layout()
 
                 safe_metric_name = metric.replace("/", "_")
@@ -425,5 +440,5 @@ class BasePlotter:
             except Exception:
                 pass
 
-    def run(self, exp_id: str, cli_overrides: Optional[dict] = None):
+    def run(self, exp_id: str, cli_overrides: dict | None = None):
         raise NotImplementedError("Subclasses must implement run()")

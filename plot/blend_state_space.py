@@ -14,9 +14,10 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+import matplotlib
 import numpy as np
 import pandas as pd
-import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
@@ -31,7 +32,7 @@ class BlendStateSpacePlotter(BasePlotter):
     def __init__(self):
         super().__init__("blend_state_space")
 
-    def run(self, exp_id: str, cli_overrides: Optional[dict] = None):
+    def run(self, exp_id: str, cli_overrides: dict | None = None):
         cfg, group, output_dir = self.get_effective_config(exp_id, cli_overrides)
         clean_exp = Path(exp_id).stem
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -102,28 +103,46 @@ class BlendStateSpacePlotter(BasePlotter):
 
         # Panel 1: Competency Simplex
         if have_gmm:
-            sc1 = axes[0].scatter(x_mastery, y_med, c=sub_w, cmap=cmap, vmin=0.0, vmax=1.0, alpha=0.65, s=18, edgecolors="none")
+            sc1 = axes[0].scatter(
+                x_mastery, y_med, c=sub_w, cmap=cmap, vmin=0.0, vmax=1.0, alpha=0.65, s=18, edgecolors="none"
+            )
             axes[0].set_title("A. Pedagogical Competency Continuum", fontsize=11, fontweight="bold")
-            axes[0].set_xlabel("Competency Continuum [P(High) − P(Low)]\n(← Struggling  |  Mastery →)", fontsize=10, fontweight="bold")
+            axes[0].set_xlabel(
+                "Competency Continuum [P(High) − P(Low)]\n(← Struggling  |  Mastery →)", fontsize=10, fontweight="bold"
+            )
             axes[0].set_ylabel("Intermediate Uncertainty [P(Med)]", fontsize=10, fontweight="bold")
         else:
             x_feat_raw = sub_states[:, 84] if sub_states.shape[1] > 84 else sub_states[:, 0]
             y_feat_raw = sub_states[:, 72] if sub_states.shape[1] > 72 else sub_states[:, 1]
-            sc1 = axes[0].scatter(x_feat_raw, y_feat_raw, c=sub_w, cmap=cmap, vmin=0.0, vmax=1.0, alpha=0.65, s=18, edgecolors="none")
+            sc1 = axes[0].scatter(
+                x_feat_raw, y_feat_raw, c=sub_w, cmap=cmap, vmin=0.0, vmax=1.0, alpha=0.65, s=18, edgecolors="none"
+            )
             axes[0].set_title("A. Feature Decision Space", fontsize=11, fontweight="bold")
             axes[0].set_xlabel("Steps Since Last Error", fontsize=10, fontweight="bold")
             axes[0].set_ylabel("Cumulative Accuracy", fontsize=10, fontweight="bold")
         axes[0].grid(True, linestyle="--", alpha=0.3)
 
         # Panel 2: PCA
-        sc2 = axes[1].scatter(x_pca[:, 0], x_pca[:, 1], c=sub_w, cmap=cmap, vmin=0.0, vmax=1.0, alpha=0.65, s=18, edgecolors="none")
-        axes[1].set_title(f"B. Global State PCA (Expl. Var: {pca.explained_variance_ratio_.sum()*100:.1f}%)", fontsize=11, fontweight="bold")
-        axes[1].set_xlabel(f"Principal Component 1 ({pca.explained_variance_ratio_[0]*100:.1f}%)", fontsize=10, fontweight="bold")
-        axes[1].set_ylabel(f"Principal Component 2 ({pca.explained_variance_ratio_[1]*100:.1f}%)", fontsize=10, fontweight="bold")
+        sc2 = axes[1].scatter(
+            x_pca[:, 0], x_pca[:, 1], c=sub_w, cmap=cmap, vmin=0.0, vmax=1.0, alpha=0.65, s=18, edgecolors="none"
+        )
+        axes[1].set_title(
+            f"B. Global State PCA (Expl. Var: {pca.explained_variance_ratio_.sum() * 100:.1f}%)",
+            fontsize=11,
+            fontweight="bold",
+        )
+        axes[1].set_xlabel(
+            f"Principal Component 1 ({pca.explained_variance_ratio_[0] * 100:.1f}%)", fontsize=10, fontweight="bold"
+        )
+        axes[1].set_ylabel(
+            f"Principal Component 2 ({pca.explained_variance_ratio_[1] * 100:.1f}%)", fontsize=10, fontweight="bold"
+        )
         axes[1].grid(True, linestyle="--", alpha=0.3)
 
         # Panel 3: t-SNE
-        sc3 = axes[2].scatter(x_tsne[:, 0], x_tsne[:, 1], c=sub_w, cmap=cmap, vmin=0.0, vmax=1.0, alpha=0.65, s=18, edgecolors="none")
+        sc3 = axes[2].scatter(
+            x_tsne[:, 0], x_tsne[:, 1], c=sub_w, cmap=cmap, vmin=0.0, vmax=1.0, alpha=0.65, s=18, edgecolors="none"
+        )
         axes[2].set_title("C. Non-Linear Manifold (t-SNE)", fontsize=11, fontweight="bold")
         axes[2].set_xlabel("t-SNE Dimension 1", fontsize=10, fontweight="bold")
         axes[2].set_ylabel("t-SNE Dimension 2", fontsize=10, fontweight="bold")
@@ -135,7 +154,12 @@ class BlendStateSpacePlotter(BasePlotter):
         cbar.set_ticks([0.0, 0.5, 1.0])
         cbar.set_ticklabels(["0.0 (Pure Neural)", "0.5 (Blended)", "1.0 (Pure Logic)"])
 
-        fig.suptitle(f"BlendRL Neuro-Symbolic State Space Gating Boundaries ({clean_exp} - {target_name})", fontsize=13, fontweight="bold", y=1.02)
+        fig.suptitle(
+            f"BlendRL Neuro-Symbolic State Space Gating Boundaries ({clean_exp} - {target_name})",
+            fontsize=13,
+            fontweight="bold",
+            y=1.02,
+        )
         fig.subplots_adjust(right=0.90, wspace=0.25)
 
         plot_path = output_dir / "blend_routing_state_space.png"

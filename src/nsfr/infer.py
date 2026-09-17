@@ -23,7 +23,7 @@ class InferModule(nn.Module):
         In the constructor we instantiate two nn.Linear modules and assign them as
         member variables.
         """
-        super(InferModule, self).__init__()
+        super().__init__()
         self.register_buffer("I", I_tensor)
         self.infer_step = infer_step
         # m is num of clauses
@@ -99,7 +99,7 @@ class ClauseBodyInferModule(nn.Module):
         In the constructor we instantiate two nn.Linear modules and assign them as
         member variables.
         """
-        super(ClauseBodyInferModule, self).__init__()
+        super().__init__()
         self.register_buffer("I", I_tensor)
         self.C = self.I.size(0)
         self.G = self.I.size(1)
@@ -159,7 +159,7 @@ class ClauseInferModule(nn.Module):
         Infer module using each clause.
         The result is not amalgamated in terms of clauses.
         """
-        super(ClauseInferModule, self).__init__()
+        super().__init__()
         self.I = I
         self.I_bk = I_bk
         self.infer_step = infer_step
@@ -182,11 +182,11 @@ class ClauseInferModule(nn.Module):
         self.cs_bs = [ClauseBodySumFunction(I[i], I, gamma=gamma)
                       for i in range(self.I.size(0))]
 
-        if not self.I_bk is None:
+        if self.I_bk is not None:
             self.cs_bk = [ClauseFunction(I_bk[i], I, gamma=gamma)
                           for i in range(self.I_bk.size(0))]
 
-        if not I_bk is None:
+        if I_bk is not None:
             self.W_bk = init_identity_weights(I_bk, device)
 
         assert m == self.C, "Invalid m and C: " + \
@@ -217,7 +217,7 @@ class ClauseFunction(nn.Module):
     """
 
     def __init__(self, i, I_tensor, gamma=0.01):
-        super(ClauseFunction, self).__init__()
+        super().__init__()
         self.i = i  # clause index
         self.register_buffer("I", I_tensor)  # index tensor C * S * G, S is the number of possible substituions
         self.L = self.I.size(-1)  # number of body atoms
@@ -246,7 +246,7 @@ class ClauseBodySumFunction(nn.Module):
     """
 
     def __init__(self, i, I_tensor, gamma=0.01):
-        super(ClauseBodySumFunction, self).__init__()
+        super().__init__()
         self.i = i  # clause index
         self.register_buffer("I", I_tensor)  # index tensor C * S * G, S is the number of possible substituions
         self.L = self.I.size(-1)  # number of body atoms

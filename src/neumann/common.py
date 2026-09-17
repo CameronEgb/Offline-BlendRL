@@ -1,12 +1,12 @@
 import os
 
-from nsfr.facts_converter import FactsConverter
 from neumann.message_passing import MessagePassingModule
-from neumann.reasoning_graph import ReasoningGraphModule
-from nsfr.utils.logic import get_lang, get_blender_lang, build_infer_module
 from neumann.neumann import NEUMANN
-from nsfr.valuation import ValuationModule
+from neumann.reasoning_graph import ReasoningGraphModule
 from neumann.soft_logic import SoftLogic
+from nsfr.facts_converter import FactsConverter
+from nsfr.utils.logic import build_infer_module, get_blender_lang, get_lang
+from nsfr.valuation import ValuationModule
 
 
 def get_neumann_model(env_name: str, rules: str, device: str, train=True, explain=False):
@@ -31,7 +31,7 @@ def get_neumann_model(env_name: str, rules: str, device: str, train=True, explai
     # Neuro-Symbolic Forward Reasoner
     soft_logic = SoftLogic()
     MPM = MessagePassingModule(soft_logic=soft_logic, device=device, T=2)
-    RGM = ReasoningGraphModule(clauses=clauses, facts=atoms, terms=lang.consts, lang=lang, max_term_depth=1, device=device)  
+    RGM = ReasoningGraphModule(clauses=clauses, facts=atoms, terms=lang.consts, lang=lang, max_term_depth=1, device=device)
     neumann = NEUMANN(facts_converter=FC, message_passing_module=MPM, reasoning_graph_module=RGM, program_size=m, atoms=atoms, bk=bk, clauses=clauses, device=device, train=train, explain=explain)
     return neumann
 
@@ -60,6 +60,6 @@ def get_blender_neumann_model(env_name: str, rules: str, device: str, train=Fals
     # Neuro-Symbolic Forward Reasoner
     soft_logic = SoftLogic()
     MPM = MessagePassingModule(soft_logic=soft_logic, device=device, T=2)
-    RGM = ReasoningGraphModule(clauses=clauses, facts=atoms, terms=lang.consts, lang=lang, max_term_depth=1, device=device)  
+    RGM = ReasoningGraphModule(clauses=clauses, facts=atoms, terms=lang.consts, lang=lang, max_term_depth=1, device=device)
     neumann = NEUMANN(facts_converter=FC, message_passing_module=MPM, reasoning_graph_module=RGM, program_size=m, atoms=atoms, bk=bk, clauses=clauses, train=train)
     return neumann

@@ -3,13 +3,15 @@
 Provides functions for querying best trials, managing studies,
 and launching the Optuna dashboard.
 """
+
 import logging
 import os
 import subprocess
 import sys
-import time
 import threading
+import time
 import webbrowser
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -30,22 +32,25 @@ def is_valid_storage_url(storage_url) -> bool:
 
 def get_best_trial_id(storage_url, study_name):
     """Queries the Optuna database to find the best trial ID for a given study.
-    
+
     Uses the Optuna Python API instead of raw SQL for robustness across
     schema versions.
     """
     if not is_valid_storage_url(storage_url):
         return "0"
-    
+
     try:
         import optuna
+
         try:
             study = optuna.load_study(study_name=study_name, storage=storage_url)
             return str(study.best_trial.number)
         except KeyError as e:
             logger.debug("Study '%s' not found directly, checking versioned studies: %s", study_name, e)
             all_studies = optuna.get_all_study_summaries(storage=storage_url)
-            matches = [s for s in all_studies if s.study_name == study_name or s.study_name.startswith(f"{study_name}_v")]
+            matches = [
+                s for s in all_studies if s.study_name == study_name or s.study_name.startswith(f"{study_name}_v")
+            ]
             if matches:
                 matches.sort(key=lambda s: s.study_name, reverse=True)
                 target_study = optuna.load_study(study_name=matches[0].study_name, storage=storage_url)
@@ -54,7 +59,9 @@ def get_best_trial_id(storage_url, study_name):
         except Exception as e:
             logger.debug("Could not load study '%s' directly: %s", study_name, e)
             all_studies = optuna.get_all_study_summaries(storage=storage_url)
-            matches = [s for s in all_studies if s.study_name == study_name or s.study_name.startswith(f"{study_name}_v")]
+            matches = [
+                s for s in all_studies if s.study_name == study_name or s.study_name.startswith(f"{study_name}_v")
+            ]
             if matches:
                 matches.sort(key=lambda s: s.study_name, reverse=True)
                 target_study = optuna.load_study(study_name=matches[0].study_name, storage=storage_url)
@@ -103,7 +110,7 @@ def launch_optuna_dashboard(storage_url):
             try:
                 # Use a dummy check to see if port is in use
                 subprocess.run(["nc", "-z", "localhost", str(p)], capture_output=True, check=True)
-                continue # Port is in use
+                continue  # Port is in use
             except (subprocess.CalledProcessError, FileNotFoundError):
                 # CalledProcessError means port is not in use; FileNotFoundError means nc is missing
                 port = p
@@ -145,8 +152,10 @@ def get_optuna_storage(storage_url: str):
     if not storage_url:
         return None
     import optuna
+
     if storage_url.startswith("sqlite:///"):
         import sqlite3
+
         db_raw = storage_url.replace("sqlite:///", "").split("?")[0]
         if db_raw and os.path.dirname(db_raw):
             os.makedirs(os.path.dirname(os.path.abspath(db_raw)), exist_ok=True)
@@ -167,24 +176,21 @@ def get_optuna_storage(storage_url: str):
             logger.debug("Could not pre-configure SQLite WAL/busy timeout on %s: %s", db_raw, e)
         except Exception as e:
             logger.debug("Unexpected error configuring SQLite DB %s: %s", db_raw, e)
-        return optuna.storages.RDBStorage(
-            url=f"sqlite:///{db_raw}",
-            engine_kwargs={"connect_args": {"timeout": 120}}
-        )
+        return optuna.storages.RDBStorage(url=f"sqlite:///{db_raw}", engine_kwargs={"connect_args": {"timeout": 120}})
     return storage_url
 
 
-def get_next_study_name(group: str, experiment_id: str, agent_name: str, storage_url: str = None) -> str:
+def get_next_study_name(group: str, experiment_id: str, agent_name: str, storage_url: str | None = None) -> str:
     """Generate clean [experiment]_[method]_v[number] study name using existing run versions.
-    
+
     Uses filesystem inspection to avoid database locking during batch submission.
     """
     base_prefix = f"{experiment_id}_{agent_name}"
     from pathlib import Path
-    
+
     log_dir = Path("results/logs") / group / experiment_id / agent_name
     ckpt_dir = Path("results/checkpoints") / group / experiment_id / agent_name
-    
+
     existing_versions = [0]
     for d in [log_dir, ckpt_dir]:
         if d.exists():
@@ -204,6 +210,7 @@ def delete_optuna_study(storage_url, study_name):
         return
     try:
         import optuna
+
         storage = get_optuna_storage(storage_url)
         optuna.delete_study(study_name=study_name, storage=storage)
         print(f"Reset existing Optuna study: {study_name}")
@@ -219,6 +226,7 @@ def create_optuna_study(storage_url, study_name, direction="minimize"):
         return
     try:
         import optuna
+
         storage = get_optuna_storage(storage_url)
         optuna.create_study(study_name=study_name, storage=storage, load_if_exists=True, direction=direction)
         print(f"Pre-initialized Optuna study: {study_name}")
@@ -228,16 +236,20 @@ def create_optuna_study(storage_url, study_name, direction="minimize"):
 
 def find_best_trial_from_logs(group: str, experiment_id: str, agent_name: str, direction: str = "minimize"):
     """Scan CSV logs to find the winning trial number and score for in-memory sweeps."""
-    import pandas as pd
     from pathlib import Path
+
+    import pandas as pd
+
     log_dir = Path("results/logs") / group / experiment_id / agent_name
     best_id = "0"
     best_val = float("inf") if direction == "minimize" else float("-inf")
-    
+
     if not log_dir.exists():
         return best_id, None
-        
-    for v_dir in sorted(log_dir.glob("version_*"), key=lambda p: int(p.name.split("_")[-1]) if p.name.split("_")[-1].isdigit() else 0):
+
+    for v_dir in sorted(
+        log_dir.glob("version_*"), key=lambda p: int(p.name.split("_")[-1]) if p.name.split("_")[-1].isdigit() else 0
+    ):
         metrics_file = v_dir / "metrics.csv"
         if not metrics_file.exists():
             continue
@@ -261,34 +273,39 @@ def find_best_trial_from_logs(group: str, experiment_id: str, agent_name: str, d
             logger.warning("Error reading metrics from %s: %s", metrics_file, e)
         except Exception as e:
             logger.warning("Unexpected error reading metrics from %s: %s", metrics_file, e)
-            
+
     return best_id, (best_val if best_val != float("inf") and best_val != float("-inf") else None)
 
 
-def promote_best_trial_checkpoint(group: str, experiment_id: str, agent_name: str, storage_url: str = None, study_name: str = None):
+def promote_best_trial_checkpoint(
+    group: str, experiment_id: str, agent_name: str, storage_url: str | None = None, study_name: str | None = None
+):
     """After an Optuna sweep, queries the winning trial, copies its checkpoint
     and hyperparameters to the main agent checkpoint root, and writes a summary."""
-    import shutil
     import json
-    import yaml
+    import shutil
     from pathlib import Path
-    
+
+    import yaml
+
     ckpt_root = Path("results/checkpoints") / group / experiment_id / agent_name
     ckpt_root.mkdir(parents=True, exist_ok=True)
     target_ckpt_path = ckpt_root / "best_model.ckpt"
-    
-    best_info = {"study_name": study_name}
+
+    best_info: dict[str, Any] = {"study_name": study_name}
     best_id = "0"
-    
+
     if is_valid_storage_url(storage_url):
         best_id = get_best_trial_id(storage_url, study_name)
         try:
             import optuna
+
+            assert storage_url is not None
             study = optuna.load_study(study_name=study_name, storage=storage_url)
             best_info["best_value"] = float(study.best_trial.value) if study.best_trial.value is not None else None
             best_info["best_params"] = study.best_trial.params
             best_info["direction"] = str(study.direction.name)
-            
+
             # Write best params yaml
             best_params_yaml = ckpt_root / "best_params.yaml"
             with open(best_params_yaml, "w") as f:
@@ -300,15 +317,15 @@ def promote_best_trial_checkpoint(group: str, experiment_id: str, agent_name: st
         best_id, best_val = find_best_trial_from_logs(group, experiment_id, agent_name)
         best_info["best_value"] = best_val
         best_info["direction"] = "minimize"
-        
+
         # Copy hparams if available
         hparams_src = Path("results/logs") / group / experiment_id / agent_name / f"version_{best_id}" / "hparams.yaml"
         if hparams_src.exists():
             shutil.copy2(hparams_src, ckpt_root / "best_params.yaml")
-            
+
     best_info["best_trial_id"] = best_id
     trial_ckpt_path = ckpt_root / best_id / "best_model.ckpt"
-    
+
     if trial_ckpt_path.exists():
         shutil.copy2(trial_ckpt_path, target_ckpt_path)
         # Also save explicitly named checkpoint in both local folder and parent experiment root
@@ -330,8 +347,8 @@ def promote_best_trial_checkpoint(group: str, experiment_id: str, agent_name: st
             parent_ckpt_root = Path("results/checkpoints") / group / experiment_id
             shutil.copy2(all_ckpts[0], parent_ckpt_root / f"{agent_name}.ckpt")
             print(f"\n[Optuna Fallback] Promoted checkpoint -> {named_ckpt_path.name}")
-            
+
     with open(ckpt_root / "best_trial_summary.json", "w") as f:
         json.dump(best_info, f, indent=2)
-        
+
     return best_id

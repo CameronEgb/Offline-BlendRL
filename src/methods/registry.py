@@ -14,38 +14,41 @@ The pipeline resolves agents via get_agent_class():
 import importlib
 import os
 import pkgutil
+from typing import Any
 
-AGENT_REGISTRY = {}
+AGENT_REGISTRY: dict[str, Any] = {}
 
 
 def register_agent(*prefixes):
     """Decorator to register an agent class under one or more algorithm prefixes.
-    
+
     Usage:
         @register_agent("iql")
         class IQLAgent(OfflineAgentBase):
             ...
-        
+
         @register_agent("blendrl_iql")
         class BlendRLIQLAgent(IQLAgent):
             ...
     """
+
     def decorator(cls):
         for prefix in prefixes:
             AGENT_REGISTRY[prefix] = cls
         return cls
+
     return decorator
 
 
 def get_agent_class(algo_name: str):
     """Resolve an algorithm name to its registered agent class using longest-prefix matching.
-    
+
     Args:
         algo_name: Algorithm identifier (e.g., "iql_cp_tuned", "blendrl_cql_human_cew").
-    
+
     Returns:
         The registered agent class.
-    
+
     Raises:
         ValueError: If no registered prefix matches the algorithm name.
     """
@@ -58,16 +61,14 @@ def get_agent_class(algo_name: str):
 
     # Longest-prefix match: sort by key length descending, check startswith
     matches = [
-        (prefix, cls) for prefix, cls in AGENT_REGISTRY.items()
+        (prefix, cls)
+        for prefix, cls in AGENT_REGISTRY.items()
         if algo_name == prefix or algo_name.startswith(prefix + "_")
     ]
 
     if not matches:
         registered = sorted(AGENT_REGISTRY.keys())
-        raise ValueError(
-            f"Unknown agent algorithm: '{algo_name}'. "
-            f"Registered prefixes: {registered}"
-        )
+        raise ValueError(f"Unknown agent algorithm: '{algo_name}'. Registered prefixes: {registered}")
 
     # Return the class with the longest matching prefix
     return max(matches, key=lambda x: len(x[0]))[1]
@@ -75,11 +76,12 @@ def get_agent_class(algo_name: str):
 
 def auto_discover():
     """Import all modules in src/methods/ to trigger @register_agent decorators.
-    
+
     Called once at startup (e.g., in train.py) to ensure all agents are registered
     before get_agent_class() is used.
     """
     import sys
+
     methods_dir = os.path.dirname(os.path.abspath(__file__))
     src_dir = os.path.dirname(methods_dir)
     project_root = os.path.dirname(src_dir)

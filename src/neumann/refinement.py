@@ -3,12 +3,11 @@ import itertools
 from fol.language import DataType
 from fol.logic import Atom, Clause, Const, FuncTerm, Var
 from fol.logic_ops import subs
-from logic_utils import (get_all_vars_with_dtype, invalid_var_dtypes,
-                         is_tautology, true)
+from logic_utils import get_all_vars_with_dtype, invalid_var_dtypes, is_tautology, true
 
 
 # TODOL refine_from_modeb, generate_by_refinement
-class RefinementGenerator(object):
+class RefinementGenerator:
     """
     refinement operations for clause generation
     Parameters
@@ -105,7 +104,7 @@ class RefinementGenerator(object):
                 if not modeb.ordered:
                     terms = sorted(terms)
                 new_atom = Atom(modeb.pred, terms)
-                if not new_atom in clause.body:
+                if new_atom not in clause.body:
                     new_body = sorted(clause.body + [new_atom])
                     new_clause = Clause(clause.head, new_body)
                     # remove tautology
@@ -181,7 +180,7 @@ class RefinementGenerator(object):
             # put it back to the original state
             clause.body = [true]
             for c in C_refined:
-                if not (c in result):
+                if c not in result:
                     result.append(c)
         return result
 

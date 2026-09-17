@@ -1,6 +1,7 @@
 import itertools
-from lark import Lark
-from lark import Transformer
+
+from lark import Lark, Transformer
+
 from .logic import *
 
 

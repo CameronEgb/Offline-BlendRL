@@ -1,4 +1,5 @@
 """Unit tests for core data types and ActionResult container."""
+
 import torch
 
 from src.core.types import ActionResult

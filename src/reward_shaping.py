@@ -14,13 +14,15 @@ References:
   - Ng, Harada, Russell (1999). "Policy invariance under reward transformations."
   - Wiewiora (2003). "Potential-based shaping and Q-value initialization."
 """
+
 import os
 import sys
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
 import numpy as np
 import torch
 import torch.nn as nn
-from pathlib import Path
-from typing import List, Optional, Tuple, Dict
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
@@ -29,10 +31,10 @@ if PROJECT_ROOT not in sys.path:
 
 class EPRewardShaper:
     """Compute potential-based reward shaping using EP model predictions.
-    
+
     Given a trained EP model checkpoint, computes P(shock|s) for each state
     in the offline dataset and uses it as a potential function for reward shaping.
-    
+
     Args:
         ep_ckpt_dir: Directory containing EP model checkpoints (.pt files)
         device: Torch device
@@ -43,16 +45,16 @@ class EPRewardShaper:
         ep_architecture: Which EP architecture to use ('lstm_with_v', 'transformer_with_v', etc.)
                         If None, uses all available architectures and averages.
     """
-    
+
     def __init__(
         self,
         ep_ckpt_dir: str = "results/checkpoints/early_prediction",
-        device: Optional[torch.device] = None,
+        device: torch.device | None = None,
         lambda_coef: float = 1.0,
         gamma: float = 0.99,
         window_hours: int = 12,
         use_volatility: bool = True,
-        ep_architecture: Optional[str] = None,
+        ep_architecture: str | None = None,
     ):
         self.ep_ckpt_dir = Path(ep_ckpt_dir)
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -61,34 +63,38 @@ class EPRewardShaper:
         self.window_steps = 2 * window_hours  # 30-min intervals
         self.use_volatility = use_volatility
         self.ep_architecture = ep_architecture
-        
+
         self._models = []  # List of (model, model_type, input_dim) tuples
         self._load_ep_models()
-    
+
     def _load_ep_models(self):
         """Load EP model checkpoints from the checkpoint directory."""
         from src.early_prediction.model import SepsisLSTM, SepsisTransformer
-        
+
         if not self.ep_ckpt_dir.exists():
             print(f"WARNING: EP checkpoint directory {self.ep_ckpt_dir} does not exist.")
             return
-        
+
         # Find all .pt files (shallow search up to 2 levels to avoid NFS storms)
-        pt_files = sorted(list(self.ep_ckpt_dir.glob("*.pt")) + list(self.ep_ckpt_dir.glob("*/*.pt")) + list(self.ep_ckpt_dir.glob("*/*/*.pt")))
+        pt_files = sorted(
+            list(self.ep_ckpt_dir.glob("*.pt"))
+            + list(self.ep_ckpt_dir.glob("*/*.pt"))
+            + list(self.ep_ckpt_dir.glob("*/*/*.pt"))
+        )
         if self.ep_architecture:
             pt_files = [f for f in pt_files if self.ep_architecture in f.stem]
-        
+
         if not pt_files:
             print(f"WARNING: No EP .pt checkpoints found in {self.ep_ckpt_dir}")
             return
-        
+
         for pt_file in pt_files:
             try:
                 data = torch.load(pt_file, map_location=self.device, weights_only=False)
                 m_type = data.get("model_type", "lstm")
                 input_dim = data.get("input_dim", 196)
                 params = data.get("hyperparams", {})
-                
+
                 if m_type == "lstm":
                     model = SepsisLSTM(
                         input_dim=input_dim,
@@ -114,35 +120,35 @@ class EPRewardShaper:
                     ).to(self.device)
                 else:
                     continue
-                
+
                 model.load_state_dict(data["model_state_dict"])
                 model.eval()
                 self._models.append((model, m_type, input_dim))
             except Exception as e:
                 print(f"WARNING: Could not load EP checkpoint {pt_file}: {e}")
-        
+
         print(f"EPRewardShaper: Loaded {len(self._models)} EP model(s) from {self.ep_ckpt_dir}")
-    
-    def _predict_shock_prob(self, sequences: List[np.ndarray]) -> np.ndarray:
+
+    def _predict_shock_prob(self, sequences: list[np.ndarray]) -> np.ndarray:
         """Run all loaded EP models on sequences and return averaged P(shock).
-        
+
         Args:
             sequences: List of numpy arrays, each (seq_len, features)
-            
+
         Returns:
             probs: numpy array (N,) of averaged P(shock) predictions
         """
         from src.early_prediction.model import evaluate_lstm_model, evaluate_transformer_model
-        
+
         if not self._models or not sequences:
             return np.zeros(len(sequences), dtype=np.float32)
-        
+
         # Z-score normalize (matching training pipeline)
         all_steps = np.concatenate(sequences, axis=0)
         mean = np.mean(all_steps, axis=0, keepdims=True)
         std = np.std(all_steps, axis=0, keepdims=True) + 1e-6
         sequences_norm = [(s - mean) / std for s in sequences]
-        
+
         all_probs = []
         for model, m_type, input_dim in self._models:
             if m_type == "lstm":
@@ -150,90 +156,90 @@ class EPRewardShaper:
             else:
                 probs = evaluate_transformer_model(model, sequences_norm, input_dim, device=str(self.device))
             all_probs.append(probs)
-        
+
         return np.mean(all_probs, axis=0)
-    
+
     def compute_trajectory_potentials(
         self,
         trajectory_obs: np.ndarray,
-        v_values: Optional[np.ndarray] = None,
+        v_values: np.ndarray | None = None,
     ) -> np.ndarray:
         """Compute potential Φ(s) = -P(shock|s) for each timestep in a trajectory.
-        
+
         For each timestep t, uses the observation window [max(0, t-w):t] as input
         to the EP model to get P(shock) at that point.
-        
+
         Args:
             trajectory_obs: (T, 49) array of raw observations (46 features + actions)
             v_values: Optional (T, 1) array of V(s) values from CQL
-            
+
         Returns:
             potentials: (T,) array of Φ(s_t) = -P(shock|s_t)
         """
         from src.early_prediction.model import compute_volatility_features
-        
+
         T = trajectory_obs.shape[0]
         if T == 0:
             return np.array([], dtype=np.float32)
-        
+
         # Build windowed sequences for each timestep
         sequences = []
         for t in range(1, T + 1):  # t is the cutoff (exclusive end)
             st = max(0, t - self.window_steps)
             raw_window = trajectory_obs[st:t, :49]
-            
+
             if self.use_volatility:
                 feat_seq = compute_volatility_features(raw_window)
             else:
                 feat_seq = raw_window
-            
+
             # Append V(s) if available and models expect it
             if v_values is not None and self._models_use_v():
                 v_window = v_values[st:t]
                 feat_seq = np.concatenate([feat_seq, v_window], axis=-1)
-            
+
             sequences.append(feat_seq)
-        
+
         # Batch predict
         probs = self._predict_shock_prob(sequences)
-        
+
         # Φ(s) = -P(shock|s) — lower shock risk = higher potential
         return -probs
-    
+
     def _models_use_v(self) -> bool:
         """Check if loaded EP models expect V(s) features (input_dim > 196)."""
         if not self._models:
             return False
         # Check if any model has input_dim > 196 (196 = 49*4 volatility features)
         return any(input_dim > 196 for _, _, input_dim in self._models)
-    
+
     def shape_rewards(self, reader, cfg=None):
         """Apply EP-based potential reward shaping to an offline dataset reader.
-        
+
         Modifies reader.rewards in-place with:
           r_new = r_old + λ * (γ * Φ(s') - Φ(s))
-        
+
         Args:
             reader: DatasetReader with .obs, .next_obs, .rewards, .dones attributes
             cfg: Optional Hydra config (used to get gamma if available)
         """
         import torch
-        
+
         if not self._models:
             print("WARNING: No EP models loaded. Skipping reward shaping.")
             return
-        
+
         if reader.obs.shape[-1] != 46:
             print(f"WARNING: Expected 46-dim observations for MIMIC, got {reader.obs.shape[-1]}. Skipping.")
             return
-        
+
         gamma = self.gamma
         if cfg is not None:
-            gamma = getattr(getattr(cfg, 'env', None), 'gamma', gamma)
-        
+            gamma = getattr(getattr(cfg, "env", None), "gamma", gamma)
+
         n_transitions = len(reader.obs)
         print(f"EPRewardShaper: Computing potentials for {n_transitions} transitions...")
-        
+
         # Reconstruct trajectories from flat reader data
         trajectories = []  # List of (start_idx, end_idx) tuples
         start_idx = 0
@@ -241,41 +247,41 @@ class EPRewardShaper:
             if reader.dones[idx] == 1.0 or idx == n_transitions - 1:
                 trajectories.append((start_idx, idx + 1))
                 start_idx = idx + 1
-        
+
         print(f"  Found {len(trajectories)} patient trajectories")
-        
+
         # Pre-compute V(s) if models expect it and a CQL checkpoint is available
         v_all = None
         if self._models_use_v():
             v_all = self._precompute_v_values(reader, cfg)
-        
+
         # Compute potentials for each trajectory
         all_potentials = np.zeros(n_transitions, dtype=np.float32)
-        
+
         for traj_idx, (t_start, t_end) in enumerate(trajectories):
             traj_len = t_end - t_start
-            
+
             # Build the 49-dim observation array for this trajectory
             # obs is 46-dim; we need to reconstruct the 49-dim with actions
             obs_46 = reader.obs[t_start:t_end].numpy()
             actions = reader.actions[t_start:t_end].numpy().reshape(-1, 1)
-            
+
             # Pad to 49 dims: [obs(46), action, action, 0]
             traj_obs_49 = np.zeros((traj_len, 49), dtype=np.float32)
             traj_obs_49[:, :46] = obs_46
             traj_obs_49[:, 47] = actions.squeeze()
             traj_obs_49[:, 48] = actions.squeeze()
-            
+
             v_traj = None
             if v_all is not None:
                 v_traj = v_all[t_start:t_end].reshape(-1, 1)
-            
+
             potentials = self.compute_trajectory_potentials(traj_obs_49, v_traj)
             all_potentials[t_start:t_end] = potentials
-            
+
             if (traj_idx + 1) % 500 == 0:
                 print(f"  Processed {traj_idx + 1}/{len(trajectories)} trajectories")
-        
+
         # Apply potential-based shaping: r_new = r_old + λ * (γ * Φ(s') - Φ(s))
         shaped_bonus = np.zeros(n_transitions, dtype=np.float32)
         for t_start, t_end in trajectories:
@@ -285,32 +291,36 @@ class EPRewardShaper:
                     phi_s_next = all_potentials[t + 1]
                 else:
                     phi_s_next = 0.0  # Terminal state potential is 0
-                
+
                 shaped_bonus[t] = self.lambda_coef * (gamma * phi_s_next - phi_s)
-        
+
         # Apply shaping
         original_mean = reader.rewards.mean().item()
         reader.rewards = reader.rewards + torch.tensor(shaped_bonus, dtype=reader.rewards.dtype)
         shaped_mean = reader.rewards.mean().item()
-        
+
         print(f"  Reward shaping applied: mean reward {original_mean:.4f} -> {shaped_mean:.4f}")
-        print(f"  Shaping bonus stats: mean={shaped_bonus.mean():.4f}, std={shaped_bonus.std():.4f}, "
-              f"min={shaped_bonus.min():.4f}, max={shaped_bonus.max():.4f}")
-    
-    def _precompute_v_values(self, reader, cfg=None) -> Optional[np.ndarray]:
+        print(
+            f"  Shaping bonus stats: mean={shaped_bonus.mean():.4f}, std={shaped_bonus.std():.4f}, "
+            f"min={shaped_bonus.min():.4f}, max={shaped_bonus.max():.4f}"
+        )
+
+    def _precompute_v_values(self, reader, cfg=None) -> np.ndarray | None:
         """Pre-compute V(s) = max_a Q(s,a) from a CQL checkpoint for V-augmented EP models.
-        
+
         Requires a valid CQL checkpoint path provided via cfg or EP_SHAPE_CQL_CKPT.
         """
         rs_cfg = cfg.env.get("reward_shaping", {}) if cfg and hasattr(cfg, "env") else {}
         cql_ckpt_dir = rs_cfg.get("cql_ckpt_dir") or os.environ.get("EP_SHAPE_CQL_CKPT")
         if not cql_ckpt_dir:
-            raise ValueError("EP models require V(s), but cql_ckpt_dir config / EP_SHAPE_CQL_CKPT environment variable is not set.")
-            
+            raise ValueError(
+                "EP models require V(s), but cql_ckpt_dir config / EP_SHAPE_CQL_CKPT environment variable is not set."
+            )
+
         ckpt_path = Path(cql_ckpt_dir)
         cql_ckpt_path = None
-        
-        if ckpt_path.is_file() and ckpt_path.suffix == '.ckpt':
+
+        if ckpt_path.is_file() and ckpt_path.suffix == ".ckpt":
             cql_ckpt_path = ckpt_path
         elif ckpt_path.is_dir():
             # Strict search for best_model.ckpt in the provided directory
@@ -318,25 +328,26 @@ class EPRewardShaper:
             if candidates:
                 candidates = sorted(candidates, key=lambda p: p.stat().st_mtime, reverse=True)
                 cql_ckpt_path = candidates[0]
-                
+
         if not cql_ckpt_path or not cql_ckpt_path.exists():
             raise FileNotFoundError(f"Could not find a valid CQL checkpoint for V(s) computation at: {ckpt_path}")
-        
+
         print(f"  Computing V(s) from CQL checkpoint: {cql_ckpt_path}")
         from src.methods.cql_agent import CQLAgent
-        torch.serialization.add_safe_globals([
-            getattr(sys.modules.get('omegaconf.dictconfig', None), 'DictConfig', None)
-        ])
+
+        torch.serialization.add_safe_globals(
+            [getattr(sys.modules.get("omegaconf.dictconfig", None), "DictConfig", None)]
+        )
         agent = CQLAgent.load_from_checkpoint(str(cql_ckpt_path), map_location=self.device, weights_only=False)
         agent.eval()
-        
+
         n = len(reader.obs)
         v_vals = np.zeros((n, 1), dtype=np.float32)
         batch_sz = 512
-        
+
         with torch.no_grad():
             for i in range(0, n, batch_sz):
-                batch_obs = reader.obs[i:i+batch_sz].to(self.device)
+                batch_obs = reader.obs[i : i + batch_sz].to(self.device)
                 if hasattr(agent, "get_value"):
                     v = agent.get_value(batch_obs).unsqueeze(-1).cpu().numpy()
                 elif hasattr(agent, "get_q_values"):
@@ -350,15 +361,15 @@ class EPRewardShaper:
                     v = torch.max(q, dim=-1)[0].unsqueeze(-1).cpu().numpy()
                 else:
                     raise AttributeError("CQL agent does not implement get_value or recognized Q-network.")
-                v_vals[i:i+batch_obs.size(0)] = v
-        
+                v_vals[i : i + batch_obs.size(0)] = v
+
         print(f"  V(s) computed: mean={v_vals.mean():.4f}, std={v_vals.std():.4f}")
         return v_vals
 
 
 def shape_rewards_ep(reader, cfg=None):
     """Convenience function for hooks.py integration.
-    
+
     Reads configuration from cfg.env.reward_shaping, falling back to environment variables:
         EP_SHAPE_CKPT_DIR: EP checkpoint directory (default: results/checkpoints/early_prediction)
         EP_SHAPE_LAMBDA: Shaping coefficient (default: 1.0)
@@ -368,13 +379,15 @@ def shape_rewards_ep(reader, cfg=None):
         EP_SHAPE_CQL_CKPT: CQL checkpoint dir for V(s) (default: results/checkpoints/mimic)
     """
     rs_cfg = cfg.env.get("reward_shaping", {}) if cfg and hasattr(cfg, "env") else {}
-    
-    ep_ckpt_dir = rs_cfg.get("ep_ckpt_dir") or os.environ.get("EP_SHAPE_CKPT_DIR", "results/checkpoints/early_prediction")
+
+    ep_ckpt_dir = rs_cfg.get("ep_ckpt_dir") or os.environ.get(
+        "EP_SHAPE_CKPT_DIR", "results/checkpoints/early_prediction"
+    )
     lambda_coef = float(rs_cfg.get("lambda_coef", os.environ.get("EP_SHAPE_LAMBDA", "1.0")))
     gamma = float(rs_cfg.get("gamma", os.environ.get("EP_SHAPE_GAMMA", "0.99")))
     window_hours = int(rs_cfg.get("window_hours", os.environ.get("EP_SHAPE_WINDOW", "12")))
     ep_arch = rs_cfg.get("ep_arch") or os.environ.get("EP_SHAPE_ARCH", None)
-    
+
     shaper = EPRewardShaper(
         ep_ckpt_dir=ep_ckpt_dir,
         lambda_coef=lambda_coef,
@@ -382,5 +395,5 @@ def shape_rewards_ep(reader, cfg=None):
         window_hours=window_hours,
         ep_architecture=ep_arch,
     )
-    
+
     shaper.shape_rewards(reader, cfg)

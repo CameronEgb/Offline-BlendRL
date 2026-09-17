@@ -1,10 +1,11 @@
 import itertools
+
 from .fol.logic import Atom, Clause, FuncTerm, Var
 from .fol.logic_ops import subs
 
 
 # TODOL refine_from_modeb, generate_by_refinement
-class RefinementGenerator(object):
+class RefinementGenerator:
     """
     refinement operations for clause generation
     Parameters
@@ -83,7 +84,7 @@ class RefinementGenerator(object):
                 if not modeb.ordered:
                     terms = sorted(terms)
                 new_atom = Atom(modeb.pred, terms)
-                if not new_atom in clause.body:
+                if new_atom not in clause.body:
                     new_clause = Clause(clause.head, clause.body + [new_atom])
                     C_refined.append(new_clause)
         # self._increment_recall(modeb)
@@ -146,7 +147,7 @@ class RefinementGenerator(object):
         for clause in clauses:
             C_refined = self.refinement_clause(clause)
             for c in C_refined:
-                if not (c in result):
+                if c not in result:
                     result.append(c)
         return result
 
@@ -185,7 +186,7 @@ class RefinementGenerator(object):
         refs = list(set(self.add_attribute_atom(clause) + self.add_relation_atom(clause)))
         result = []
         for ref in refs:
-            if not '' in [str(arg) for arg in ref.head.terms]:
+            if '' not in [str(arg) for arg in ref.head.terms]:
                 result.append(ref)
         return result
 
@@ -205,7 +206,7 @@ class RefinementGenerator(object):
             for vs in itertools.permutations(var_candidates, p.arity):
                 new_atom = Atom(p, vs)
                 head = clause.head
-                if new_atom != head and not (new_atom in clause.body):
+                if new_atom != head and new_atom not in clause.body:
                     new_body = clause.body + [new_atom]
                     new_clause = Clause(head, new_body)
                     refined_clauses.append(new_clause)
@@ -238,7 +239,7 @@ class RefinementGenerator(object):
             for vs in itertools.permutations(var_candidates, p.arity):
                 new_atom = Atom(p, vs)
                 head = clause.head
-                if new_atom != head and not (new_atom in clause.body):
+                if new_atom != head and new_atom not in clause.body:
                     new_body = clause.body + [new_atom]
                     new_clause = Clause(head, new_body)
                     refined_clauses.append(new_clause)
@@ -260,7 +261,7 @@ class RefinementGenerator(object):
             for vs in itertools.permutations(var_candidates, p.arity):
                 new_atom = Atom(p, vs)
                 head = clause.head
-                if new_atom != head and not (new_atom in clause.body):
+                if new_atom != head and new_atom not in clause.body:
                     new_body = clause.body + [new_atom]
                     new_clause = Clause(head, new_body)
                     refined_clauses.append(new_clause)

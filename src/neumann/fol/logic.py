@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 def flatten(x): return [z for y in x for z in (
     flatten(y) if hasattr(y, '__iter__') and not isinstance(y, str) else (y,))]
 
-class Conjunction(object):
+class Conjunction:
     """A class that represents logical conjunction (AND, ∧).
     """
     def __repr__(self):
@@ -213,7 +213,7 @@ class Var(Term):
         return 1
 
 
-class FuncSymbol(object):
+class FuncSymbol:
     """Function symbols in first-order logic.
     A class of function symbols in first-oder logic.
     Attributes:
@@ -395,7 +395,7 @@ class FuncTerm(Term):
         return 0
 
 
-class Predicate():
+class Predicate:
     """Predicats in first-order logic.
     A class of predicates in first-order logic.
     Attributes:
@@ -437,7 +437,7 @@ class NeuralPredicate(Predicate):
     """
 
     def __init__(self, name, arity, dtypes):
-        super(NeuralPredicate, self).__init__(name, arity, dtypes)
+        super().__init__(name, arity, dtypes)
         self.name = name
         self.arity = arity
         self.dtypes = dtypes
@@ -456,7 +456,7 @@ class NeuralPredicate(Predicate):
         return self.__str__() < other.__str__()
 
 
-class Atom():
+class Atom:
     """Atoms in first-oder logic.
     A class of atoms: p(t1, ..., tn)
     Attributes:
@@ -585,7 +585,7 @@ class Atom():
         return result
 
 
-class Clause():
+class Clause:
     """Clauses in first-oder logic.
     A class of clauses in first-order logic: A :- B1, ..., Bn.
     Attributes:
@@ -669,7 +669,7 @@ class Clause():
         # remove duplication
         result = []
         for v in var_list:
-            if not v in result:
+            if v not in result:
                 result.append(v)
         return result
 

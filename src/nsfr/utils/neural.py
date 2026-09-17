@@ -4,7 +4,7 @@ import torch.nn as nn
 
 class LogisticRegression(torch.nn.Module):
     def __init__(self, input_dim, output_dim=1):
-        super(LogisticRegression, self).__init__()
+        super().__init__()
         self.linear = torch.nn.Linear(input_dim, output_dim)
 
     def forward(self, x):
@@ -14,7 +14,7 @@ class LogisticRegression(torch.nn.Module):
 
 class MLP(nn.Module):
     def __init__(self, in_channels, out_channels, hidden_dim=256):
-        super(MLP, self).__init__()
+        super().__init__()
         # Number of input features is input_dim.
         self.layer_1 = nn.Linear(in_channels, hidden_dim)
         self.layer_2 = nn.Linear(hidden_dim, hidden_dim)

@@ -169,7 +169,7 @@ class MessagePassingModule(torch.nn.Module):
 
 
         # dummy variable to compute inpute gradients
-        if not dummy_zeros is None:
+        if dummy_zeros is not None:
             #print(self.dummy_zeros)
             # add dummy zeros to get input gradients
             x[atom_node_idxs] = x[atom_node_idxs] + dummy_zeros
@@ -213,9 +213,9 @@ class MessagePassingModule(torch.nn.Module):
         """Filter the edge index by the edge type.
         """
         edge_clause_index = torch.stack(
-            [edge_clause_index for i in range(batch_size)]).view((-1))
+            [edge_clause_index for i in range(batch_size)]).view(-1)
         edge_type = torch.stack([edge_type for i in range(batch_size)])
-        mask = (edge_type == 1).view((-1))
+        mask = (edge_type == 1).view(-1)
         return edge_clause_index[mask]
 
     def _filter_edge_index(self, edge_index, edge_type, mode, batch_size):
@@ -223,10 +223,10 @@ class MessagePassingModule(torch.nn.Module):
         """
         edge_type = torch.stack([edge_type for i in range(batch_size)])
         if mode == 'atom2conj':
-            mask = (edge_type == 0).view((-1))
+            mask = (edge_type == 0).view(-1)
             return edge_index[:, mask]
         elif mode == 'conj2atom':
-            mask = (edge_type == 1).view((-1))
+            mask = (edge_type == 1).view(-1)
             return edge_index[:, mask]
         else:
             assert 0, "Invalid mode in _filter_edge_index"

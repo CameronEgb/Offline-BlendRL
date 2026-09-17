@@ -1,22 +1,24 @@
 import math
+import os
 import random
+import re
+from functools import reduce
+from pathlib import Path
+
 import numpy as np
 import torch
 import yaml
-from pathlib import Path
-import os
-import re
+
+from blendrl.env_vectorized import VectorizedNudgeBaseEnv
+from nsfr.nsfr import NSFReasoner
+from nsfr.utils.common import load_module
+from nsfr.utils.torch import softor
+from nudge.env import NudgeBaseEnv
 
 from .agents.logic_agent import NsfrActorCritic
 from .agents.neural_agent import ActorCritic
-from nudge.env import NudgeBaseEnv
-from blendrl.env_vectorized import VectorizedNudgeBaseEnv
-from functools import reduce
-from nsfr.utils.torch import softor
 
-from nsfr.nsfr import NSFReasoner
-from nsfr.utils.common import load_module
- 
+
 def to_proportion(dic):
     # Using reduce to get the sum of all values in the dictionary
     temp = reduce(lambda x, y: x + y, dic.values())
@@ -102,7 +104,7 @@ def load_model(model_dir,
     print("Loading model from", checkpoint_path)
 
     # Load model's configuration
-    with open(config_path, "r") as f:
+    with open(config_path) as f:
         config = yaml.safe_load(f)
 
     algorithm = config["algorithm"]
@@ -164,7 +166,7 @@ def load_model_train(model_dir,
     print("Loading model from", checkpoint_path)
 
     # Load model's configuration
-    with open(config_path, "r") as f:
+    with open(config_path) as f:
         config = yaml.safe_load(f)
 
     algorithm = config["algorithm"]
@@ -224,9 +226,9 @@ def print_program(agent, mode="softor"):
         try:
             actor = agent.actor
         except AttributeError:
-            actor = agent    
+            actor = agent
     if isinstance(actor, NSFReasoner):
-        print_program_nsfr(actor, mode) 
+        print_program_nsfr(actor, mode)
     else:
         # the neumann reasoner
         from neumann.neumann import NEUMANN
@@ -289,7 +291,7 @@ def load_neuralppo_model(model_dir,
     
     print("Loading model from", checkpoint_path)
 
-    with open(config_path, "r") as f:
+    with open(config_path) as f:
         config = yaml.safe_load(f)
 
     algorithm = config["algorithm"]

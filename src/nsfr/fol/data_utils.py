@@ -1,12 +1,13 @@
 import os.path
 
 from lark import Lark
+
 from .exp_parser import ExpTree
-from .language import Language, DataType
-from .logic import Predicate, NeuralPredicate, FuncSymbol, Const
+from .language import DataType, Language
+from .logic import Const, FuncSymbol, NeuralPredicate, Predicate
 
 
-class DataUtils(object):
+class DataUtils:
     """Utilities about logic.
 
     A class of utilities about first-order logic.

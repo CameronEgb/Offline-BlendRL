@@ -3,13 +3,14 @@
 Validates experiment configs against their declared paradigm before any training begins.
 Raises ConfigurationError on fatal mismatches so the pipeline aborts cleanly at startup.
 """
+
 from pathlib import Path
 from typing import Any, List
 
-from src.pipeline.exceptions import ConfigurationError
 from src.method_registry import METHOD_STYLE
+from src.pipeline.config import normalize_agent_name, parse_method_list, resolve_experiment_config_name
 from src.pipeline.datasets import resolve_dataset_path
-from src.pipeline.config import parse_method_list, normalize_agent_name, resolve_experiment_config_name
+from src.pipeline.exceptions import ConfigurationError
 
 # Recognised paradigm names and the env/config constraints they enforce.
 PARADIGM_CONSTRAINTS = {
@@ -38,17 +39,18 @@ def _load_raw_experiment_yaml(experiment_name: str) -> dict:
     if not exp_path.exists():
         return {}
     import yaml
+
     with open(exp_path) as f:
         return yaml.safe_load(f) or {}
 
 
-def validate_experiment_config(cfg: Any, experiment_name: str, is_sweep: bool = False) -> List[str]:
+def validate_experiment_config(cfg: Any, experiment_name: str, is_sweep: bool = False) -> list[str]:
     """Validate experiment configuration against its declared paradigm.
 
     Returns a list of non-fatal notice strings.
     Raises ConfigurationError on any fatal paradigm incompatibility.
     """
-    notices: List[str] = []
+    notices: list[str] = []
 
     env_name = getattr(cfg.env, "name", "unknown") if hasattr(cfg, "env") else "unknown"
     is_offline_only = getattr(cfg.env, "offline_only", False)
@@ -145,7 +147,7 @@ def validate_experiment_config(cfg: Any, experiment_name: str, is_sweep: bool = 
     return notices
 
 
-def _validate_method_registrations(cfg: Any, notices: List[str]) -> None:
+def _validate_method_registrations(cfg: Any, notices: list[str]) -> None:
     """Append non-fatal notices for methods not found in METHOD_STYLE registry."""
     registered = set(METHOD_STYLE.keys())
 
@@ -162,7 +164,7 @@ def _validate_method_registrations(cfg: Any, notices: List[str]) -> None:
             notices.append(f"Notice: Offline method '{method}' might not match a registered agent style.")
 
 
-def _validate_offline_dataset_paths(cfg: Any, notices: List[str]) -> None:
+def _validate_offline_dataset_paths(cfg: Any, notices: list[str]) -> None:
     """Append non-fatal notices for offline datasets that cannot be resolved."""
     online_list = parse_method_list(cfg.get("online_methods", []))
     offline_list = parse_method_list(cfg.get("offline_methods", []))

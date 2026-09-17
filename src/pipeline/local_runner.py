@@ -2,14 +2,18 @@
 
 Executes online and offline RL training phases sequentially as local subprocesses.
 """
+
 import sys
 from pathlib import Path
 
-from src.pipeline.commands import build_online_overrides, build_offline_overrides, get_sweep_direction
+from src.pipeline.commands import build_offline_overrides, build_online_overrides, get_sweep_direction
 from src.pipeline.config import normalize_agent_name
 from src.pipeline.datasets import ensure_online_dataset_path, fast_purge_dir, resolve_dataset_path, run_experiment
 from src.pipeline.optuna_utils import (
-    create_optuna_study, delete_optuna_study, get_next_study_name, promote_best_trial_checkpoint
+    create_optuna_study,
+    delete_optuna_study,
+    get_next_study_name,
+    promote_best_trial_checkpoint,
 )
 
 
@@ -44,12 +48,12 @@ def run_local_training(cfg, context):
         for agent_config in online_list:
             agent_name_internal = normalize_agent_name(agent_config)
             study_name = get_next_study_name(cfg.group, cfg.experiment_id, agent_name_internal)
-            
+
             dataset_path, has_pkl = ensure_online_dataset_path(
                 group=cfg.group,
                 experiment_id=cfg.experiment_id,
                 agent_name_internal=agent_name_internal,
-                is_sweep=is_sweep
+                is_sweep=is_sweep,
             )
 
             if has_pkl:
@@ -66,19 +70,21 @@ def run_local_training(cfg, context):
                 local_val=True,
                 study_name=study_name,
                 extra_args=sanitized_extra_args,
-                cfg=cfg
+                cfg=cfg,
             )
-            
+
             if is_sweep:
                 delete_optuna_study(storage_url, study_name)
                 direction = get_sweep_direction(cfg, "online")
                 create_optuna_study(storage_url, study_name, direction=direction)
-                
+
             run_experiment(overrides)
-            
+
             # After training, find the best trial ID if we were sweeping
             if is_sweep:
-                best_id = promote_best_trial_checkpoint(cfg.group, cfg.experiment_id, agent_name_internal, storage_url, study_name)
+                best_id = promote_best_trial_checkpoint(
+                    cfg.group, cfg.experiment_id, agent_name_internal, storage_url, study_name
+                )
                 best_online_trial_ids[agent_config] = best_id
             else:
                 best_online_trial_ids[agent_config] = "0"
@@ -89,7 +95,7 @@ def run_local_training(cfg, context):
     if not cfg.get("no_offline", False):
         for dataset_id in dataset_list:
             dataset_name_internal = normalize_agent_name(dataset_id)
-            
+
             best_id = best_online_trial_ids.get(dataset_id, "0")
             best_trial_path = Path("in/datasets") / cfg.group / cfg.experiment_id / dataset_name_internal / best_id
             yaml_ds_path = cfg.mode.get("dataset_path", None) if hasattr(cfg, "mode") else None
@@ -97,7 +103,9 @@ def run_local_training(cfg, context):
                 dataset_path = best_trial_path
             else:
                 try:
-                    dataset_path = resolve_dataset_path(dataset_id, group=cfg.group, experiment_id=cfg.experiment_id, yaml_ds_path=yaml_ds_path)
+                    dataset_path = resolve_dataset_path(
+                        dataset_id, group=cfg.group, experiment_id=cfg.experiment_id, yaml_ds_path=yaml_ds_path
+                    )
                 except FileNotFoundError as e:
                     print(f"Error: {e}")
                     sys.exit(1)
@@ -106,10 +114,12 @@ def run_local_training(cfg, context):
             for agent_config in offline_list:
                 agent_name_internal = normalize_agent_name(agent_config)
                 study_name = get_next_study_name(cfg.group, cfg.experiment_id, agent_name_internal)
-                
+
                 print(f"\n=== Phase: Offline Training ({agent_config}) on Dataset ({dataset_id}) ===")
-                target_agent_name = f"{agent_name_internal}_{dataset_name_internal}" if len(dataset_list) > 1 else agent_name_internal
-                
+                target_agent_name = (
+                    f"{agent_name_internal}_{dataset_name_internal}" if len(dataset_list) > 1 else agent_name_internal
+                )
+
                 overrides = build_offline_overrides(
                     experiment=cfg.get("experiment_name", ""),
                     agent_config=agent_config,
@@ -119,26 +129,29 @@ def run_local_training(cfg, context):
                     study_name=study_name,
                     extra_args=sanitized_extra_args,
                     cfg=cfg,
-                    dataset_id=dataset_id
+                    dataset_id=dataset_id,
                 )
-                
+
                 if is_sweep:
                     if "--multirun" not in sanitized_extra_args and "-m" not in sanitized_extra_args:
                         overrides.append("--multirun")
                     delete_optuna_study(storage_url, study_name)
                     direction = get_sweep_direction(cfg, "offline")
                     create_optuna_study(storage_url, study_name, direction=direction)
-                    
+
                 run_experiment(overrides)
 
                 if is_sweep:
-                    promote_best_trial_checkpoint(cfg.group, cfg.experiment_id, target_agent_name, storage_url, study_name)
+                    promote_best_trial_checkpoint(
+                        cfg.group, cfg.experiment_id, target_agent_name, storage_url, study_name
+                    )
     else:
         print("\n=== Skipping Offline Training Phase ===")
 
     # 3. Automated Plotting (if not disabled)
     if not cfg.get("no_plot", False):
         from src.pipeline.datasets import run_plotting
+
         site_cfg = getattr(cfg, "site", None)
         run_plotting(
             cfg.experiment_id,

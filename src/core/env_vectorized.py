@@ -1,4 +1,5 @@
 """Vectorized environment base wrapper for NeSyRL benchmark environments."""
+
 from abc import ABC
 from collections.abc import Sequence
 from typing import Any
@@ -10,7 +11,7 @@ from src.core.utils import load_module
 
 class VectorizedBaseEnv(ABC):
     """Base abstract class for vectorized benchmark environments.
-    
+
     Adheres to the standard Gymnasium vectorized environment protocol:
     - reset() -> obs tensor of shape (n_envs, *obs_shape)
     - step(actions) -> (next_obs, rewards, terminations, truncations, infos)
@@ -25,7 +26,7 @@ class VectorizedBaseEnv(ABC):
 
     def reset(self, seed=None) -> torch.Tensor:
         """Reset all environments and return batched observations.
-        
+
         Returns:
             Observation tensor of shape (n_envs, *obs_shape).
         """
@@ -33,7 +34,7 @@ class VectorizedBaseEnv(ABC):
 
     def step(self, actions) -> tuple[torch.Tensor, Any, Any, Any, Any]:
         """Step all environments with batched actions.
-        
+
         Returns:
             Tuple of (next_obs, rewards, terminations, truncations, infos).
         """

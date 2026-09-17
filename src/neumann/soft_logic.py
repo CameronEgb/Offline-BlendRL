@@ -3,7 +3,7 @@ import torch
 from neumann.torch_utils import softor
 
 
-class SoftLogic(object):
+class SoftLogic:
     """An class of the soft-implementation of logic operations, i.e., logical-or and logical-and.
     """
 

@@ -1,6 +1,5 @@
-import pandas as pd
 import numpy as np
-
+import pandas as pd
 
 scores_human = pd.read_csv("human_getoutplus_log_0.csv")
 h_mean = np.mean([arr.mean() for arr in np.array_split(scores_human, 4)])

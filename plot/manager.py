@@ -28,8 +28,12 @@ def discover_plotters() -> dict:
             mod = importlib.import_module(f"plot.{modname}")
             for attr_name in dir(mod):
                 cls = getattr(mod, attr_name)
-                if (isinstance(cls, type) and issubclass(cls, BasePlotter) 
-                        and cls is not BasePlotter and hasattr(cls, 'name')):
+                if (
+                    isinstance(cls, type)
+                    and issubclass(cls, BasePlotter)
+                    and cls is not BasePlotter
+                    and hasattr(cls, "name")
+                ):
                     inst = cls()
                     registry[inst.name] = cls
         except Exception as e:
@@ -39,7 +43,7 @@ def discover_plotters() -> dict:
 
 def get_requested_plots(exp_cfg: dict, exp_id: str) -> dict:
     """Determine which plots to generate based on experiment config.
-    
+
     Priority:
       1. Explicit `plots:` section in experiment YAML (list or dict form)
       2. Environment-based defaults from env config (`default_plots`)
@@ -58,16 +62,16 @@ def get_requested_plots(exp_cfg: dict, exp_id: str) -> dict:
         defaults = env_val.get("default_plots", FALLBACK_PLOTS)
     else:
         defaults = FALLBACK_PLOTS
-        
+
     result = {name: {} for name in defaults}
-    
+
     return result
 
 
 def run_experiment_plots(exp_id: str, exp_config_name: str = None, style: str = None, wipe: bool = False):
-    print(f"\n==================================================")
+    print("\n==================================================")
     print(f"=== Auto-Generating Plots for Experiment: {exp_id} ===")
-    print(f"==================================================")
+    print("==================================================")
 
     dummy_plotter = BasePlotter("manager")
     exp_cfg = dummy_plotter.get_experiment_config(exp_id, exp_config_name=exp_config_name)
@@ -97,12 +101,23 @@ def run_experiment_plots(exp_id: str, exp_config_name: str = None, style: str = 
         else:
             print(f"Warning: Unknown plotter module '{module_name}' requested. Available: {list(registry.keys())}")
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Orchestrate Experiment Plot Generation")
     parser.add_argument("experiment_id", type=str, help="Experiment ID to generate plots for")
-    parser.add_argument("--experiment", "-c", "--config", dest="experiment", type=str, default=None, help="Base experiment config name if different from experiment_id")
+    parser.add_argument(
+        "--experiment",
+        "-c",
+        "--config",
+        dest="experiment",
+        type=str,
+        default=None,
+        help="Base experiment config name if different from experiment_id",
+    )
     parser.add_argument("--style", type=str, default=None, help="Plot style config")
-    parser.add_argument("--wipe", "-w", action="store_true", help="Wipe existing plot directory before generating plots")
+    parser.add_argument(
+        "--wipe", "-w", action="store_true", help="Wipe existing plot directory before generating plots"
+    )
     args = parser.parse_args()
 
     run_experiment_plots(args.experiment_id, exp_config_name=args.experiment, style=args.style, wipe=args.wipe)

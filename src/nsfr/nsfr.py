@@ -1,6 +1,7 @@
 import numpy as np
-import torch.nn as nn
 import torch
+import torch.nn as nn
+
 from nsfr.utils.logic import get_index_by_predname
 
 

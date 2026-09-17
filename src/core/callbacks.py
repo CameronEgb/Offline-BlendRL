@@ -66,11 +66,7 @@ class EnvironmentEvaluatorCallback(L.Callback):
         self.cumulative_eval_time += eval_duration
         transitions = int(round(transitions))
 
-        metrics = {
-            "eval/reward": avg_reward,
-            "eval/reward_std": std_reward,
-            "transitions": float(transitions)
-        }
+        metrics = {"eval/reward": avg_reward, "eval/reward_std": std_reward, "transitions": float(transitions)}
 
         if self.train_start_time is not None:
             current_total_time = eval_end - self.train_start_time
@@ -96,12 +92,14 @@ class EnvironmentEvaluatorCallback(L.Callback):
 
         def get_algo_name_robust(acfg):
             from omegaconf import DictConfig
+
             if isinstance(acfg, (dict, DictConfig)):
                 if "algorithm" in acfg:
                     return acfg.algorithm
                 if "agent" in acfg:
                     res = get_algo_name_robust(acfg.agent)
-                    if res: return res
+                    if res:
+                        return res
                 if "name" in acfg:
                     return acfg.name
             return None
@@ -115,7 +113,7 @@ class EnvironmentEvaluatorCallback(L.Callback):
                 cfg.env.name,
                 n_envs=target_n_envs,
                 mode=base_algo_name if base_algo_name else cfg.env.name,
-                seed=cfg.seed + 100
+                seed=cfg.seed + 100,
             )
 
         eval_total_rewards = []

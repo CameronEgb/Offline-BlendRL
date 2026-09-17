@@ -10,7 +10,7 @@ class FactsConverter(nn.Module):
     """
 
     def __init__(self, lang, valuation_module, atoms, bk, device=None):
-        super(FactsConverter, self).__init__()
+        super().__init__()
         self.e = 0
         self.d = 0
         self.lang = lang
@@ -23,10 +23,10 @@ class FactsConverter(nn.Module):
         self.bk_indices = self._get_bk_atom_indices()
 
     def __str__(self):
-        return "FactsConverter(entities={}, dimension={})".format(self.e, self.d)
+        return f"FactsConverter(entities={self.e}, dimension={self.d})"
 
     def __repr__(self):
-        return "FactsConverter(entities={}, dimension={})".format(self.e, self.d)
+        return f"FactsConverter(entities={self.e}, dimension={self.d})"
 
     def _get_np_atom_indices(self):
         """Pre compute the indices of atoms with neural predicats."""
@@ -84,7 +84,7 @@ class FactsConverterWithQuery(nn.Module):
 
     # def __init__(self, lang, perception_module, valuation_module, device=None):
     def __init__(self, lang, atoms, bk, perception_module, valuation_module, device=None):
-        super(FactsConverterWithQuery, self).__init__()
+        super().__init__()
         self.e = perception_module.e
         self.d = perception_module.d
         self.lang = lang
@@ -97,10 +97,10 @@ class FactsConverterWithQuery(nn.Module):
         self.bk_indices = self._get_bk_atom_indices()
 
     def __str__(self):
-        return "FactsConverter(entities={}, dimension={})".format(self.e, self.d)
+        return f"FactsConverter(entities={self.e}, dimension={self.d})"
 
     def __repr__(self):
-        return "FactsConverter(entities={}, dimension={})".format(self.e, self.d)
+        return f"FactsConverter(entities={self.e}, dimension={self.d})"
 
     def _get_np_atom_indices(self):
         """Pre compute the indices of atoms with neural predicats."""

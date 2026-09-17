@@ -1,7 +1,7 @@
 from .fol.language import DataType
 
 
-class ModeDeclaration(object):
+class ModeDeclaration:
     """from https://www.cs.ox.ac.uk/activities/programinduction/Aleph/aleph.html
     p(ModeType, ModeType,...)
 
@@ -71,7 +71,7 @@ class ModeDeclaration(object):
         return hash(self.__str__())
 
 
-class ModeTerm(object):
+class ModeTerm:
     """Terms for mode declarations. It has mode (+, -, #) and data types.
     """
 

@@ -1,31 +1,36 @@
 #!/usr/bin/env python3
-import sys
 import argparse
+import sys
+from pathlib import Path
+from typing import List, Optional
+
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-from pathlib import Path
-from typing import Optional, List
 
 from plot.base import BasePlotter, clean_label, get_style_info, moving_average
+
 
 class LossesPlotter(BasePlotter):
     def __init__(self):
         super().__init__("losses")
 
-    def run(self, exp_id: str, cli_overrides: Optional[dict] = None):
+    def run(self, exp_id: str, cli_overrides: dict | None = None):
         cfg, group, output_dir = self.get_effective_config(exp_id, cli_overrides)
-        metrics = cfg.get("metrics", [
-            "losses/total_loss",
-            "losses/bellman_loss",
-            "losses/cql_loss",
-            "losses/entropy",
-            "losses/blend_entropy",
-            "losses/actor_loss",
-            "losses/q_loss",
-            "losses/value_loss"
-        ])
-        
+        metrics = cfg.get(
+            "metrics",
+            [
+                "losses/total_loss",
+                "losses/bellman_loss",
+                "losses/cql_loss",
+                "losses/entropy",
+                "losses/blend_entropy",
+                "losses/actor_loss",
+                "losses/q_loss",
+                "losses/value_loss",
+            ],
+        )
+
         runs_data = self.load_metrics(group, exp_id)
         if not runs_data:
             print(f"No log data found for experiment '{exp_id}' in group '{group}'.")
@@ -57,7 +62,7 @@ class LossesPlotter(BasePlotter):
                         if not valid_df.empty:
                             x_vals = None
                             if x_axis_col in df.columns and df[x_axis_col].notna().any():
-                                full_x = df[x_axis_col].interpolate(method='linear').ffill().bfill()
+                                full_x = df[x_axis_col].interpolate(method="linear").ffill().bfill()
                                 s_x = full_x.loc[valid_df.index]
                                 if not s_x.empty and s_x.nunique() > 1 and not s_x.isna().any():
                                     x_vals = s_x.values
@@ -90,12 +95,14 @@ class LossesPlotter(BasePlotter):
                         y_sem = np.std(trimmed, axis=0) / np.sqrt(len(all_y))
                         y_smoothed = moving_average(y_mean, window)
                         sem_smoothed = moving_average(y_sem, window)
-                        x_plot = all_x[0][:len(y_smoothed)]
+                        x_plot = all_x[0][: len(y_smoothed)]
                         plt.plot(x_plot, y_smoothed, label=display_name, color=color, linestyle=ls, linewidth=2.0)
-                        plt.fill_between(x_plot, y_smoothed - sem_smoothed, y_smoothed + sem_smoothed, color=color, alpha=0.15)
+                        plt.fill_between(
+                            x_plot, y_smoothed - sem_smoothed, y_smoothed + sem_smoothed, color=color, alpha=0.15
+                        )
                     else:
                         y_smoothed = moving_average(all_y[0], window)
-                        x_plot = all_x[0][:len(y_smoothed)]
+                        x_plot = all_x[0][: len(y_smoothed)]
                         plt.plot(x_plot, y_smoothed, label=display_name, color=color, linestyle=ls, linewidth=2.0)
 
                     plt.xlabel(used_xlabel or cfg.get("xlabel", "Training Steps"))
@@ -103,7 +110,7 @@ class LossesPlotter(BasePlotter):
                     plt.ylabel(metric_clean_name)
                     plt.title(f"{display_name}: {metric_clean_name}")
                     plt.grid(True, alpha=0.3)
-                    plt.legend(loc='upper right')
+                    plt.legend(loc="upper right")
                     plt.tight_layout()
 
                     safe_metric_name = metric.replace("/", "_")
@@ -124,4 +131,3 @@ class LossesPlotter(BasePlotter):
         loss_cfg.setdefault("output_subdir", "losses")
         loss_cfg.setdefault("filename_prefix", "comparison_")
         self.plot_metric_series(exp_id, group, output_dir, metrics, loss_cfg)
-

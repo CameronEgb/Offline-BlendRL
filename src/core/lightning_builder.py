@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 class SaveInitialCheckpointCallback(Callback):
     """Callback to save an initial, untrained model checkpoint before training starts."""
+
     def __init__(self, ckpt_dir, cfg):
         super().__init__()
         self.ckpt_dir = ckpt_dir
@@ -26,6 +27,7 @@ class SaveInitialCheckpointCallback(Callback):
         init_ckpt = os.path.join(self.ckpt_dir, "best_model.ckpt")
         trainer.save_checkpoint(init_ckpt)
         from hydra.utils import get_original_cwd
+
         try:
             base_root = get_original_cwd()
         except (ValueError, AttributeError) as e:
@@ -39,6 +41,7 @@ class SaveInitialCheckpointCallback(Callback):
         named_ckpt = os.path.join(parent_ckpt_root, f"{self.cfg.agent.name}.ckpt")
         if os.path.exists(init_ckpt):
             import shutil
+
             try:
                 shutil.copy2(init_ckpt, named_ckpt)
             except Exception as e:
@@ -51,6 +54,7 @@ class SaveInitialCheckpointCallback(Callback):
         trainer.save_checkpoint(init_interval)
         print(f"[Init Checkpoint] Saved initial model checkpoint to: {init_ckpt}")
 
+
 def print_hardware_diagnostics():
     """Print GPU hardware info and diagnostics before training."""
     if torch.cuda.is_available():
@@ -58,14 +62,15 @@ def print_hardware_diagnostics():
         device_idx = torch.cuda.current_device()
         gpu_name = torch.cuda.get_device_name(device_idx)
         total_vram_gb = torch.cuda.get_device_properties(device_idx).total_memory / (1024**3)
-        print("\n" + "="*50)
+        print("\n" + "=" * 50)
         print("      GPU HARDWARE DIAGNOSTICS")
-        print("="*50)
+        print("=" * 50)
         print(f"  Device:          {gpu_name} (ID: {device_idx})")
         print(f"  Total VRAM:      {total_vram_gb:.2f} GB")
         print(f"  CUDA Version:    {torch.version.cuda}")
         print(f"  PyTorch Version: {torch.__version__}")
-        print("="*50 + "\n")
+        print("=" * 50 + "\n")
+
 
 def infer_dynamic_timesteps(cfg):
     """Dynamically infer total timesteps based on offline dataset size."""
@@ -74,6 +79,7 @@ def infer_dynamic_timesteps(cfg):
         if ds_path and os.path.exists(ds_path):
             try:
                 from src.dataset_utils import DatasetReader
+
                 temp_reader = DatasetReader(ds_path)
                 ds_len = len(temp_reader)
                 if ds_len > 0:
@@ -86,6 +92,7 @@ def infer_dynamic_timesteps(cfg):
                         OmegaConf.set_struct(cfg, True)
             except Exception as e:
                 print(f"[Dynamic Config Warning] Failed to dynamically inspect dataset size: {e}")
+
 
 def setup_loggers(cfg, base_root):
     log_dir = os.path.join(base_root, "results/logs", cfg.group, cfg.experiment_id)
@@ -104,6 +111,7 @@ def setup_loggers(cfg, base_root):
         loggers.append(tb_logger)
     return loggers
 
+
 def build_trainer(cfg, model=None):
     print_hardware_diagnostics()
     infer_dynamic_timesteps(cfg)
@@ -114,6 +122,7 @@ def build_trainer(cfg, model=None):
     L.seed_everything(agent_seed)
 
     from hydra.utils import get_original_cwd
+
     try:
         base_root = get_original_cwd()
     except (ValueError, AttributeError) as e:
@@ -126,6 +135,7 @@ def build_trainer(cfg, model=None):
     loggers = setup_loggers(cfg, base_root)
 
     from hydra.core.hydra_config import HydraConfig
+
     trial_id = "0"
     if HydraConfig.initialized():
         try:
@@ -162,7 +172,7 @@ def build_trainer(cfg, model=None):
                 mode=monitor_mode,
                 save_top_k=1,
                 save_last=True,
-                enable_version_counter=False
+                enable_version_counter=False,
             )
         )
         eval_interval_epochs = cfg.agent.get("eval_interval_epochs", 1) if hasattr(cfg, "agent") else 1
@@ -174,22 +184,25 @@ def build_trainer(cfg, model=None):
                     filename="interval_epoch_{epoch:03d}",
                     every_n_epochs=eval_interval_epochs,
                     save_top_k=-1,
-                    save_on_train_epoch_end=False
+                    save_on_train_epoch_end=False,
                 )
             )
     else:
         from src.core.callbacks import EnvironmentEvaluatorCallback
-        callbacks.extend([
-            ModelCheckpoint(
-                dirpath=ckpt_dir,
-                filename="best_model",
-                monitor="eval/reward",
-                mode="max",
-                save_top_k=1,
-                enable_version_counter=False
-            ),
-            EnvironmentEvaluatorCallback(cfg)
-        ])
+
+        callbacks.extend(
+            [
+                ModelCheckpoint(
+                    dirpath=ckpt_dir,
+                    filename="best_model",
+                    monitor="eval/reward",
+                    mode="max",
+                    save_top_k=1,
+                    enable_version_counter=False,
+                ),
+                EnvironmentEvaluatorCallback(cfg),
+            ]
+        )
 
     if cfg.mode.type == "online":
         num_envs = getattr(model, "num_envs", cfg.env.num_envs) if model else cfg.env.num_envs
@@ -197,8 +210,10 @@ def build_trainer(cfg, model=None):
         batch_size = num_envs * num_steps
 
         import math
+
         max_epochs = math.ceil(cfg.total_timesteps / batch_size) if batch_size > 0 else 1
-        if max_epochs == 0: max_epochs = 1
+        if max_epochs == 0:
+            max_epochs = 1
 
         limit_val_batches = 0
         check_val_every_n_epoch = 1000000
@@ -230,11 +245,7 @@ def build_trainer(cfg, model=None):
         trainer_overrides = OmegaConf.to_container(cfg.trainer, resolve=True)
         trainer_kwargs.update(trainer_overrides)
 
-    trainer = L.Trainer(
-        **trainer_kwargs,
-        logger=loggers,
-        callbacks=callbacks
-    )
+    trainer = L.Trainer(**trainer_kwargs, logger=loggers, callbacks=callbacks)
 
     ckpt_path = None
     if cfg.get("recover", False):
@@ -244,6 +255,7 @@ def build_trainer(cfg, model=None):
             ckpt_path = potential_ckpt
 
     return trainer, ckpt_dir, ckpt_path
+
 
 def finalize_training(trainer, cfg, ckpt_dir, training_time, start_time, end_time):
     gpu_stats = {}
@@ -259,29 +271,35 @@ def finalize_training(trainer, cfg, ckpt_dir, training_time, start_time, end_tim
             "gpu_total_vram_gb": round(total_vram_gb, 2),
             "gpu_peak_alloc_gb": round(peak_alloc_gb, 3),
             "gpu_peak_reserved_gb": round(peak_res_gb, 3),
-            "gpu_mem_efficiency_pct": round(mem_eff_pct, 2)
+            "gpu_mem_efficiency_pct": round(mem_eff_pct, 2),
         }
 
-        print("\n" + "="*50)
+        print("\n" + "=" * 50)
         print("      GPU MEMORY & RESOURCE FOOTPRINT")
-        print("="*50)
+        print("=" * 50)
         print(f"  GPU Device:        {gpu_stats['gpu_device']}")
         print(f"  Total VRAM:        {gpu_stats['gpu_total_vram_gb']:.2f} GB")
         print(f"  Peak Allocated:    {gpu_stats['gpu_peak_alloc_gb']:.3f} GB")
         print(f"  Peak Reserved:     {gpu_stats['gpu_peak_reserved_gb']:.3f} GB")
         print(f"  VRAM Footprint %:  {gpu_stats['gpu_mem_efficiency_pct']:.2f}%")
-        print("="*50 + "\n")
+        print("=" * 50 + "\n")
 
-    active_loggers = trainer.loggers if (hasattr(trainer, "loggers") and trainer.loggers) else ([trainer.logger] if trainer.logger else [])
+    active_loggers = (
+        trainer.loggers
+        if (hasattr(trainer, "loggers") and trainer.loggers)
+        else ([trainer.logger] if trainer.logger else [])
+    )
     for lg in active_loggers:
         try:
             if hasattr(lg, "log_metrics"):
                 metrics_to_log = {"training_time_seconds": training_time}
                 if gpu_stats:
-                    metrics_to_log.update({
-                        "gpu/peak_alloc_gb": gpu_stats["gpu_peak_alloc_gb"],
-                        "gpu/peak_reserved_gb": gpu_stats["gpu_peak_reserved_gb"],
-                    })
+                    metrics_to_log.update(
+                        {
+                            "gpu/peak_alloc_gb": gpu_stats["gpu_peak_alloc_gb"],
+                            "gpu/peak_reserved_gb": gpu_stats["gpu_peak_reserved_gb"],
+                        }
+                    )
                 lg.log_metrics(metrics_to_log, step=trainer.global_step)
         except Exception as e:
             logger.warning("Failed to log metrics to %s: %s", lg, e)
@@ -301,7 +319,9 @@ def finalize_training(trainer, cfg, ckpt_dir, training_time, start_time, end_tim
         except Exception as e:
             logger.debug("Could not inspect Hydra runtime output_dir: %s", e)
 
-    start_time_iso = datetime.datetime.fromtimestamp(start_time, datetime.timezone.utc).isoformat() if start_time else None
+    start_time_iso = (
+        datetime.datetime.fromtimestamp(start_time, datetime.timezone.utc).isoformat() if start_time else None
+    )
     end_time_iso = datetime.datetime.fromtimestamp(end_time, datetime.timezone.utc).isoformat() if end_time else None
 
     meta = collect_run_metadata(cfg)
@@ -318,7 +338,7 @@ def finalize_training(trainer, cfg, ckpt_dir, training_time, start_time, end_tim
         "end_time_iso": end_time_iso,
         "hydra_output_dir": hydra_output_dir,
         **meta,
-        **gpu_stats
+        **gpu_stats,
     }
 
     def atomic_json_dump(obj, path):
@@ -347,6 +367,7 @@ def finalize_training(trainer, cfg, ckpt_dir, training_time, start_time, end_tim
 
         if hydra_output_dir:
             import shutil
+
             overrides_path = os.path.join(hydra_output_dir, ".hydra", "overrides.yaml")
             if os.path.exists(overrides_path):
                 shutil.copy2(overrides_path, os.path.join(ckpt_dir, "overrides.yaml"))
@@ -363,6 +384,7 @@ def finalize_training(trainer, cfg, ckpt_dir, training_time, start_time, end_tim
                     overrides_path = os.path.join(hydra_output_dir, ".hydra", "overrides.yaml")
                     if os.path.exists(overrides_path):
                         import shutil
+
                         shutil.copy2(overrides_path, os.path.join(lg.log_dir, "overrides.yaml"))
             except (OSError, Exception) as e:
                 logger.warning("Could not save config or overrides to log_dir %s: %s", lg.log_dir, e)
@@ -389,4 +411,3 @@ def finalize_training(trainer, cfg, ckpt_dir, training_time, start_time, end_tim
     if metric_name in trainer.callback_metrics:
         return trainer.callback_metrics[metric_name].item()
     return 0.0
-

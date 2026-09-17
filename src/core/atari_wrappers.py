@@ -1,4 +1,5 @@
 """Standard Atari wrapper stack for Gym/Gymnasium environments."""
+
 import gymnasium as gym
 from stable_baselines3.common.atari_wrappers import (
     ClipRewardEnv,
@@ -11,7 +12,7 @@ from stable_baselines3.common.atari_wrappers import (
 
 def make_atari_env(env, clip_rewards=False):
     """Standard Atari wrapper stack.
-    
+
     RecordEpisodeStatistics is placed at the top so it measures agent steps
     rather than raw frames.
     """

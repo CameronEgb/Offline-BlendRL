@@ -11,18 +11,21 @@ Generates:
 3. A counterfactual summary table (CSV + formatted text)
 """
 
+import argparse
+import csv
 import os
 import sys
-import csv
-import argparse
+
+import matplotlib
 import numpy as np
 import torch
 import torch.nn as nn
 import yaml
-import matplotlib
+
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 from pathlib import Path
+
+import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 
 # Add root directory to path to allow importing src modules
@@ -33,27 +36,30 @@ if os.path.join(PROJECT_ROOT, "src") not in sys.path:
     sys.path.insert(0, os.path.join(PROJECT_ROOT, "src"))
 
 from src.early_prediction.model import (
-    SepsisLSTM, SepsisTransformer,
+    SepsisLSTM,
+    SepsisTransformer,
     compute_volatility_features,
+    evaluate_lstm_model,
+    evaluate_transformer_model,
     normalize_features,
-    evaluate_lstm_model, evaluate_transformer_model,
 )
-
 
 # ---------------------------------------------------------------------------
 #  Helpers
 # ---------------------------------------------------------------------------
-
 # ---------------------------------------------------------------------------
 #  Method Style Registry — imported from the unified source of truth
 # ---------------------------------------------------------------------------
 from src.method_registry import get_style as get_method_style
 
+
 def pretty(name: str) -> str:
     return get_method_style(name)["label"]
 
+
 def color(name: str):
     return get_method_style(name)["color"]
+
 
 def marker(name: str) -> str:
     return get_method_style(name)["marker"]
@@ -61,12 +67,11 @@ def marker(name: str) -> str:
 
 from src.pipeline.datasets import resolve_mimic_npz_path
 
+
 def resolve_mimic_dataset(args):
     """Resolve the MIMIC .npz dataset path from args or standard dataset directories."""
-    fname = dataset_path or getattr(args, "dataset_name", None)
+    fname = getattr(args, "dataset_path", None) or getattr(args, "dataset_name", None)
     return str(resolve_mimic_npz_path(fname))
-
-
 
 
 def discover_single_policy(path: Path) -> dict:
@@ -91,14 +96,10 @@ def discover_single_policy(path: Path) -> dict:
 
     # Directory — pick the most-recently modified best_model*.ckpt inside it
     ckpts = sorted(
-        list(path.glob("best_model*.ckpt")) + list(path.glob("*.ckpt")),
-        key=lambda p: p.stat().st_mtime, reverse=True
+        list(path.glob("best_model*.ckpt")) + list(path.glob("*.ckpt")), key=lambda p: p.stat().st_mtime, reverse=True
     )
     if not ckpts:
-        ckpts = sorted(
-            list(path.rglob("best_model*.ckpt")),
-            key=lambda p: p.stat().st_mtime, reverse=True
-        )
+        ckpts = sorted(list(path.rglob("best_model*.ckpt")), key=lambda p: p.stat().st_mtime, reverse=True)
     if not ckpts:
         print(f"WARNING: No .ckpt files found under {path}.")
         return {}
@@ -132,13 +133,11 @@ def discover_policies_from_experiment_root(root: Path) -> dict:
         # Search method_dir itself, then any trial subdirs (e.g. 0/, 1/)
         ckpts = sorted(
             list(method_dir.glob("best_model*.ckpt")) + list(method_dir.glob("*.ckpt")),
-            key=lambda p: p.stat().st_mtime, reverse=True
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
         )
         if not ckpts:
-            ckpts = sorted(
-                list(method_dir.rglob("best_model*.ckpt")),
-                key=lambda p: p.stat().st_mtime, reverse=True
-            )
+            ckpts = sorted(list(method_dir.rglob("best_model*.ckpt")), key=lambda p: p.stat().st_mtime, reverse=True)
         if ckpts:
             policies[method_key] = ckpts[0]
         else:
@@ -162,7 +161,7 @@ def discover_policy_checkpoints(checkpoint_root) -> dict:
         return {}
 
     if root.is_file():
-        print(f"  [discover] Resolved as single .ckpt file.")
+        print("  [discover] Resolved as single .ckpt file.")
         return discover_single_policy(root)
 
     # Does the directory itself directly contain .ckpt files? → single method dir
@@ -171,18 +170,17 @@ def discover_policy_checkpoints(checkpoint_root) -> dict:
         return discover_single_policy(root)
 
     # Otherwise assume it's an experiment root with per-method subdirs
-    print(f"  [discover] Resolved as experiment root. Scanning method subdirs...")
+    print("  [discover] Resolved as experiment root. Scanning method subdirs...")
     return discover_policies_from_experiment_root(root)
 
 
 def load_policy_agent(ckpt_path, device):
     """Load a CQL or BlendRLCQL agent from checkpoint."""
-    torch.serialization.add_safe_globals([
-        getattr(sys.modules.get('omegaconf.dictconfig', None), 'DictConfig', None)
-    ])
+    torch.serialization.add_safe_globals([getattr(sys.modules.get("omegaconf.dictconfig", None), "DictConfig", None)])
 
     try:
         from src.methods.cql_agent import CQLAgent
+
         agent = CQLAgent.load_from_checkpoint(str(ckpt_path), map_location=device, weights_only=False)
         agent.eval()
         return agent, "cql"
@@ -349,6 +347,7 @@ def predict_shock_probs_with_ep_models(ep_ckpts_for_tau, X_sequences, device):
 #  Graph 1: Agreement vs Shock Rate (All Patients)
 # ---------------------------------------------------------------------------
 
+
 def plot_agreement_vs_shock(agreements, outcomes, report_dir):
     """Generate single agreement vs shock rate plot for All Patients,
     overlaying trajectory counts per bucket in a background bar plot.
@@ -396,19 +395,30 @@ def plot_agreement_vs_shock(agreements, outcomes, report_dir):
         label = pretty(method_key)
         color = get_method_style(method_key)["color"]
         marker = get_method_style(method_key)["marker"]
-        ax1.plot(bin_centers[valid], means_arr[valid], marker=marker, color=color,
-                 label=label, linewidth=2.5, markersize=7)
-        ax1.fill_between(bin_centers[valid],
-                         means_arr[valid] - sems_arr[valid],
-                         means_arr[valid] + sems_arr[valid],
-                         color=color, alpha=0.12)
+        ax1.plot(
+            bin_centers[valid], means_arr[valid], marker=marker, color=color, label=label, linewidth=2.5, markersize=7
+        )
+        ax1.fill_between(
+            bin_centers[valid],
+            means_arr[valid] - sems_arr[valid],
+            means_arr[valid] + sems_arr[valid],
+            color=color,
+            alpha=0.12,
+        )
 
     # Background bar chart for trajectory count
     if first_method_counts is not None:
-        ax2.bar(bin_centers, first_method_counts, width=8, color='tab:blue', alpha=0.15,
-                label='Trajectory Count in Bucket', zorder=1)
+        ax2.bar(
+            bin_centers,
+            first_method_counts,
+            width=8,
+            color="tab:blue",
+            alpha=0.15,
+            label="Trajectory Count in Bucket",
+            zorder=1,
+        )
         ax2.set_ylabel("Trajectory Count in Bucket", fontsize=13, fontweight="bold", color="tab:blue")
-        ax2.tick_params(axis='y', labelcolor="tab:blue")
+        ax2.tick_params(axis="y", labelcolor="tab:blue")
 
     ax1.set_xlabel("Clinician – RL Policy Agreement (%)", fontsize=13, fontweight="bold")
     ax1.set_ylabel("True Septic Shock Rate (%)", fontsize=13, fontweight="bold")
@@ -428,11 +438,10 @@ def plot_agreement_vs_shock(agreements, outcomes, report_dir):
     print(f"  Saved agreement plot: {out_path}")
 
 
-
-
 # ---------------------------------------------------------------------------
 #  Graph 2: EP Predicted Shock % over tau timesteps (3 cohort graphs)
 # ---------------------------------------------------------------------------
+
 
 def plot_ep_shock_over_tau(ep_shock_results, report_dir):
     """Plot average predicted shock% at each tau across 3 cohorts:
@@ -449,7 +458,13 @@ def plot_ep_shock_over_tau(ep_shock_results, report_dir):
     ]
 
     from src.method_registry import METHOD_STYLE
-    all_colors = [v["color"] for v in METHOD_STYLE.values() if v.get("color")] + ["tab:brown", "tab:pink", "tab:gray", "tab:olive"]
+
+    all_colors = [v["color"] for v in METHOD_STYLE.values() if v.get("color")] + [
+        "tab:brown",
+        "tab:pink",
+        "tab:gray",
+        "tab:olive",
+    ]
     all_markers = [v["marker"] for v in METHOD_STYLE.values() if v.get("marker")] + ["v", "<", ">", "p"]
 
     for cohort_title, cohort_key, fname in cohort_configs:
@@ -465,17 +480,14 @@ def plot_ep_shock_over_tau(ep_shock_results, report_dir):
             color = all_colors[idx % len(all_colors)]
             marker = all_markers[idx % len(all_markers)]
 
-            ax.plot(tau_arr, mean_arr * 100.0, marker=marker, color=color,
-                    label=label, linewidth=2, markersize=6)
-            ax.fill_between(tau_arr,
-                            (mean_arr - sem_arr) * 100.0,
-                            (mean_arr + sem_arr) * 100.0,
-                            color=color, alpha=0.12)
+            ax.plot(tau_arr, mean_arr * 100.0, marker=marker, color=color, label=label, linewidth=2, markersize=6)
+            ax.fill_between(
+                tau_arr, (mean_arr - sem_arr) * 100.0, (mean_arr + sem_arr) * 100.0, color=color, alpha=0.12
+            )
 
         ax.set_xlabel("Lead Time τ (hours before end-of-stay)", fontsize=13, fontweight="bold")
         ax.set_ylabel("Average Predicted Septic Shock Probability (%)", fontsize=13, fontweight="bold")
-        ax.set_title(f"EP Model Predicted Shock % at Each Lead Time\n({cohort_title})",
-                     fontsize=14, fontweight="bold")
+        ax.set_title(f"EP Model Predicted Shock % at Each Lead Time\n({cohort_title})", fontsize=14, fontweight="bold")
         ax.grid(True, linestyle="--", alpha=0.5)
         ax.legend(fontsize=10, loc="best")
 
@@ -490,6 +502,7 @@ def plot_ep_shock_over_tau(ep_shock_results, report_dir):
 #  Counterfactual Table
 # ---------------------------------------------------------------------------
 
+
 def write_counterfactual_table(cf_data, csv_path, txt_path):
     """Write counterfactual summary table.
 
@@ -498,42 +511,61 @@ def write_counterfactual_table(cf_data, csv_path, txt_path):
         agreement_mean, agreement_sem, precision_mean, precision_sem, recall_mean, recall_sem, f1_mean, f1_sem
     """
     header = [
-        "method", "pred_mortality_mean", "pred_mortality_sem",
-        "admin_rate_mean", "admin_rate_sem",
-        "agreement_mean", "agreement_sem",
-        "precision_mean", "precision_sem",
-        "recall_mean", "recall_sem",
-        "f1_mean", "f1_sem",
+        "method",
+        "pred_mortality_mean",
+        "pred_mortality_sem",
+        "admin_rate_mean",
+        "admin_rate_sem",
+        "agreement_mean",
+        "agreement_sem",
+        "precision_mean",
+        "precision_sem",
+        "recall_mean",
+        "recall_sem",
+        "f1_mean",
+        "f1_sem",
     ]
 
     with open(csv_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(header)
         for row in cf_data:
-            writer.writerow([
-                row["method"],
-                f"{row['pred_mort_mean']:.6f}", f"{row['pred_mort_sem']:.6f}",
-                f"{row['admin_rate_mean']:.6f}", f"{row['admin_rate_sem']:.6f}",
-                f"{row['agreement_mean']:.6f}", f"{row['agreement_sem']:.6f}",
-                f"{row.get('precision_mean', 0.0):.6f}", f"{row.get('precision_sem', 0.0):.6f}",
-                f"{row.get('recall_mean', 0.0):.6f}", f"{row.get('recall_sem', 0.0):.6f}",
-                f"{row.get('f1_mean', 0.0):.6f}", f"{row.get('f1_sem', 0.0):.6f}",
-            ])
+            writer.writerow(
+                [
+                    row["method"],
+                    f"{row['pred_mort_mean']:.6f}",
+                    f"{row['pred_mort_sem']:.6f}",
+                    f"{row['admin_rate_mean']:.6f}",
+                    f"{row['admin_rate_sem']:.6f}",
+                    f"{row['agreement_mean']:.6f}",
+                    f"{row['agreement_sem']:.6f}",
+                    f"{row.get('precision_mean', 0.0):.6f}",
+                    f"{row.get('precision_sem', 0.0):.6f}",
+                    f"{row.get('recall_mean', 0.0):.6f}",
+                    f"{row.get('recall_sem', 0.0):.6f}",
+                    f"{row.get('f1_mean', 0.0):.6f}",
+                    f"{row.get('f1_sem', 0.0):.6f}",
+                ]
+            )
 
     with open(txt_path, "w") as f:
         f.write("=" * 110 + "\n")
         f.write("COUNTERFACTUAL EVALUATION SUMMARY TABLE\n")
         f.write("=" * 110 + "\n\n")
-        f.write(f"{'Method':<30} {'Accuracy/Agr %':>15} {'Admin Rate %':>15} {'Precision':>12} {'Recall':>12} {'F1 Score':>12} {'Pred Mort %':>15}\n")
+        f.write(
+            f"{'Method':<30} {'Accuracy/Agr %':>15} {'Admin Rate %':>15} {'Precision':>12} {'Recall':>12} {'F1 Score':>12} {'Pred Mort %':>15}\n"
+        )
         f.write("-" * 110 + "\n")
         for row in cf_data:
-            mort_str = f"{row['pred_mort_mean']*100:.2f}±{row['pred_mort_sem']*100:.2f}"
-            admin_str = f"{row['admin_rate_mean']*100:.2f}±{row['admin_rate_sem']*100:.2f}"
-            agr_str = f"{row['agreement_mean']*100:.2f}±{row['agreement_sem']*100:.2f}"
+            mort_str = f"{row['pred_mort_mean'] * 100:.2f}±{row['pred_mort_sem'] * 100:.2f}"
+            admin_str = f"{row['admin_rate_mean'] * 100:.2f}±{row['admin_rate_sem'] * 100:.2f}"
+            agr_str = f"{row['agreement_mean'] * 100:.2f}±{row['agreement_sem'] * 100:.2f}"
             prec_str = f"{row.get('precision_mean', 0.0):.4f}"
             rec_str = f"{row.get('recall_mean', 0.0):.4f}"
             f1_str = f"{row.get('f1_mean', 0.0):.4f}"
-            f.write(f"{pretty(row['method']):<30} {agr_str:>15} {admin_str:>15} {prec_str:>12} {rec_str:>12} {f1_str:>12} {mort_str:>15}\n")
+            f.write(
+                f"{pretty(row['method']):<30} {agr_str:>15} {admin_str:>15} {prec_str:>12} {rec_str:>12} {f1_str:>12} {mort_str:>15}\n"
+            )
         f.write("-" * 110 + "\n")
         f.write("\nAll values: mean ± SEM across data splits.\n")
         f.write("Accuracy/Agr %: Fraction of timesteps policy matches clinician action.\n")
@@ -548,18 +580,25 @@ def write_counterfactual_table(cf_data, csv_path, txt_path):
 #  Main
 # ---------------------------------------------------------------------------
 
-def compute_ep_eval_data(checkpoint_root, dataset_path, ep_ckpt_root='results/checkpoints/early_prediction', n_splits=20, tau_min=1, tau_max=33, tau_step=4, window_hours=12, use_volatility=True):
 
-
-
+def compute_ep_eval_data(
+    checkpoint_root,
+    dataset_path,
+    ep_ckpt_root="results/checkpoints/early_prediction",
+    n_splits=20,
+    tau_min=1,
+    tau_max=33,
+    tau_step=4,
+    window_hours=12,
+    use_volatility=True,
+):
 
     if not checkpoint_root:
         raise ValueError("checkpoint_root must be provided.")
 
-
-
-    device = torch.device("cuda" if torch.cuda.is_available() else
-                          ("mps" if torch.backends.mps.is_available() else "cpu"))
+    device = torch.device(
+        "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
+    )
     print(f"Device: {device}")
 
     # -----------------------------------------------------------------------
@@ -567,12 +606,13 @@ def compute_ep_eval_data(checkpoint_root, dataset_path, ep_ckpt_root='results/ch
     # -----------------------------------------------------------------------
     if not dataset_path:
         from src.pipeline.datasets import resolve_mimic_npz_path
+
         dataset_path = str(resolve_mimic_npz_path("mimic_lazy_0_interventions_balanced.npz"))
     else:
         dataset_path = str(dataset_path)
     print(f"Loading dataset: {dataset_path}")
     data = np.load(dataset_path, allow_pickle=True)
-    X = data["X"]        # (N, 240, features)
+    X = data["X"]  # (N, 240, features)
     y = data["y"].squeeze()  # (N,) — 1=shock, 0=non-shock
     mask = data["mask"]  # (N, 240, 1) or (N, 240)
 
@@ -632,13 +672,17 @@ def compute_ep_eval_data(checkpoint_root, dataset_path, ep_ckpt_root='results/ch
     if cql_ckpt_for_v:
         try:
             agent_v, agent_v_type = load_policy_agent(cql_ckpt_for_v, device)
-            if agent_v is not None and (hasattr(agent_v, "get_q_values") or hasattr(agent_v, "get_value") or hasattr(agent_v, "q_network") or hasattr(agent_v, "model")):
+            if agent_v is not None and (
+                hasattr(agent_v, "get_q_values")
+                or hasattr(agent_v, "get_value")
+                or hasattr(agent_v, "q_network")
+                or hasattr(agent_v, "model")
+            ):
                 print(f"\nPre-computing V(s) from: {cql_ckpt_for_v}")
                 batch_sz = 128
                 with torch.no_grad():
                     for i in range(0, N_patients, batch_sz):
-                        batch_x = torch.as_tensor(X[i:i+batch_sz, :, :46],
-                                                  dtype=torch.float32, device=device)
+                        batch_x = torch.as_tensor(X[i : i + batch_sz, :, :46], dtype=torch.float32, device=device)
                         B = batch_x.size(0)
                         flat_x = batch_x.view(-1, 46)
                         if hasattr(agent_v, "get_q_values"):
@@ -651,7 +695,7 @@ def compute_ep_eval_data(checkpoint_root, dataset_path, ep_ckpt_root='results/ch
                             raise AttributeError("Agent does not have get_q_values or q_network.")
                         q_vals = flat_q.view(B, 240, -1)
                         v = torch.max(q_vals, dim=-1)[0].unsqueeze(-1).cpu().numpy()
-                        v_vals_all[i:i+B] = v
+                        v_vals_all[i : i + B] = v
                 print("V(s) pre-computation done.")
             else:
                 print("WARNING: Could not compute V(s) — agent has no recognizable Q-network.")
@@ -672,12 +716,12 @@ def compute_ep_eval_data(checkpoint_root, dataset_path, ep_ckpt_root='results/ch
     # since agreements are deterministic given the policy — splits only differ in train/test
     patient_agreements = {}  # method_key -> np.array (N,)
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("Running counterfactual evaluation...")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     for method_key in all_method_keys:
-        is_clinician = (method_key == "clinician")
+        is_clinician = method_key == "clinician"
 
         if not is_clinician:
             ckpt_path = policies[method_key]
@@ -688,7 +732,7 @@ def compute_ep_eval_data(checkpoint_root, dataset_path, ep_ckpt_root='results/ch
             print(f"\n  Evaluating: {pretty(method_key)} ({ckpt_path})")
         else:
             agent, agent_type = None, None
-            print(f"\n  Evaluating: Clinician (dataset actions)")
+            print("\n  Evaluating: Clinician (dataset actions)")
 
         # Compute per-patient agreement & classification stats (over ALL patients)
         per_patient_agr = np.zeros(N_patients, dtype=np.float64)
@@ -751,9 +795,7 @@ def compute_ep_eval_data(checkpoint_root, dataset_path, ep_ckpt_root='results/ch
 
         for split_idx in range(n_splits):
             seed_val = 42 + split_idx
-            _, test_indices = train_test_split(
-                np.arange(N_patients), test_size=0.2, random_state=seed_val
-            )
+            _, test_indices = train_test_split(np.arange(N_patients), test_size=0.2, random_state=seed_val)
 
             agr_split = per_patient_agr[test_indices]
             admin_split = per_patient_admin[test_indices]
@@ -774,21 +816,23 @@ def compute_ep_eval_data(checkpoint_root, dataset_path, ep_ckpt_root='results/ch
             split_recalls.append(float(rec))
             split_f1s.append(float(f1))
 
-        cf_data.append({
-            "method": method_key,
-            "pred_mort_mean": float(np.mean(split_morts)),
-            "pred_mort_sem": float(np.std(split_morts) / np.sqrt(len(split_morts))),
-            "admin_rate_mean": float(np.mean(split_admins)),
-            "admin_rate_sem": float(np.std(split_admins) / np.sqrt(len(split_admins))),
-            "agreement_mean": float(np.mean(split_agreements)),
-            "agreement_sem": float(np.std(split_agreements) / np.sqrt(len(split_agreements))),
-            "precision_mean": float(np.mean(split_precisions)),
-            "precision_sem": float(np.std(split_precisions) / np.sqrt(len(split_precisions))),
-            "recall_mean": float(np.mean(split_recalls)),
-            "recall_sem": float(np.std(split_recalls) / np.sqrt(len(split_recalls))),
-            "f1_mean": float(np.mean(split_f1s)),
-            "f1_sem": float(np.std(split_f1s) / np.sqrt(len(split_f1s))),
-        })
+        cf_data.append(
+            {
+                "method": method_key,
+                "pred_mort_mean": float(np.mean(split_morts)),
+                "pred_mort_sem": float(np.std(split_morts) / np.sqrt(len(split_morts))),
+                "admin_rate_mean": float(np.mean(split_admins)),
+                "admin_rate_sem": float(np.std(split_admins) / np.sqrt(len(split_admins))),
+                "agreement_mean": float(np.mean(split_agreements)),
+                "agreement_sem": float(np.std(split_agreements) / np.sqrt(len(split_agreements))),
+                "precision_mean": float(np.mean(split_precisions)),
+                "precision_sem": float(np.std(split_precisions) / np.sqrt(len(split_precisions))),
+                "recall_mean": float(np.mean(split_recalls)),
+                "recall_sem": float(np.std(split_recalls) / np.sqrt(len(split_recalls))),
+                "f1_mean": float(np.mean(split_f1s)),
+                "f1_sem": float(np.std(split_f1s) / np.sqrt(len(split_f1s))),
+            }
+        )
 
         agr_mean_pct = np.mean(split_agreements) * 100
         admin_pct = np.mean(split_admins) * 100
@@ -800,9 +844,9 @@ def compute_ep_eval_data(checkpoint_root, dataset_path, ep_ckpt_root='results/ch
     ep_shock_results = {}
 
     if tau_sweep_available and ep_models:
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print("Computing EP predicted shock % over tau for each policy...")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         # For each policy + clinician, for each tau, build counterfactual sequences,
         # run EP models, get average predicted shock.
@@ -812,7 +856,7 @@ def compute_ep_eval_data(checkpoint_root, dataset_path, ep_ckpt_root='results/ch
         print(f"  Cohort for tau sweep: {len(cohort_indices)} patients (stays >= {min_stay_steps} steps)")
 
         for method_key in all_method_keys:
-            is_clinician = (method_key == "clinician")
+            is_clinician = method_key == "clinician"
 
             if not is_clinician:
                 if method_key not in policies:
@@ -861,8 +905,7 @@ def compute_ep_eval_data(checkpoint_root, dataset_path, ep_ckpt_root='results/ch
                             # Replace action at col 47 with policy's recommended action
                             for t_rel in range(raw_seq.shape[0]):
                                 abs_t = st + t_rel
-                                obs = torch.tensor(X[orig_idx, abs_t, :46],
-                                                   dtype=torch.float32).unsqueeze(0).to(device)
+                                obs = torch.tensor(X[orig_idx, abs_t, :46], dtype=torch.float32).unsqueeze(0).to(device)
                                 act, _ = get_policy_actions(agent, agent_type, obs, device)
                                 raw_seq[t_rel, 47] = act[0]
                                 # Also update action col 48 if it exists (some datasets)
@@ -890,7 +933,7 @@ def compute_ep_eval_data(checkpoint_root, dataset_path, ep_ckpt_root='results/ch
                     tau_all_sems.append(float(np.std(probs) / np.sqrt(len(probs))))
 
                     # Shock cohort (y=1)
-                    s_mask = (y_cohort == 1)
+                    s_mask = y_cohort == 1
                     if np.sum(s_mask) > 0:
                         p_s = probs[s_mask]
                         tau_shock_means.append(float(np.mean(p_s)))
@@ -900,7 +943,7 @@ def compute_ep_eval_data(checkpoint_root, dataset_path, ep_ckpt_root='results/ch
                         tau_shock_sems.append(0.0)
 
                     # Non-shock cohort (y=0)
-                    ns_mask = (y_cohort == 0)
+                    ns_mask = y_cohort == 0
                     if np.sum(ns_mask) > 0:
                         p_ns = probs[ns_mask]
                         tau_non_shock_means.append(float(np.mean(p_ns)))
@@ -921,12 +964,12 @@ def compute_ep_eval_data(checkpoint_root, dataset_path, ep_ckpt_root='results/ch
     # -----------------------------------------------------------------------
     #  7. Generate outputs
     # -----------------------------------------------------------------------
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("Generating plots and tables...")
     print("\n=== Evaluation Computation Complete ===")
     return {
         "rl_agreements": {k: v for k, v in patient_agreements.items() if k != "clinician"},
         "y": y,
         "ep_shock_results": ep_shock_results,
-        "cf_data": cf_data
+        "cf_data": cf_data,
     }

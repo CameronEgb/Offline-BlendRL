@@ -125,7 +125,7 @@ class NEUMANN(nn.Module):
             i1 = index_pair[0].detach().numpy()
             i2 = index_pair[1].detach().numpy()
             clause_index = self.edge_clause_index[i].detach().numpy()
-            print("Clause: {}".format(self.clauses[clause_index]))
+            print(f"Clause: {self.clauses[clause_index]}")
             if i1 < len(self.atoms):
                 print("Edge {} -> {}".format(str(self.atoms[i1]), 'conj'))
             elif i2 < len(self.atoms):
@@ -298,14 +298,14 @@ class NEUMANN(nn.Module):
             idxs = np.argsort(-v)
             for i in idxs:
                 if v[i] > 0.2:
-                    if not self.atoms[i].pred.name in ['member', 'not_member', 'get_color', 'perm', 'delete', 'right_most'] and\
-                        not self.atoms[i].pred.name in ['first_obj', 'second_obj', 'third_obj', 'append',  'reverse'] and\
-                            not self.atoms[i].pred.name in ['left_of', 'same_position', 'smaller', 'chain']:
+                    if self.atoms[i].pred.name not in ['member', 'not_member', 'get_color', 'perm', 'delete', 'right_most'] and\
+                        self.atoms[i].pred.name not in ['first_obj', 'second_obj', 'third_obj', 'append',  'reverse'] and\
+                            self.atoms[i].pred.name not in ['left_of', 'same_position', 'smaller', 'chain']:
                         print(i, self.atoms[i], ': ', round(v[i], 3))
 
     def print_trace_batch(self, valuation_list, n=40):
         for i, valuation in enumerate(valuation_list):
-            print('Step {}:'.format(i))
+            print(f'Step {i}:')
             if i == 0:
                 self.print_valuation_batch(valuation.unsqueeze(0).squeeze(-1))
             else:
@@ -324,7 +324,7 @@ class NEUMANN(nn.Module):
         text_batch = ''  # texts for each batch
         for b in range(valuation.size(0)):
             top_atoms = self.get_top_atoms(valuation[b].detach().cpu().numpy())
-            top_atoms = [atom for atom in top_atoms if not atom in [
+            top_atoms = [atom for atom in top_atoms if atom not in [
                 'member', 'not_member', 'delete', 'diff_color', 'right_most']]
             text = '----BATCH ' + str(b) + '----\n'
             text += self.atoms_to_text(top_atoms)

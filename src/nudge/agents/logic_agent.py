@@ -15,7 +15,7 @@ from nudge.torch_utils import softor
 
 class NsfrActorCritic(nn.Module):
     def __init__(self, env: NudgeBaseEnv, rules: str, device, rng=None):
-        super(NsfrActorCritic, self).__init__()
+        super().__init__()
         self.device =device
         self.rng = random.Random() if rng is None else rng
         self.env = env
@@ -127,7 +127,7 @@ class NsfrActorCritic(nn.Module):
     def to_action_distribution(self, raw_action_probs):
         """Converts raw action probabilities to a distribution."""
         batch_size = raw_action_probs.size(0)
-        env_action_names = list(self.env.pred2action.keys())        
+        env_action_names = list(self.env.pred2action.keys())
         
         raw_action_probs = torch.cat([raw_action_probs, torch.zeros(batch_size, 1, device=self.device)], dim=1)
         # save raw_action_probs for explanations (attributions)
@@ -140,10 +140,10 @@ class NsfrActorCritic(nn.Module):
                     .expand(batch_size, -1).to(self.device)
                 gathered = torch.gather(raw_action_logits, 1, indices)
                 # merged value for i-th action for samples in the batch
-                merged = softor(gathered, dim=1) # (batch_size, 1) 
+                merged = softor(gathered, dim=1) # (batch_size, 1)
                 dist_values.append(merged)
         
-        action_values = torch.stack(dist_values,dim=1) # (batch_size, n_actions) 
+        action_values = torch.stack(dist_values,dim=1) # (batch_size, n_actions)
         action_dist = torch.softmax(action_values, dim=1)
         
         action_dist = self.reshape_action_distribution(action_dist)

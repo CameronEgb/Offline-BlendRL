@@ -1,4 +1,5 @@
 """Core data types and contracts for NeSyRL."""
+
 from typing import Any
 
 import torch

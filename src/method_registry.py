@@ -195,7 +195,7 @@ def get_style(name: str) -> dict:
 
 def clean_label(name: str) -> str:
     """Return human-readable display label for a method name."""
-    return get_style(name)["label"]
+    return str(get_style(name)["label"])
 
 
 def get_style_info(name: str) -> tuple[str | None, str, str]:

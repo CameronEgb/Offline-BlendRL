@@ -6,4 +6,5 @@ class ConfigurationError(Exception):
 
     Caught at startup by run_pipeline.py — the run is aborted before any training begins.
     """
+
     pass

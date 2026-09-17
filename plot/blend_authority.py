@@ -14,9 +14,10 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+import matplotlib
 import numpy as np
 import pandas as pd
-import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
@@ -28,7 +29,7 @@ class BlendAuthorityPlotter(BasePlotter):
     def __init__(self):
         super().__init__("blend_authority")
 
-    def run(self, exp_id: str, cli_overrides: Optional[dict] = None):
+    def run(self, exp_id: str, cli_overrides: dict | None = None):
         cfg, group, output_dir = self.get_effective_config(exp_id, cli_overrides)
         clean_exp = Path(exp_id).stem
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -70,29 +71,68 @@ class BlendAuthorityPlotter(BasePlotter):
 
         fig, ax = plt.subplots(figsize=(12, max(5.5, len(models) * 0.45)))
 
-        c_logic = "#d95f02"   # Orange
-        c_mixed = "#7570b3"   # Purple
+        c_logic = "#d95f02"  # Orange
+        c_mixed = "#7570b3"  # Purple
         c_neural = "#2b5c8f"  # Blue
 
         ax.barh(y_pos, logic_pcts, color=c_logic, edgecolor="#222222", linewidth=0.8, label="Pure Logic (≥ 90%)")
-        ax.barh(y_pos, mixed_pcts, left=logic_pcts, color=c_mixed, edgecolor="#222222", linewidth=0.8, label="Mixed Blend (10% - 90%)")
-        ax.barh(y_pos, neural_pcts, left=logic_pcts + mixed_pcts, color=c_neural, edgecolor="#222222", linewidth=0.8, label="Pure Neural (≥ 90%)")
+        ax.barh(
+            y_pos,
+            mixed_pcts,
+            left=logic_pcts,
+            color=c_mixed,
+            edgecolor="#222222",
+            linewidth=0.8,
+            label="Mixed Blend (10% - 90%)",
+        )
+        ax.barh(
+            y_pos,
+            neural_pcts,
+            left=logic_pcts + mixed_pcts,
+            color=c_neural,
+            edgecolor="#222222",
+            linewidth=0.8,
+            label="Pure Neural (≥ 90%)",
+        )
 
         ax.set_yticks(y_pos)
         ax.set_yticklabels(models, fontsize=10, fontweight="bold")
         ax.invert_yaxis()
         ax.set_xlim(0, 100)
         ax.set_xlabel("Proportion of Dataset Transitions (%)", fontsize=11, fontweight="bold")
-        ax.set_title(f"BlendRL Decision-Making Authority Breakdown across Problems ({clean_exp})", fontsize=13, fontweight="bold", pad=15)
+        ax.set_title(
+            f"BlendRL Decision-Making Authority Breakdown across Problems ({clean_exp})",
+            fontsize=13,
+            fontweight="bold",
+            pad=15,
+        )
         ax.grid(True, axis="x", linestyle="--", alpha=0.5)
 
         for idx in range(len(models)):
             l_val = logic_pcts[idx]
             n_val = neural_pcts[idx]
             if l_val > 10:
-                ax.text(l_val / 2, idx, f"{l_val:.1f}%", ha="center", va="center", color="white", fontweight="bold", fontsize=9)
+                ax.text(
+                    l_val / 2,
+                    idx,
+                    f"{l_val:.1f}%",
+                    ha="center",
+                    va="center",
+                    color="white",
+                    fontweight="bold",
+                    fontsize=9,
+                )
             if n_val > 10:
-                ax.text(100 - (n_val / 2), idx, f"{n_val:.1f}%", ha="center", va="center", color="white", fontweight="bold", fontsize=9)
+                ax.text(
+                    100 - (n_val / 2),
+                    idx,
+                    f"{n_val:.1f}%",
+                    ha="center",
+                    va="center",
+                    color="white",
+                    fontweight="bold",
+                    fontsize=9,
+                )
 
         ax.legend(loc="upper center", bbox_to_anchor=(0.5, 1.08), ncol=3, framealpha=0.95, fontsize=10)
         fig.tight_layout()
@@ -123,8 +163,24 @@ class BlendAuthorityPlotter(BasePlotter):
             l_means = sub_df["Mean Logic Weight"].values * 100.0
             n_means = sub_df["Mean Neural Weight"].values * 100.0
 
-            ax.barh(y_pos - bar_h/2, l_means, height=bar_h, color=c_logic, edgecolor="#222222", linewidth=0.6, label="Logic Authority ($w_{\\mathrm{logic}}$)" if ax_idx == 0 else "")
-            ax.barh(y_pos + bar_h/2, n_means, height=bar_h, color=c_neural, edgecolor="#222222", linewidth=0.6, label="Neural Authority ($w_{\\mathrm{neural}}$)" if ax_idx == 0 else "")
+            ax.barh(
+                y_pos - bar_h / 2,
+                l_means,
+                height=bar_h,
+                color=c_logic,
+                edgecolor="#222222",
+                linewidth=0.6,
+                label="Logic Authority ($w_{\\mathrm{logic}}$)" if ax_idx == 0 else "",
+            )
+            ax.barh(
+                y_pos + bar_h / 2,
+                n_means,
+                height=bar_h,
+                color=c_neural,
+                edgecolor="#222222",
+                linewidth=0.6,
+                label="Neural Authority ($w_{\\mathrm{neural}}$)" if ax_idx == 0 else "",
+            )
 
             ax.set_title(f"{t_name}", fontsize=12, fontweight="bold")
             ax.set_yticks(y_pos)
@@ -134,9 +190,20 @@ class BlendAuthorityPlotter(BasePlotter):
             ax.set_xlabel("Mean Authority Weight (%)", fontsize=10, fontweight="bold")
             ax.grid(True, axis="x", linestyle="--", alpha=0.4)
 
-        fig.legend(["Logic Authority ($w_{\\mathrm{logic}}$)", "Neural Authority ($w_{\\mathrm{neural}}$)"],
-                   loc="upper center", bbox_to_anchor=(0.5, 1.05), ncol=2, fontsize=11, framealpha=0.95)
-        fig.suptitle(f"BlendRL Neuro-Symbolic Authority by Student Competency Tier ({clean_exp})", fontsize=13, fontweight="bold", y=1.09)
+        fig.legend(
+            ["Logic Authority ($w_{\\mathrm{logic}}$)", "Neural Authority ($w_{\\mathrm{neural}}$)"],
+            loc="upper center",
+            bbox_to_anchor=(0.5, 1.05),
+            ncol=2,
+            fontsize=11,
+            framealpha=0.95,
+        )
+        fig.suptitle(
+            f"BlendRL Neuro-Symbolic Authority by Student Competency Tier ({clean_exp})",
+            fontsize=13,
+            fontweight="bold",
+            y=1.09,
+        )
         fig.tight_layout()
 
         plot_path = output_dir / "blend_routing_by_tier.png"

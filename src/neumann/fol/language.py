@@ -1,8 +1,9 @@
-from .logic import Var
 import itertools
 
+from .logic import Var
 
-class Language(object):
+
+class Language:
     """Language of first-order logic.
 
     A class of languages in first-order logic.
@@ -121,7 +122,7 @@ class Language(object):
         return pred[0]
 
 
-class DataType(object):
+class DataType:
     """Data type in first-order logic.
 
     A class of data types in first-order logic.
@@ -154,7 +155,7 @@ class DataType(object):
 
 
 
-class VariableGenerator():
+class VariableGenerator:
     """
     generator of variables
     Parameters

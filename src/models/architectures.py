@@ -1,13 +1,16 @@
+import numpy as np
 import torch
 import torch.nn as nn
 from torch.distributions.categorical import Categorical
-import numpy as np
+
 from src.core.types import ActionResult
+
 
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)
     torch.nn.init.constant_(layer.bias, bias_const)
     return layer
+
 
 class NeuralBlenderActor(nn.Module):
     def __init__(self, out_size=2):
@@ -33,6 +36,7 @@ class NeuralBlenderActor(nn.Module):
     def get_action_probs(self, x):
         logits = self.forward(x)
         return torch.softmax(logits, dim=-1)
+
 
 class NeuralBlenderMLP(nn.Module):
     def __init__(self, num_in_features, out_size=2, hidden_sizes=[256, 256]):
@@ -63,10 +67,11 @@ class NeuralBlenderMLP(nn.Module):
             pad = torch.zeros((x.shape[0], self.num_in_features - x.shape[-1]), dtype=x.dtype, device=x.device)
             x = torch.cat([x, pad], dim=-1)
         elif x.shape[-1] > self.num_in_features:
-            x = x[:, :self.num_in_features]
+            x = x[:, : self.num_in_features]
         hidden = self.network(x)
         logits = self.actor(hidden)
         return logits
+
 
 class CNNActor(nn.Module):
     def __init__(self, n_actions=18):
@@ -111,6 +116,7 @@ class CNNActor(nn.Module):
         hidden = self.network(x / 255.0)
         return self.actor(hidden)
 
+
 class ValueNetwork(nn.Module):
     def __init__(self):
         super().__init__()
@@ -129,6 +135,7 @@ class ValueNetwork(nn.Module):
 
     def forward(self, x):
         return self.network(x / 255.0)
+
 
 class MLPQNetwork(nn.Module):
     def __init__(self, n_actions, num_in_features=4, hidden_sizes=[64, 64], dueling=None, activation=None, dropout=0.0):
@@ -168,12 +175,12 @@ class MLPQNetwork(nn.Module):
             self.value_head = nn.Sequential(
                 layer_init(nn.Linear(last_size, max(32, last_size // 2))),
                 act_fn(),
-                layer_init(nn.Linear(max(32, last_size // 2), 1), std=1.0)
+                layer_init(nn.Linear(max(32, last_size // 2), 1), std=1.0),
             )
             self.advantage_head = nn.Sequential(
                 layer_init(nn.Linear(last_size, max(32, last_size // 2))),
                 act_fn(),
-                layer_init(nn.Linear(max(32, last_size // 2), n_actions), std=0.01)
+                layer_init(nn.Linear(max(32, last_size // 2), n_actions), std=0.01),
             )
         else:
             self.head = layer_init(nn.Linear(last_size, n_actions), std=1.0)
@@ -184,7 +191,7 @@ class MLPQNetwork(nn.Module):
             pad = torch.zeros((x.shape[0], self.num_in_features - x.shape[-1]), dtype=x.dtype, device=x.device)
             x = torch.cat([x, pad], dim=-1)
         elif hasattr(self, "num_in_features") and x.shape[-1] > self.num_in_features:
-            x = x[:, :self.num_in_features]
+            x = x[:, : self.num_in_features]
         feat = self.network(x)
         if self.dueling:
             val = self.value_head(feat)
@@ -194,6 +201,7 @@ class MLPQNetwork(nn.Module):
 
     def get_q_values(self, x):
         return self.forward(x)
+
 
 class MLPValueNetwork(nn.Module):
     def __init__(self, num_in_features=4, hidden_sizes=[64, 64], activation=None, dropout=0.0):
@@ -230,6 +238,7 @@ class MLPValueNetwork(nn.Module):
         x = x.float().reshape(x.shape[0], -1)
         return self.network(x)
 
+
 class QNetwork(nn.Module):
     def __init__(self, n_actions=18):
         super().__init__()
@@ -253,5 +262,3 @@ class QNetwork(nn.Module):
 # Standard architecture aliases (decoupled from BlendRL legacy naming)
 NatureCNN = NeuralBlenderActor
 StandardMLP = NeuralBlenderMLP
-
-

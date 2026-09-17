@@ -1,6 +1,5 @@
-from abc import ABC, abstractmethod
-
 import itertools
+from abc import ABC, abstractmethod
 
 
 def flatten(x): return [z for y in x for z in (
@@ -192,7 +191,7 @@ class Var(Term):
         return 1
 
 
-class FuncSymbol():
+class FuncSymbol:
     """Function symbols in first-order logic.
 
     A class of function symbols in first-oder logic.
@@ -367,7 +366,7 @@ class FuncTerm(Term):
         return var_list
 
 
-class Predicate():
+class Predicate:
     """Predicats in first-order logic.
 
     A class of predicates in first-order logic.
@@ -415,7 +414,7 @@ class NeuralPredicate(Predicate):
     """
 
     def __init__(self, name, arity, dtypes):
-        super(NeuralPredicate, self).__init__(name, arity, dtypes)
+        super().__init__(name, arity, dtypes)
         self.name = name
         self.arity = arity
         self.dtypes = dtypes
@@ -435,7 +434,7 @@ class NeuralPredicate(Predicate):
         return self.__str__() < other.__str__()
 
 
-class Atom(object):
+class Atom:
     """Atoms in first-oder logic.
 
     A class of atoms: p(t1, ..., tn)
@@ -564,7 +563,7 @@ class Atom(object):
         return result
 
 
-class Clause(object):
+class Clause:
     """Clauses in first-oder logic.
 
     A class of clauses in first-order logic: A :- B1, ..., Bn.
@@ -700,7 +699,7 @@ class Clause(object):
         # remove duplication
         result = []
         for v in var_list:
-            if not v in result:
+            if v not in result:
                 result.append(v)
         return result
 

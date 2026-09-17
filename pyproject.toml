@@ -85,6 +85,9 @@ line-length = 120
 extend-exclude = [
     "src/fyd_repo",
     "src/cew_repo",
+    "src/nsfr",
+    "src/nudge",
+    "src/neumann",
     "in/envs",
     "venv",
 ]
@@ -99,12 +102,17 @@ select = [
     "UP",   # pyupgrade
 ]
 ignore = [
+    "E402",  # module level import not at top of file
     "E501",  # line too long (handled by formatter)
     "E701",  # multiple statements on one line
+    "E702",  # multiple statements on one line (semicolon)
     "E741",  # ambiguous variable names (common in math-heavy RL code)
     "F401",  # unused imports (too noisy during initial adoption)
+    "F811",  # redefinition of unused function
     "F841",  # unused local variables (too noisy during initial adoption)
     "W293",  # blank line contains whitespace
+    "UP006", # non-standard generic types
+    "UP035", # deprecated typing imports
 ]
 
 [tool.ruff.lint.isort]

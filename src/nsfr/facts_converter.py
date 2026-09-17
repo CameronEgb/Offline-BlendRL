@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
-from .fol.logic import NeuralPredicate
 from tqdm import tqdm
+
+from .fol.logic import NeuralPredicate
 
 
 class FactsConverter(nn.Module):
@@ -10,7 +11,7 @@ class FactsConverter(nn.Module):
     """
 
     def __init__(self, lang, valuation_module, device=None):
-        super(FactsConverter, self).__init__()
+        super().__init__()
         # self.e = perception_module.e
         self.e = 0
         #self.d = perception_module.d
@@ -20,10 +21,10 @@ class FactsConverter(nn.Module):
         self.device = device
 
     def __str__(self):
-        return "FactsConverter(entities={}, dimension={})".format(self.e, self.d)
+        return f"FactsConverter(entities={self.e}, dimension={self.d})"
 
     def __repr__(self):
-        return "FactsConverter(entities={}, dimension={})".format(self.e, self.d)
+        return f"FactsConverter(entities={self.e}, dimension={self.d})"
 
     def forward(self, Z, G, B):
         return self.convert(Z, G, B)

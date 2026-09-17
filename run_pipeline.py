@@ -2,6 +2,7 @@
 
 Coordinates online and offline RL methods, Optuna sweeps, and Slurm cluster submissions.
 """
+
 import argparse
 import os
 import sys
@@ -11,21 +12,21 @@ from pathlib import Path
 import hydra
 from hydra import compose, initialize
 
-from src.pipeline.config import (
-    normalize_agent_name, parse_method_list, resolve_experiment_config_name
-)
+from src.pipeline.config import normalize_agent_name, parse_method_list, resolve_experiment_config_name
 from src.pipeline.datasets import run_plotting
+from src.pipeline.exceptions import ConfigurationError
 from src.pipeline.optuna_utils import launch_optuna_dashboard
 from src.pipeline.slurm import generate_sbatch_header, submit_sbatch
 from src.pipeline.validation import validate_experiment_config
-from src.pipeline.exceptions import ConfigurationError
 
 
 def main():
     if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
         print("Usage: python run_pipeline.py <group>/<experiment_id> [Hydra Overrides]")
         print("Standard Orchestration Overrides (use Hydra syntax, e.g. key=value):")
-        print("  site=local            Interactive CLI execution (default, for local machine or cluster interactive node)")
+        print(
+            "  site=local            Interactive CLI execution (default, for local machine or cluster interactive node)"
+        )
         print("  site=ncshare          Slurm cluster execution on NCShare")
         print("  site=arc              Slurm cluster execution on ARC")
         print("  no_plot=true          Skip automatic plotting")
@@ -54,7 +55,7 @@ def main():
             continue
         if "=" in arg:
             overrides_for_compose.append(arg)
-            
+
     # Subprocesses need everything PLUS the internal experiment tracking
     sanitized_extra_args = list(extra_args)
     sanitized_extra_args.append(f"++experiment_name={experiment_arg}")
@@ -67,11 +68,11 @@ def main():
         exp_stem = Path(experiment_arg).stem
         if not cfg.get("experiment_id") or cfg.experiment_id == "default_exp":
             cfg.experiment_id = exp_stem
-            
+
         exp_group = Path(experiment_arg).parent.name if "/" in experiment_arg else "ungrouped"
         if not cfg.get("group") or cfg.group == "ungrouped":
             cfg.group = exp_group
-            
+
         # Ensure it's in extra args so it passes to children
         if not any("experiment_id=" in arg for arg in sanitized_extra_args):
             sanitized_extra_args.append(f"++experiment_id={cfg.experiment_id}")
@@ -100,7 +101,7 @@ def main():
 
     # Execution mode is determined solely by the site profile: site=local -> interactive CLI, any other site -> Slurm cluster
     site_name = getattr(cfg.site, "name", "local") if hasattr(cfg, "site") else "local"
-    is_interactive = (site_name == "local")
+    is_interactive = site_name == "local"
     print(f"Execution Mode: {'Interactive (Local CLI)' if is_interactive else f'Slurm Cluster ({site_name})'}")
 
     storage_url = None
@@ -109,19 +110,21 @@ def main():
         if storage_url:
             storage_url = str(storage_url).replace("${experiment_id}", cfg.experiment_id)
         import os
+
         os.makedirs("results/optuna", exist_ok=True)
-        
+
     if is_interactive and storage_url and (cfg.get("dash") or cfg.get("dash_only")):
         launch_optuna_dashboard(storage_url)
         if cfg.get("dash_only"):
             print("Dashboard running in persistent mode. Press Ctrl+C to exit.")
             import time
+
             try:
                 while True:
                     time.sleep(1)
             except KeyboardInterrupt:
                 sys.exit(0)
-                
+
     if cfg.get("dash_only"):
         print("Error: Could not find Optuna storage URL in configuration.")
         sys.exit(1)
@@ -162,11 +165,13 @@ def main():
 
     # Introspect task_fn to see if it accepts args (backwards compatibility for custom tasks)
     import inspect
+
     sig = inspect.signature(task_fn)
     if "args" in sig.parameters:
         task_fn(cfg, None, context)
     else:
         task_fn(cfg, context)
+
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] not in ("-h", "--help"):

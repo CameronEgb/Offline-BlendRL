@@ -1,12 +1,14 @@
-from typing import Dict
 from abc import ABC
-from nsfr.utils.common import load_module
+from typing import Dict
+
 import torch
+
+from nsfr.utils.common import load_module
 
 
 class NudgeBaseEnv(ABC):
     name: str
-    pred2action: Dict[str, int]  # predicate name to action index
+    pred2action: dict[str, int]  # predicate name to action index
     env: object  # the wrapped environment
     raw_env: object # the raw RGB environment, not RAM
 

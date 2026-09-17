@@ -19,7 +19,7 @@ from omegaconf import DictConfig
 
 class BaseAgent(L.LightningModule, ABC):
     """Abstract base class for all RL agents in the BlendRL framework.
-    
+
     Provides:
         - Unified config traversal (get_cfg)
         - Soft target network updates (_soft_update)
@@ -38,12 +38,12 @@ class BaseAgent(L.LightningModule, ABC):
 
     def get_cfg(self, key, default=None):
         """Unified config traversal — searches agent, env, then top-level config.
-        
+
         Handles Hydra's nested DictConfig structures, dotted keys (e.g. 'cql.cql_alpha'),
         and sub-dictionaries (e.g., cfg.agent.cew, cfg.agent.cql, cfg.agent.blendrl).
         """
         cfg = self.cfg
-        
+
         def _get_nested(root, k):
             if not isinstance(root, (dict, DictConfig)):
                 return None, False
@@ -107,34 +107,31 @@ class BaseAgent(L.LightningModule, ABC):
 
     def _init_env(self, n_envs=None):
         """Initialize the vectorized environment and extract observation/action spaces.
-        
+
         Args:
             n_envs: Number of parallel environments. Defaults to cfg value for online,
                     1 for offline (evaluation only).
-        
+
         Returns:
             Observation tensor from env.reset().
         """
         from src.core.env_vectorized import VectorizedBaseEnv
-        
+
         if n_envs is None:
             n_envs = self.get_cfg("num_envs", 4)
-        
+
         algorithm = self.get_cfg("algorithm", self.get_cfg("name", self.cfg.env.name))
-        
+
         self.env = VectorizedBaseEnv.from_name(
-            self.cfg.env.name,
-            n_envs=n_envs,
-            mode=algorithm,
-            seed=self.get_cfg("seed", getattr(self.cfg, "seed", 1))
+            self.cfg.env.name, n_envs=n_envs, mode=algorithm, seed=self.get_cfg("seed", getattr(self.cfg, "seed", 1))
         )
-        
+
         obs = self.env.reset()
         if isinstance(obs, tuple):
             obs = obs[0]
         self.observation_space = obs.shape[1:]
         self.n_actions = self.env.n_actions if not callable(self.env.n_actions) else self.env.n_actions()
-        
+
         return obs
 
     # ──────────────────────────────────────────────
@@ -144,7 +141,7 @@ class BaseAgent(L.LightningModule, ABC):
     @abstractmethod
     def get_action_and_value(self, obs, logic_obs=None, action=None):
         """Compute action, log probability, entropy, and value for given observations.
-        
+
         Returns:
             Tuple of (action, logprob, entropy, value) — or with blend_entropy for hybrid agents.
         """
@@ -157,7 +154,7 @@ class BaseAgent(L.LightningModule, ABC):
 
     def get_action_probs(self, obs, logic_obs=None):
         """Compute action probabilities according to the agent's policy paradigm.
-        
+
         Subclasses should override this method to define their canonical policy distribution.
         """
         if hasattr(self, "actor") and hasattr(self.actor, "get_action_probs"):
@@ -171,7 +168,11 @@ class BaseAgent(L.LightningModule, ABC):
 
     def get_blending_weights(self, obs: torch.Tensor, logic_obs: torch.Tensor | None = None) -> torch.Tensor | None:
         """Return blending weights for hybrid/modular architectures if applicable, else None."""
-        if hasattr(self, "model") and hasattr(self.model, "actor") and hasattr(self.model.actor, "to_blender_policy_distribution"):
+        if (
+            hasattr(self, "model")
+            and hasattr(self.model, "actor")
+            and hasattr(self.model.actor, "to_blender_policy_distribution")
+        ):
             if getattr(self, "is_modular", False) and hasattr(self, "_prepare_logic_obs"):
                 logic_obs = self._prepare_logic_obs(obs, logic_obs)
             return self.model.actor.to_blender_policy_distribution(obs, logic_obs)
@@ -180,7 +181,7 @@ class BaseAgent(L.LightningModule, ABC):
 
 class OfflineAgentBase(BaseAgent):
     """Base class for all offline RL agents (IQL, CQL, CEW, and their BlendRL variants).
-    
+
     Provides:
         - Device transfer for train and validation readers
         - Interval-based dataset limit management (on_train_epoch_start)
@@ -198,7 +199,7 @@ class OfflineAgentBase(BaseAgent):
 
     def on_train_epoch_start(self):
         """Set dataset limit based on current training interval.
-        
+
         Implements the progressive data exposure schedule defined by
         intervals_count and epochs_per_interval (when intervals_count > 1).
         """
@@ -226,6 +227,10 @@ class OfflineAgentBase(BaseAgent):
             interval_size = cfg.total_timesteps // intervals_count
             current_transitions = interval_size * (current_interval + 1)
         else:
-            current_transitions = cfg.total_timesteps if hasattr(cfg, "total_timesteps") and isinstance(cfg.total_timesteps, (int, float)) else len(self.trainer.datamodule.reader)
+            current_transitions = (
+                cfg.total_timesteps
+                if hasattr(cfg, "total_timesteps") and isinstance(cfg.total_timesteps, (int, float))
+                else len(self.trainer.datamodule.reader)
+            )
         self.log("transitions", float(current_transitions), logger=False, prog_bar=True)
         return current_transitions

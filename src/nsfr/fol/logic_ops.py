@@ -1,4 +1,4 @@
-from .logic import Clause, Atom, FuncTerm, Const, Var
+from .logic import Atom, Clause, Const, FuncTerm, Var
 
 
 def subs(exp, target_var, const):

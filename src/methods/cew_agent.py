@@ -1,32 +1,35 @@
+from typing import Any, Dict, Optional
+
+import lightning as L
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-import lightning as L
-import numpy as np
-from typing import Any, Dict, Optional
 from omegaconf import DictConfig
-from src.methods.cew_utils import run_CLIP, run_ECM, rule_creation, run_FYD, MultiFLC, stabilize_antecedents
-from src.methods.registry import register_agent
+
 from src.methods.base_agent import OfflineAgentBase
+from src.methods.cew_utils import MultiFLC, rule_creation, run_CLIP, run_ECM, run_FYD, stabilize_antecedents
+from src.methods.registry import register_agent
+
 
 @register_agent("cew", "cew_fyd")
 class CEWAgent(OfflineAgentBase):
-    def __init__(self, cfg: Dict[str, Any]):
+    def __init__(self, cfg: dict[str, Any]):
         super().__init__(cfg)
         self.save_hyperparameters()
-        
+
         # Helper to get config values
         self.lr = self.get_cfg("lr", 3e-4)
         self.algorithm = self.get_cfg("algorithm", self.get_cfg("name", "cew"))
-        
+
         # Initialize internal state
         self.fuzzy_model = None
         self.target_fuzzy_model = None
         self.rules = None
         self.antecedents = None
         self.self_organized = False
-        
+
         # Setup for evaluation
         self._init_env(n_envs=1)
         self.eval_env = self.env
@@ -40,7 +43,7 @@ class CEWAgent(OfflineAgentBase):
     def on_train_epoch_start(self):
         """Handle interval-based dataset scaling and self-organization."""
         super().on_train_epoch_start()
-        
+
         epochs_per_interval = self.get_cfg("epochs_per_interval", 1)
         # Re-run self-organization at the start of each interval
         if self.current_epoch % epochs_per_interval == 0:
@@ -53,33 +56,36 @@ class CEWAgent(OfflineAgentBase):
         sample_size = min(len(datamodule.reader), 20000)
         batch = datamodule.reader.sample(sample_size, last=True)
         obs = batch["obs"].cpu().numpy()
-        
+
         # 1. CLIP: Categorical Learning Induced Partitioning
         eps = self.get_cfg("eps", 0.1)
         kappa = self.get_cfg("kappa", 0.6)
         new_antecedents = run_CLIP(obs, obs.min(axis=0), obs.max(axis=0), eps=eps, kappa=kappa)
-        
+
         # 2. ECM: Evolving Clustering Method
         dthr = self.get_cfg("ecm_dthr", 0.1)
         clusters = run_ECM(obs, [], dthr)
         reduced_X = np.array([c.center for c in clusters])
-        
+
         # 3. WM: Wang-Mendel Rule Creation
         new_antecedents, new_rules = rule_creation(reduced_X, new_antecedents)
-        
+
         # 4. Stabilization: Mamdani Autoencoder (Refining fuzzy sets)
         if self.get_cfg("stabilize", True):
             new_antecedents = stabilize_antecedents(
-                obs, new_antecedents, new_rules, "cpu",
+                obs,
+                new_antecedents,
+                new_rules,
+                "cpu",
                 lr=self.get_cfg("stabilize_lr", 1e-3),
-                epochs=self.get_cfg("stabilize_epochs", 10)
+                epochs=self.get_cfg("stabilize_epochs", 10),
             )
-        
+
         # 5. FYD: Frequent-Yet-Discernible (Pruning)
         if "fyd" in self.algorithm:
             top_k = self.get_cfg("fyd_top_k", None)
             new_rules, new_antecedents = run_FYD(new_rules, obs, new_antecedents, top_k=top_k)
-            
+
         # Check if architecture changed before resetting weights
         if self.fuzzy_model is not None:
             # Check rule count and antecedent count
@@ -100,17 +106,14 @@ class CEWAgent(OfflineAgentBase):
             antecedents=self.antecedents,
             rules=self.rules,
             learning_rate=self.lr,
-            cql_alpha=self.get_cfg("cql_alpha", 1.0)
+            cql_alpha=self.get_cfg("cql_alpha", 1.0),
         ).to(self.device)
-        
+
         self.target_fuzzy_model = MultiFLC(
-            n_inputs=obs.shape[1],
-            n_outputs=self.n_actions,
-            antecedents=self.antecedents,
-            rules=self.rules
+            n_inputs=obs.shape[1], n_outputs=self.n_actions, antecedents=self.antecedents, rules=self.rules
         ).to(self.device)
         self.target_fuzzy_model.load_state_dict(self.fuzzy_model.state_dict())
-        
+
         self.opt_fuzzy = optim.Adam(self.fuzzy_model.parameters(), lr=self.lr)
         self.self_organized = True
         print(f"Self-organization complete. MIMO Rules: {len(self.rules)}. Weights reset.")
@@ -118,7 +121,7 @@ class CEWAgent(OfflineAgentBase):
     def training_step(self, batch, batch_idx):
         if not self.self_organized:
             return
-            
+
         datamodule = getattr(self.trainer, "datamodule", None)
         if isinstance(batch, dict) and "obs" in batch:
             real_batch = batch
@@ -130,49 +133,51 @@ class CEWAgent(OfflineAgentBase):
                 real_batch = datamodule.reader.sample(batch_size)
         else:
             return
-            
+
         obs = real_batch["obs"].to(self.device, non_blocking=True)
         actions = real_batch["action"].to(self.device, non_blocking=True)
         rewards = real_batch["reward"].to(self.device, non_blocking=True)
         next_obs = real_batch["next_obs"].to(self.device, non_blocking=True)
         dones = real_batch["done"].to(self.device, non_blocking=True)
-        
+
         with torch.no_grad():
             next_q = self.target_fuzzy_model(next_obs)
             next_v = torch.max(next_q, dim=1)[0]
             q_target = rewards + self.get_cfg("gamma", 0.99) * next_v * (1 - dones)
-            
+
         all_q_values = self.fuzzy_model(obs)
         q_action = all_q_values.gather(1, actions.unsqueeze(1)).squeeze(1)
-        
+
         # CQL component: logsumexp(Q) - Q(s,a)
         logsumexp_qvalues = torch.logsumexp(all_q_values, dim=1)
         cql_loss = (logsumexp_qvalues - q_action).mean()
-        
+
         bellman_loss = F.mse_loss(q_action, q_target)
-        
+
         # Entropy bonus
         probs = torch.softmax(all_q_values, dim=1)
         entropy = -torch.sum(probs * torch.log(probs + 1e-12), dim=1).mean()
-        
+
         total_loss = bellman_loss + self.fuzzy_model.cql_alpha * cql_loss - 0.01 * entropy
-        
+
         self.opt_fuzzy.zero_grad()
         self.manual_backward(total_loss)
         self.opt_fuzzy.step()
-        
+
         self._soft_update(self.fuzzy_model, self.target_fuzzy_model)
-        
+
         self._log_offline_transitions()
 
-        self.log_dict({
-            "losses/total_loss": total_loss,
-            "losses/bellman_loss": bellman_loss,
-            "losses/cql_loss": cql_loss,
-            "losses/entropy": entropy,
-            "train/q_mean": all_q_values.mean(),
-            "train/rules": float(len(self.rules))
-        })
+        self.log_dict(
+            {
+                "losses/total_loss": total_loss,
+                "losses/bellman_loss": bellman_loss,
+                "losses/cql_loss": cql_loss,
+                "losses/entropy": entropy,
+                "train/q_mean": all_q_values.mean(),
+                "train/rules": float(len(self.rules)),
+            }
+        )
 
     def on_validation_epoch_start(self):
         self._val_step_losses = []
@@ -193,21 +198,21 @@ class CEWAgent(OfflineAgentBase):
         rewards = val_batch["reward"].to(self.device, non_blocking=True)
         next_obs = val_batch["next_obs"].to(self.device, non_blocking=True)
         dones = val_batch["done"].to(self.device, non_blocking=True)
-            
+
         with torch.no_grad():
             next_q = self.target_fuzzy_model(next_obs)
             next_v = torch.max(next_q, dim=1)[0]
             q_target = rewards + self.get_cfg("gamma", 0.99) * next_v * (1 - dones)
-            
+
             all_q_values = self.fuzzy_model(obs)
             q_action = all_q_values.gather(1, actions.unsqueeze(1)).squeeze(1)
-            
+
             bellman_loss = F.mse_loss(q_action, q_target)
             logsumexp_qvalues = torch.logsumexp(all_q_values, dim=1)
             cql_alpha = getattr(self.fuzzy_model, "cql_alpha", self.get_cfg("cql_alpha", 1.0))
             cql_loss = (logsumexp_qvalues - q_action).mean()
             val_loss = bellman_loss + cql_alpha * cql_loss
-            
+
         self.log("val/loss", val_loss, prog_bar=True, on_epoch=True, on_step=False, sync_dist=True)
         self.log("val/bellman_loss", bellman_loss, prog_bar=False, on_epoch=True, on_step=False, sync_dist=True)
         self.log("val/cql_loss", cql_loss, prog_bar=False, on_epoch=True, on_step=False, sync_dist=True)
@@ -228,44 +233,49 @@ class CEWAgent(OfflineAgentBase):
         # Dummy optimizer to satisfy Lightning until self_organize is called
         return optim.Adam([torch.zeros(1, requires_grad=True)], lr=1e-4)
 
-    def on_save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
+    def on_save_checkpoint(self, checkpoint: dict[str, Any]) -> None:
         checkpoint["cew_rules"] = self.rules
         checkpoint["cew_antecedents"] = self.antecedents
         checkpoint["cew_self_organized"] = self.self_organized
 
-    def on_load_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
+    def on_load_checkpoint(self, checkpoint: dict[str, Any]) -> None:
         sd = checkpoint.get("state_dict", {})
         if "cew_rules" in checkpoint and checkpoint["cew_rules"] is not None and "cew_antecedents" in checkpoint:
             self.rules = checkpoint["cew_rules"]
             self.antecedents = checkpoint["cew_antecedents"]
             self.self_organized = checkpoint.get("cew_self_organized", True)
-            n_in = self.observation_space[0] if hasattr(self, "observation_space") and len(self.observation_space) > 0 else 46
+            n_in = (
+                self.observation_space[0]
+                if hasattr(self, "observation_space") and len(self.observation_space) > 0
+                else 46
+            )
             self.fuzzy_model = MultiFLC(
                 n_inputs=n_in,
                 n_outputs=self.n_actions,
                 antecedents=self.antecedents,
                 rules=self.rules,
                 learning_rate=self.lr,
-                cql_alpha=self.get_cfg("cql_alpha", 1.0)
+                cql_alpha=self.get_cfg("cql_alpha", 1.0),
             ).to("cpu")
             self.target_fuzzy_model = MultiFLC(
-                n_inputs=n_in,
-                n_outputs=self.n_actions,
-                antecedents=self.antecedents,
-                rules=self.rules
+                n_inputs=n_in, n_outputs=self.n_actions, antecedents=self.antecedents, rules=self.rules
             ).to("cpu")
         elif "fuzzy_model.flcs.0.links" in sd:
             self.fuzzy_model = MultiFLC.from_state_dict_shapes("fuzzy_model.", sd, self.n_actions).to("cpu")
-            self.target_fuzzy_model = MultiFLC.from_state_dict_shapes("target_fuzzy_model.", sd, self.n_actions).to("cpu")
+            self.target_fuzzy_model = MultiFLC.from_state_dict_shapes("target_fuzzy_model.", sd, self.n_actions).to(
+                "cpu"
+            )
             self.self_organized = True
 
     def get_action_and_value(self, obs, logic_obs=None, action=None):
         if not self.self_organized or self.fuzzy_model is None:
-            return torch.zeros(obs.shape[0], dtype=torch.long, device=self.device), \
-                   torch.zeros(obs.shape[0], device=self.device), \
-                   torch.zeros(obs.shape[0], device=self.device), \
-                   torch.zeros(obs.shape[0], device=self.device)
-        
+            return (
+                torch.zeros(obs.shape[0], dtype=torch.long, device=self.device),
+                torch.zeros(obs.shape[0], device=self.device),
+                torch.zeros(obs.shape[0], device=self.device),
+                torch.zeros(obs.shape[0], device=self.device),
+            )
+
         obs_cpu = obs.to("cpu")
         act, log_p, ent, val = self.fuzzy_model.get_action_and_value(obs_cpu)
         return act.to(self.device), log_p.to(self.device), ent.to(self.device), val.to(self.device)

@@ -2,15 +2,16 @@
 
 Generates and submits online, offline, and consolidated training jobs to Slurm cluster.
 """
+
 import shlex
 from pathlib import Path
 
+from src.pipeline.commands import build_offline_overrides, build_online_overrides, get_sweep_direction
 from src.pipeline.config import normalize_agent_name
 from src.pipeline.datasets import ensure_online_dataset_path, fast_purge_dir, resolve_dataset_path
 from src.pipeline.optuna_utils import create_optuna_study, delete_optuna_study, get_next_study_name
-from src.pipeline.slurm import generate_sbatch_header, generate_sbatch_script, submit_sbatch
-from src.pipeline.commands import build_online_overrides, build_offline_overrides, get_sweep_direction
 from src.pipeline.runtime import get_shell_env_block, get_shell_python_cmd
+from src.pipeline.slurm import generate_sbatch_header, generate_sbatch_script, submit_sbatch
 
 
 def run_slurm_training(cfg, context):
@@ -55,12 +56,7 @@ def run_slurm_training(cfg, context):
     if should_consolidate:
         print(f"\n=== Preparing Consolidated Slurm Job ({cfg.experiment_id}) ===")
         job_name = f"all_{cfg.experiment_id}"
-        script_content = generate_sbatch_header(
-            job_name=job_name,
-            log_dir=log_dir,
-            cfg=cfg,
-            is_consolidated=True
-        )
+        script_content = generate_sbatch_header(job_name=job_name, log_dir=log_dir, cfg=cfg, is_consolidated=True)
         script_content += "\n" + get_shell_env_block(site_cfg) + "\n"
         python_cmd = get_shell_python_cmd(site_cfg)
 
@@ -75,7 +71,7 @@ def run_slurm_training(cfg, context):
                     agent_name=agent_name_internal,
                     dataset_path=dataset_path,
                     local_val=False,
-                    extra_args=sanitized_extra_args
+                    extra_args=sanitized_extra_args,
                 )
                 if is_sweep:
                     study_name = get_next_study_name(cfg.group, cfg.experiment_id, agent_name_internal)
@@ -89,7 +85,9 @@ def run_slurm_training(cfg, context):
         # 2. Offline Training Commands (All methods & datasets in parallel)
         if not cfg.get("no_offline", False):
             total_runs = len(offline_list) * len(dataset_list)
-            script_content += f'echo "=== [Phase: Offline Training] Launching all {total_runs} models concurrently ==="\n\n'
+            script_content += (
+                f'echo "=== [Phase: Offline Training] Launching all {total_runs} models concurrently ==="\n\n'
+            )
             for agent_config in offline_list:
                 agent_name_internal = normalize_agent_name(agent_config)
                 for dataset_id in dataset_list:
@@ -100,12 +98,16 @@ def run_slurm_training(cfg, context):
                             dataset_id=dataset_name_internal,
                             group=cfg.group,
                             experiment_id=cfg.experiment_id,
-                            yaml_ds_path=yaml_ds_path
+                            yaml_ds_path=yaml_ds_path,
                         )
                     except FileNotFoundError:
                         dataset_path = Path("in/datasets") / cfg.group / dataset_name_internal
 
-                    target_agent_name = f"{agent_name_internal}_{dataset_name_internal}" if len(dataset_list) > 1 else agent_name_internal
+                    target_agent_name = (
+                        f"{agent_name_internal}_{dataset_name_internal}"
+                        if len(dataset_list) > 1
+                        else agent_name_internal
+                    )
                     cmd_args = build_offline_overrides(
                         experiment=cfg.get("experiment_name", ""),
                         agent_config=agent_config,
@@ -113,7 +115,7 @@ def run_slurm_training(cfg, context):
                         dataset_path=str(dataset_path),
                         local_val=False,
                         dataset_id=dataset_id,
-                        extra_args=sanitized_extra_args
+                        extra_args=sanitized_extra_args,
                     )
                     if is_sweep:
                         study_name = get_next_study_name(cfg.group, cfg.experiment_id, target_agent_name)
@@ -139,17 +141,21 @@ def run_slurm_training(cfg, context):
                 dataset_name_internal = normalize_agent_name(dataset_id)
                 for agent_config in offline_list:
                     agent_name_internal = normalize_agent_name(agent_config)
-                    target_agent_name = f"{agent_name_internal}_{dataset_name_internal}" if len(dataset_list) > 1 else agent_name_internal
+                    target_agent_name = (
+                        f"{agent_name_internal}_{dataset_name_internal}"
+                        if len(dataset_list) > 1
+                        else agent_name_internal
+                    )
                     study_name = f"{cfg.experiment_id}_{target_agent_name}"
                     script_content += f"{python_cmd} -c \"from src.pipeline.optuna_utils import promote_best_trial_checkpoint; promote_best_trial_checkpoint('{cfg.group}', '{cfg.experiment_id}', '{target_agent_name}', '{storage_arg}', '{study_name}')\"\n"
-            script_content += '\n'
+            script_content += "\n"
 
         # 3. Final Plotting
         if not cfg.get("no_plot", False):
             plot_cmd = f"{python_cmd} plot/manager.py {cfg.group}/{cfg.experiment_id}"
             if cfg.get("plot_style", None):
                 plot_cmd += f" --style {cfg.get('plot_style', None)}"
-            script_content += f'echo "=== [Generating Final Plots] ==="\n'
+            script_content += 'echo "=== [Generating Final Plots] ==="\n'
             script_content += f"{plot_cmd}\n\n"
 
         slurm_file = log_dir / f"consolidated_{cfg.experiment_id}.slurm"
@@ -174,12 +180,12 @@ def run_slurm_training(cfg, context):
     if not cfg.get("no_online", False):
         for agent_config in online_list:
             agent_name_internal = normalize_agent_name(agent_config)
-            
+
             dataset_path, has_pkl = ensure_online_dataset_path(
                 group=cfg.group,
                 experiment_id=cfg.experiment_id,
                 agent_name_internal=agent_name_internal,
-                is_sweep=is_sweep
+                is_sweep=is_sweep,
             )
 
             if has_pkl:
@@ -188,7 +194,7 @@ def run_slurm_training(cfg, context):
                 continue
 
             job_name = f"{agent_name_internal}_{cfg.experiment_id}"
-            
+
             dataset_arg = str(dataset_path) if not is_sweep else None
             overrides_slurm = build_online_overrides(
                 experiment=cfg.get("experiment_name", ""),
@@ -196,15 +202,15 @@ def run_slurm_training(cfg, context):
                 agent_name=agent_name_internal,
                 dataset_path=dataset_arg,
                 local_val=False,
-                extra_args=sanitized_extra_args
+                extra_args=sanitized_extra_args,
             )
-            
+
             if is_sweep:
                 study_name = get_next_study_name(cfg.group, cfg.experiment_id, agent_name_internal)
                 direction = get_sweep_direction(cfg, "online")
                 create_optuna_study(storage_url, study_name, direction=direction)
                 overrides_slurm.append(f"++hydra.sweeper.study_name={study_name}")
-            
+
             script_content = generate_sbatch_script(
                 job_name, overrides_slurm, log_dir=str(log_dir), cfg=cfg, is_consolidated=False
             )
@@ -225,7 +231,9 @@ def run_slurm_training(cfg, context):
 
             for dataset_id in dataset_list:
                 dataset_name_internal = normalize_agent_name(dataset_id)
-                target_agent_name = f"{agent_name_internal}_{dataset_name_internal}" if len(dataset_list) > 1 else agent_name_internal
+                target_agent_name = (
+                    f"{agent_name_internal}_{dataset_name_internal}" if len(dataset_list) > 1 else agent_name_internal
+                )
                 job_name = f"{target_agent_name}_{cfg.experiment_id}"
 
                 yaml_ds_path = cfg.mode.get("dataset_path", None) if hasattr(cfg, "mode") else None
@@ -234,7 +242,7 @@ def run_slurm_training(cfg, context):
                         dataset_id=dataset_name_internal,
                         group=cfg.group,
                         experiment_id=cfg.experiment_id,
-                        yaml_ds_path=yaml_ds_path
+                        yaml_ds_path=yaml_ds_path,
                     )
                 except FileNotFoundError:
                     dataset_path = Path("in/datasets") / cfg.group / dataset_name_internal
@@ -260,7 +268,7 @@ def run_slurm_training(cfg, context):
                     dataset_path=str(dataset_path),
                     local_val=False,
                     dataset_id=dataset_id,
-                    extra_args=sanitized_extra_args
+                    extra_args=sanitized_extra_args,
                 )
 
                 if is_sweep:
@@ -287,7 +295,11 @@ def run_slurm_training(cfg, context):
                     f.write(script_content)
 
                 submitted_idx += 1
-                print(f"[{submitted_idx}/{total_jobs_count}] Submitting Offline [{agent_config}] on [{dataset_id}] ...", end="", flush=True)
+                print(
+                    f"[{submitted_idx}/{total_jobs_count}] Submitting Offline [{agent_config}] on [{dataset_id}] ...",
+                    end="",
+                    flush=True,
+                )
                 job_id = submit_sbatch(script_content)
                 if job_id:
                     job_ids.append(job_id)
@@ -308,7 +320,12 @@ def run_slurm_training(cfg, context):
         plot_cmd = f"{python_cmd} plot/manager.py {cfg.group}/{cfg.experiment_id}"
         if cfg.get("plot_style", None):
             plot_cmd += f" --style {cfg.get('plot_style', None)}"
-        plot_content = plot_header + "\n" + get_shell_env_block(site_cfg) + f"\n\necho \"=== [Generating Final Plots] ===\"\n{plot_cmd}\n"
+        plot_content = (
+            plot_header
+            + "\n"
+            + get_shell_env_block(site_cfg)
+            + f'\n\necho "=== [Generating Final Plots] ==="\n{plot_cmd}\n'
+        )
         plot_slurm_file = log_dir / f"{plot_job_name}.slurm"
         with open(plot_slurm_file, "w") as f:
             f.write(plot_content)

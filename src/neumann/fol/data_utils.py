@@ -7,7 +7,7 @@ from .language import DataType, Language
 from .logic import Const, FuncSymbol, NeuralPredicate, Predicate
 
 
-class DataUtils(object):
+class DataUtils:
     """Utilities about I/O of logic.
     """
 
@@ -15,7 +15,7 @@ class DataUtils(object):
         #if dataset == 'behind-the-scenes':
         # for behind the scenes
         #    self.base_path = lang_base_path + dataset_type + '/'
-        #if: 
+        #if:
         self.base_path = lang_base_path + dataset_type + '/' + dataset + '/'
         with open(lark_path, encoding="utf-8") as grammar:
             self.lp_atom = Lark(grammar.read(), start="atom")

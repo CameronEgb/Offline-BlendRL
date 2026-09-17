@@ -1,10 +1,11 @@
 import itertools
+
 import torch
 
-from .fol.logic_ops import unify, subs_list
+from .fol.logic_ops import subs_list, unify
 
 
-class TensorEncoder(object):
+class TensorEncoder:
     """The tensor encoder for differentiable inference.
 
     A class for tensor encoding in differentiable forward-chaining approach.
@@ -228,7 +229,7 @@ class TensorEncoder(object):
         # {O2: [obj2, obj3, obj4, obj5, obj6, obj7, obj8, obj9, obj10, obj11], O1: [obj1]}
         var_to_consts_dic = {}
         for v, dtype in var_dtype_list:
-            if not v in var_to_consts_dic:
+            if v not in var_to_consts_dic:
                 var_to_consts_dic[v] = self.lang.get_by_dtype(dtype)
         
         # [[obj2, obj3, obj4, obj5, obj6, obj7, obj8, obj9, obj10, obj11], [obj1]]

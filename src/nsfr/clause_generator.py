@@ -1,13 +1,14 @@
-from .utils_beam import get_nsfr_cgen_model
-from .tensor_encoder import TensorEncoder
+import numpy as np
+import torch
+from tqdm import tqdm
+
 from .infer import ClauseBodyInferModule
 from .refinement import RefinementGenerator
-from tqdm import tqdm
-import torch
-import numpy as np
+from .tensor_encoder import TensorEncoder
+from .utils_beam import get_nsfr_cgen_model
 
 
-class ClauseGenerator(object):
+class ClauseGenerator:
     """
     clause generator by refinement and beam search
     Parameters

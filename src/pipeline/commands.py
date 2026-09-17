@@ -5,9 +5,9 @@ across local_runner.py, slurm_runner.py (consolidated), and slurm_runner.py (sta
 """
 
 
-def build_online_overrides(experiment, agent_config, agent_name, dataset_path,
-                           local_val, study_name=None, extra_args=None,
-                           cfg=None):
+def build_online_overrides(
+    experiment, agent_config, agent_name, dataset_path, local_val, study_name=None, extra_args=None, cfg=None
+):
     """Build Hydra override list for online training.
 
     Args:
@@ -42,9 +42,17 @@ def build_online_overrides(experiment, agent_config, agent_name, dataset_path,
     return overrides
 
 
-def build_offline_overrides(experiment, agent_config, agent_name, dataset_path,
-                            local_val=True, study_name=None, extra_args=None,
-                            cfg=None, dataset_id=None):
+def build_offline_overrides(
+    experiment,
+    agent_config,
+    agent_name,
+    dataset_path,
+    local_val=True,
+    study_name=None,
+    extra_args=None,
+    cfg=None,
+    dataset_id=None,
+):
     """Build Hydra override list for offline training.
 
     Args:

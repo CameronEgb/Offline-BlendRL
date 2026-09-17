@@ -15,9 +15,10 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+import matplotlib
 import numpy as np
 import pandas as pd
-import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
@@ -31,7 +32,7 @@ class BlendManifoldPlotter(BasePlotter):
     def __init__(self):
         super().__init__("blend_manifold")
 
-    def run(self, exp_id: str, cli_overrides: Optional[dict] = None):
+    def run(self, exp_id: str, cli_overrides: dict | None = None):
         cfg, group, output_dir = self.get_effective_config(exp_id, cli_overrides)
         clean_exp = Path(exp_id).stem
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -75,6 +76,7 @@ class BlendManifoldPlotter(BasePlotter):
 
             if ood_score is None:
                 from sklearn.neighbors import NearestNeighbors
+
                 nbrs = NearestNeighbors(n_neighbors=20).fit(states)
                 distances, _ = nbrs.kneighbors(states)
                 ood_score = distances[:, -1]
@@ -85,7 +87,17 @@ class BlendManifoldPlotter(BasePlotter):
             x_tsne = tsne.fit_transform(states)
 
             # Row 0: OOD Distance
-            sc_ood = axes[0, c_idx].scatter(x_tsne[:, 0], x_tsne[:, 1], c=ood_pct, cmap=cmap_ood, vmin=0.0, vmax=100.0, alpha=0.7, s=14, edgecolors="none")
+            sc_ood = axes[0, c_idx].scatter(
+                x_tsne[:, 0],
+                x_tsne[:, 1],
+                c=ood_pct,
+                cmap=cmap_ood,
+                vmin=0.0,
+                vmax=100.0,
+                alpha=0.7,
+                s=14,
+                edgecolors="none",
+            )
             axes[0, c_idx].set_title(f"{p_name}\n1. Epistemic OOD Distance", fontsize=11, fontweight="bold")
             axes[0, c_idx].set_xlabel("t-SNE Dim 1", fontsize=9)
             if c_idx == 0:
@@ -93,33 +105,79 @@ class BlendManifoldPlotter(BasePlotter):
             axes[0, c_idx].grid(True, linestyle="--", alpha=0.25)
 
             # Row 1: Joint Continuous Authority
-            sc_auth = axes[1, c_idx].scatter(x_tsne[:, 0], x_tsne[:, 1], c=w_logic, cmap=cmap_authority, vmin=0.0, vmax=1.0, alpha=0.7, s=14, edgecolors="none")
-            axes[1, c_idx].set_title(f"{p_name}\n2. Full Policy Gradient ($w_{{\\mathrm{{logic}}}}$)", fontsize=11, fontweight="bold")
+            sc_auth = axes[1, c_idx].scatter(
+                x_tsne[:, 0],
+                x_tsne[:, 1],
+                c=w_logic,
+                cmap=cmap_authority,
+                vmin=0.0,
+                vmax=1.0,
+                alpha=0.7,
+                s=14,
+                edgecolors="none",
+            )
+            axes[1, c_idx].set_title(
+                f"{p_name}\n2. Full Policy Gradient ($w_{{\\mathrm{{logic}}}}$)", fontsize=11, fontweight="bold"
+            )
             axes[1, c_idx].set_xlabel("t-SNE Dim 1", fontsize=9)
             if c_idx == 0:
                 axes[1, c_idx].set_ylabel("Continuous Authority", fontsize=10, fontweight="bold")
             axes[1, c_idx].grid(True, linestyle="--", alpha=0.25)
 
             # Row 2: Neural Sub-Manifold
-            mask_neural = (w_neural > 0.5)
+            mask_neural = w_neural > 0.5
             n_neu_pct = float(mask_neural.mean() * 100.0)
-            axes[2, c_idx].scatter(x_tsne[:, 0], x_tsne[:, 1], color=c_bg, alpha=0.15, s=10, edgecolors="none", label="Inactive")
-            axes[2, c_idx].scatter(x_tsne[mask_neural, 0], x_tsne[mask_neural, 1], color=c_neural, alpha=0.75, s=18, edgecolors="none", label="Neural > 0.5")
-            axes[2, c_idx].set_title(f"{p_name}\n3. Neural Sub-Manifold ({n_neu_pct:.1f}% of states)", fontsize=11, fontweight="bold", color=c_neural)
+            axes[2, c_idx].scatter(
+                x_tsne[:, 0], x_tsne[:, 1], color=c_bg, alpha=0.15, s=10, edgecolors="none", label="Inactive"
+            )
+            axes[2, c_idx].scatter(
+                x_tsne[mask_neural, 0],
+                x_tsne[mask_neural, 1],
+                color=c_neural,
+                alpha=0.75,
+                s=18,
+                edgecolors="none",
+                label="Neural > 0.5",
+            )
+            axes[2, c_idx].set_title(
+                f"{p_name}\n3. Neural Sub-Manifold ({n_neu_pct:.1f}% of states)",
+                fontsize=11,
+                fontweight="bold",
+                color=c_neural,
+            )
             axes[2, c_idx].set_xlabel("t-SNE Dim 1", fontsize=9)
             if c_idx == 0:
-                axes[2, c_idx].set_ylabel("Neural Sub-Manifold\n($w_{\\mathrm{neural}} > 0.5$)", fontsize=10, fontweight="bold")
+                axes[2, c_idx].set_ylabel(
+                    "Neural Sub-Manifold\n($w_{\\mathrm{neural}} > 0.5$)", fontsize=10, fontweight="bold"
+                )
             axes[2, c_idx].grid(True, linestyle="--", alpha=0.25)
 
             # Row 3: Logic Sub-Manifold
-            mask_logic = (w_logic >= 0.5)
+            mask_logic = w_logic >= 0.5
             n_log_pct = float(mask_logic.mean() * 100.0)
-            axes[3, c_idx].scatter(x_tsne[:, 0], x_tsne[:, 1], color=c_bg, alpha=0.15, s=10, edgecolors="none", label="Inactive")
-            axes[3, c_idx].scatter(x_tsne[mask_logic, 0], x_tsne[mask_logic, 1], color=c_logic, alpha=0.75, s=18, edgecolors="none", label="Logic ≥ 0.5")
-            axes[3, c_idx].set_title(f"{p_name}\n4. Logic Sub-Manifold ({n_log_pct:.1f}% of states)", fontsize=11, fontweight="bold", color=c_logic)
+            axes[3, c_idx].scatter(
+                x_tsne[:, 0], x_tsne[:, 1], color=c_bg, alpha=0.15, s=10, edgecolors="none", label="Inactive"
+            )
+            axes[3, c_idx].scatter(
+                x_tsne[mask_logic, 0],
+                x_tsne[mask_logic, 1],
+                color=c_logic,
+                alpha=0.75,
+                s=18,
+                edgecolors="none",
+                label="Logic ≥ 0.5",
+            )
+            axes[3, c_idx].set_title(
+                f"{p_name}\n4. Logic Sub-Manifold ({n_log_pct:.1f}% of states)",
+                fontsize=11,
+                fontweight="bold",
+                color=c_logic,
+            )
             axes[3, c_idx].set_xlabel("t-SNE Dim 1", fontsize=9)
             if c_idx == 0:
-                axes[3, c_idx].set_ylabel("Logic Sub-Manifold\n($w_{\\mathrm{logic}} \\geq 0.5$)", fontsize=10, fontweight="bold")
+                axes[3, c_idx].set_ylabel(
+                    "Logic Sub-Manifold\n($w_{\\mathrm{logic}} \\geq 0.5$)", fontsize=10, fontweight="bold"
+                )
             axes[3, c_idx].grid(True, linestyle="--", alpha=0.25)
 
         # Colorbars
@@ -129,11 +187,18 @@ class BlendManifoldPlotter(BasePlotter):
 
         cbar_ax2 = fig.add_axes([0.92, 0.52, 0.015, 0.18])
         cb2 = fig.colorbar(sc_auth, cax=cbar_ax2)
-        cb2.set_label("Logic Weight ($w_{\\mathrm{logic}}$)\n(Blue: Neural  |  Orange: Logic)", fontsize=9, fontweight="bold")
+        cb2.set_label(
+            "Logic Weight ($w_{\\mathrm{logic}}$)\n(Blue: Neural  |  Orange: Logic)", fontsize=9, fontweight="bold"
+        )
         cb2.set_ticks([0.0, 0.5, 1.0])
         cb2.set_ticklabels(["0.0 (Neural)", "0.5", "1.0 (Logic)"])
 
-        fig.suptitle(f"t-SNE Manifold Decomposition: Epistemic Familiarity, Continuous Gradient & Sub-Manifolds ({clean_exp})", fontsize=13, fontweight="bold", y=0.995)
+        fig.suptitle(
+            f"t-SNE Manifold Decomposition: Epistemic Familiarity, Continuous Gradient & Sub-Manifolds ({clean_exp})",
+            fontsize=13,
+            fontweight="bold",
+            y=0.995,
+        )
         fig.subplots_adjust(right=0.90, hspace=0.35, wspace=0.22)
 
         out_path = output_dir / "blend_routing_ood_manifold.png"

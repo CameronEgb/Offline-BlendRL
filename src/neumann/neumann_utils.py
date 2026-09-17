@@ -1,27 +1,24 @@
 import os
 import pickle
 
-import matplotlib.pyplot as plt
-import numpy as np
-import torch
-import torch.nn.functional as F
-
 import data_behind_the_scenes
 import data_clevr
 import data_kandinsky
 import data_vilp
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+import torch.nn.functional as F
 from facts_converter import FactsConverter, FactsConverterWithQuery
 from img2facts import Img2Facts, Img2FactsWithQuery
 from logic_utils import add_true_atom
 from message_passing import MessagePassingModule
-from neumann import NEUMANN
-from percept import (SlotAttentionLessColorsPerceptionModule,
-                     SlotAttentionPerceptionModule, YOLOPerceptionModule)
+from percept import SlotAttentionLessColorsPerceptionModule, SlotAttentionPerceptionModule, YOLOPerceptionModule
 from reasoning_graph import ReasoningGraphModule
 from soft_logic import SoftLogic
-from valuation import (SlotAttentionValuationModule,
-                       SlotAttentionWithQueryValuationModule,
-                       YOLOValuationModule)
+from valuation import SlotAttentionValuationModule, SlotAttentionWithQueryValuationModule, YOLOValuationModule
+
+from neumann import NEUMANN
 
 
 def load_reasoning_graph(clauses, bk_clauses, atoms, terms, lang, term_depth, device, dataset, dataset_type):
@@ -42,7 +39,7 @@ def update_by_clauses(neumann, clauses, softmax_temp=1.0):
 
 def update_by_refinement(neumann, clause_scores, clause_generator, softmax_temp=1.0, replace=False):
     """Generate new neumann instance by generating and adding new clauses using clause scores.
-    """    
+    """
     # printing with scores
     idxs = np.argsort(-clause_scores.cpu().numpy())
     print(clause_scores)
@@ -52,7 +49,7 @@ def update_by_refinement(neumann, clause_scores, clause_generator, softmax_temp=
         print(np.round(clause_scores[i].cpu().numpy(), 3), neumann.clauses[i])
     generated_clauses = clause_generator.generate(neumann.clauses, clause_scores)
     ### clause_generator.print_tree()
-    pruned_old_clauses = [c for c in neumann.clauses if not add_true_atom(c) in clause_generator.refinement_history]
+    pruned_old_clauses = [c for c in neumann.clauses if add_true_atom(c) not in clause_generator.refinement_history]
     ### Do we need old clauses?? too general clauses should be excluded
     # new_clauses = sorted(list(set(neumann.clauses + new_gen_clauses)))
     if replace:
@@ -168,7 +165,7 @@ def get_prob(v_T, Reasoner, args):
                              v_T, 'answer(red)').unsqueeze(-1),
                           Reasoner.predict_by_atom(v_T, 'answer(yellow)').unsqueeze(-1)], dim=1)
     else:
-        assert 0, "Invalid dataset for get_prob: {}".format(args.dataset_type)
+        assert 0, f"Invalid dataset for get_prob: {args.dataset_type}"
 
 
 def get_data_loader(args, device, pos_ratio=1.0, neg_ratio=1.0):
@@ -388,7 +385,7 @@ def valuation_to_attr_string(v, atoms, e, th=0.5):
         for j, atom in enumerate(atoms):
             #print(atom, [str(term) for term in atom.terms])
             if 'obj' + str(i) in [str(term) for term in atom.terms] and atom.pred.name in attrs:
-                if v[j] > th and not (atom.pred.name in attrs+['in', '.', 'delete', 'member', 'not_member', 'right_most']):
+                if v[j] > th and atom.pred.name not in attrs+['in', '.', 'delete', 'member', 'not_member', 'right_most']:
                     prob = np.round(v[j].detach().cpu().numpy(), 2)
                     st_i += str(prob) + ':' + str(atom) + ','
         if st_i != '':
@@ -402,7 +399,7 @@ def valuation_to_rel_string(v, atoms, th=0.5):
     st = ''
     n = 0
     for j, atom in enumerate(atoms):
-        if v[j] > th and not (atom.pred.name in attrs+['in', '.', 'delete', 'member', 'not_member', 'right_most']):
+        if v[j] > th and atom.pred.name not in attrs+['in', '.', 'delete', 'member', 'not_member', 'right_most']:
             prob = np.round(v[j].detach().cpu().numpy(), 2)
             st += str(prob) + ':' + str(atom) + ','
             n += len(str(prob) + ':' + str(atom) + ',')

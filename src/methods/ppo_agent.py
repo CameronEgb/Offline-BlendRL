@@ -27,17 +27,18 @@ from src.methods.registry import register_agent
 )
 class PPOAgent(BaseAgent):
     """Unified Proximal Policy Optimization (PPO) Online RL Agent.
-    
+
     Supports pure neural actor-critic baselines as well as hybrid modular BlendRL policies.
     """
+
     def __init__(self, cfg: dict[str, Any]):
         super().__init__(cfg)
         self.save_hyperparameters()
-        
+
         self.lr = self.get_cfg("lr", 3e-4)
         self.logic_lr = self.get_cfg("logic_lr", self.lr)
         self.blender_lr = self.get_cfg("blender_lr", self.lr)
-        
+
         self.num_envs = self.get_cfg("num_envs", 4)
         self.num_steps = self.get_cfg("num_steps", 128)
         self.update_epochs = self.get_cfg("update_epochs", self.get_cfg("ppo_epochs", 10))
@@ -61,10 +62,13 @@ class PPOAgent(BaseAgent):
         algorithm = self.get_cfg("algorithm", self.get_cfg("name", "ppo"))
 
         self.dataset_writer = None
-        if (getattr(cfg, "save_dataset", False) or getattr(cfg.mode, "save_dataset", False)) and getattr(cfg, "dataset_path", None):
+        if (getattr(cfg, "save_dataset", False) or getattr(cfg.mode, "save_dataset", False)) and getattr(
+            cfg, "dataset_path", None
+        ):
             from src.dataset_utils import DatasetWriter
+
             self.dataset_writer = DatasetWriter(save_dir=cfg.dataset_path, env_name=cfg.env.name, cfg=cfg)
-        
+
         # Check if modular/hybrid policy is configured
         has_modules = bool(self.get_cfg("modules", []))
         is_hybrid = self.get_cfg("actor_mode", "neural") in ["hybrid", "logic"] or "blendrl" in str(algorithm)
@@ -72,6 +76,7 @@ class PPOAgent(BaseAgent):
 
         if self.is_modular:
             from src.blendrl.agents.blender_agent import BlenderActorCritic
+
             self.model = BlenderActorCritic(
                 self.env,
                 self.get_cfg("rules", cfg.env.rules),
@@ -81,18 +86,21 @@ class PPOAgent(BaseAgent):
                 self.get_cfg("reasoner", cfg.env.reasoner),
                 self.device,
                 architecture=self.get_cfg("architecture", cfg.env.architecture),
-                cfg=cfg.agent
+                cfg=cfg.agent,
             )
-            self.logic_shape = (2, self.observation_space[-1]) if len(self.observation_space) == 1 else self.observation_space
+            self.logic_shape = (
+                (2, self.observation_space[-1]) if len(self.observation_space) == 1 else self.observation_space
+            )
             self.register_buffer("logic_obs", torch.zeros((self.num_steps, self.num_envs) + self.logic_shape))
         else:
             from src.core.factories import get_neural_agent
+
             self.model = get_neural_agent(
                 cfg.env.name,
                 self.n_actions,
                 self.device,
                 arch_name=cfg.env.architecture,
-                hidden_sizes=self.get_cfg("hidden_sizes", [64, 64])
+                hidden_sizes=self.get_cfg("hidden_sizes", [64, 64]),
             )
 
         # Storage for rollouts
@@ -103,7 +111,7 @@ class PPOAgent(BaseAgent):
         self.register_buffer("terminations", torch.zeros((self.num_steps, self.num_envs)))
         self.register_buffer("truncations", torch.zeros((self.num_steps, self.num_envs)))
         self.register_buffer("values", torch.zeros((self.num_steps, self.num_envs)))
-        
+
         init_obs = self.env.reset()
         if isinstance(init_obs, tuple):
             init_obs = init_obs[1] if len(init_obs) == 2 and isinstance(init_obs[1], torch.Tensor) else init_obs[0]
@@ -112,7 +120,7 @@ class PPOAgent(BaseAgent):
         self.next_done = torch.zeros(self.num_envs)
         self.next_terminated = torch.zeros(self.num_envs)
         self.next_truncated = torch.zeros(self.num_envs)
-        
+
         self.global_step_count = 0
 
     def _prepare_logic_obs(self, obs, logic_obs=None):
@@ -162,7 +170,7 @@ class PPOAgent(BaseAgent):
         cfg = self.cfg
         if cfg.mode.type == "offline":
             return
-            
+
         if self.global_step_count >= cfg.total_timesteps:
             self.trainer.should_stop = True
             return
@@ -203,7 +211,7 @@ class PPOAgent(BaseAgent):
             reward = torch.as_tensor(reward, dtype=torch.float32, device=self.device)
             terminated = torch.as_tensor(terminated, dtype=torch.bool, device=self.device)
             truncated = torch.as_tensor(truncated, dtype=torch.bool, device=self.device)
-            
+
             # Save dataset transitions if configured
             if hasattr(self, "dataset_writer") and self.dataset_writer is not None:
                 self.dataset_writer.write(
@@ -212,7 +220,9 @@ class PPOAgent(BaseAgent):
                     reward=reward.cpu().numpy(),
                     done=(terminated | truncated).cpu().numpy(),
                     next_obs=next_obs.cpu().numpy(),
-                    logic_obs=self.next_logic_obs.cpu().numpy() if (self.is_modular and self.next_logic_obs is not None) else None,
+                    logic_obs=self.next_logic_obs.cpu().numpy()
+                    if (self.is_modular and self.next_logic_obs is not None)
+                    else None,
                     next_logic_obs=self._prepare_logic_obs(next_obs).cpu().numpy() if self.is_modular else None,
                 )
 
@@ -229,11 +239,11 @@ class PPOAgent(BaseAgent):
             if self.is_modular:
                 next_value = self.model.get_value(
                     self.next_obs.to(self.device),
-                    self.next_logic_obs.to(self.device) if self.next_logic_obs is not None else None
+                    self.next_logic_obs.to(self.device) if self.next_logic_obs is not None else None,
                 ).reshape(1, -1)
             else:
                 next_value = self.model.get_value(self.next_obs.to(self.device)).reshape(1, -1)
-                
+
             advantages = torch.zeros_like(self.rewards)
             lastgaelam = 0
             for t in reversed(range(self.num_steps)):
@@ -256,24 +266,24 @@ class PPOAgent(BaseAgent):
         self.b_advantages = advantages.reshape(-1)
         self.b_returns = returns.reshape(-1)
         self.b_values = self.values.reshape(-1)
-        
+
         self.model.train()
 
     def training_step(self, batch, batch_idx):
         cfg = self.cfg
         if cfg.mode.type == "offline":
             return
-            
+
         b_inds = np.arange(self.b_obs.shape[0])
         np.random.shuffle(b_inds)
-        
+
         for start in range(0, self.b_obs.shape[0], self.batch_size):
             end = start + self.batch_size
             mb_inds = b_inds[start:end]
 
             mb_obs = self.b_obs[mb_inds].to(self.device)
             mb_actions = self.b_actions[mb_inds].to(self.device)
-            
+
             if self.is_modular:
                 mb_logic_obs = self.b_logic_obs[mb_inds].to(self.device)
                 res = self.model.get_action_and_value(mb_obs, mb_logic_obs, mb_actions.long())
@@ -316,8 +326,13 @@ class PPOAgent(BaseAgent):
 
             entropy_loss = entropy.mean()
             blend_entropy_loss = blend_entropy.mean() if isinstance(blend_entropy, torch.Tensor) else 0.0
-            
-            loss = pg_loss - self.ent_coef * entropy_loss - self.blend_ent_coef * blend_entropy_loss + v_loss * self.vf_coef
+
+            loss = (
+                pg_loss
+                - self.ent_coef * entropy_loss
+                - self.blend_ent_coef * blend_entropy_loss
+                + v_loss * self.vf_coef
+            )
 
             opt = self.optimizers()
             opt.zero_grad()
@@ -344,7 +359,11 @@ class PPOAgent(BaseAgent):
                 for m, m_type in zip(self.model.actor.policy_modules, self.model.module_types):
                     lr = self.lr if m_type == "neural" else self.logic_lr
                     params.append({"params": m.parameters(), "lr": lr})
-            if hasattr(self.model, "actor") and hasattr(self.model.actor, "blender") and self.model.actor.blender is not None:
+            if (
+                hasattr(self.model, "actor")
+                and hasattr(self.model.actor, "blender")
+                and self.model.actor.blender is not None
+            ):
                 params.append({"params": self.model.actor.blender.parameters(), "lr": self.blender_lr})
             if hasattr(self.model, "critic"):
                 params.append({"params": self.model.critic.parameters(), "lr": self.lr})
@@ -357,4 +376,3 @@ class PPOAgent(BaseAgent):
         if hasattr(self, "dataset_writer") and self.dataset_writer is not None:
             self.dataset_writer.close()
         super().on_fit_end()
-

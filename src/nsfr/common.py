@@ -1,8 +1,8 @@
 import os
 
 from nsfr.facts_converter import FactsConverter
-from nsfr.utils.logic import get_lang, get_blender_lang, build_infer_module
 from nsfr.nsfr import NSFReasoner
+from nsfr.utils.logic import build_infer_module, get_blender_lang, get_lang
 from nsfr.valuation import ValuationModule
 
 

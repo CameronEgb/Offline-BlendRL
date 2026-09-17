@@ -6,20 +6,28 @@ plot/blend_common.py — Shared utilities, checkpoint discovery, and data extrac
 import os
 import sys
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
-import torch
 import numpy as np
 import pandas as pd
+import torch
 from sklearn.neighbors import NearestNeighbors
 
-from plot.base import get_canonical_method_name, clean_label
+from plot.base import clean_label, get_canonical_method_name
 from src.pyrenees_evaluator import PyreneesEvaluator
 
-
 KNOWN_PYRENEES_PROBLEMS = [
-    "problem", "ex132(w)", "ex132a(w)", "ex152a(w)", "ex212(w)", 
-    "ex242(w)", "ex252(w)", "ex252a(w)", "exc137(w)", "exp426d(w)", "exp426e(w)"
+    "problem",
+    "ex132(w)",
+    "ex132a(w)",
+    "ex152a(w)",
+    "ex212(w)",
+    "ex242(w)",
+    "ex252(w)",
+    "ex252a(w)",
+    "exc137(w)",
+    "exp426d(w)",
+    "exp426e(w)",
 ]
 
 
@@ -50,11 +58,11 @@ def discover_blendrl_checkpoints(exp_id: str, group: str, clean_exp: str) -> dic
                 prob_clean = prob.replace("(", "_").replace(")", "_").rstrip("_")
                 if parent_dir_name.endswith(f"_{prob}"):
                     detected_dataset = prob
-                    detected_method = parent_dir_name[:-len(f"_{prob}")]
+                    detected_method = parent_dir_name[: -len(f"_{prob}")]
                     break
                 elif parent_dir_name.endswith(f"_{prob_clean}"):
                     detected_dataset = prob
-                    detected_method = parent_dir_name[:-len(f"_{prob_clean}")].rstrip("_")
+                    detected_method = parent_dir_name[: -len(f"_{prob_clean}")].rstrip("_")
                     break
 
         canon_method = get_canonical_method_name(detected_method)
@@ -70,9 +78,10 @@ def discover_blendrl_checkpoints(exp_id: str, group: str, clean_exp: str) -> dic
 
 
 def load_modular_agent(path: Path):
-    from src.methods.cql_agent import CQLAgent
     from src.methods.cew_agent import CEWAgent
+    from src.methods.cql_agent import CQLAgent
     from src.methods.iql_agent import IQLAgent
+
     for cls in [CQLAgent, CEWAgent, IQLAgent]:
         try:
             ag = cls.load_from_checkpoint(str(path), map_location="cpu", weights_only=False)
@@ -132,12 +141,22 @@ def extract_model_routing_data(discovered: dict, sample_size: int = 4000) -> dic
         if weights is None:
             continue
 
-        module_types = getattr(agent.model, "module_types", getattr(getattr(agent.model, "actor", None), "module_types", ["logic", "neural"]))
+        module_types = getattr(
+            agent.model,
+            "module_types",
+            getattr(getattr(agent.model, "actor", None), "module_types", ["logic", "neural"]),
+        )
         logic_idx = module_types.index("logic") if "logic" in module_types else 0
         neural_idx = module_types.index("neural") if "neural" in module_types else (1 if len(module_types) > 1 else 0)
 
-        w_logic = weights[:, logic_idx].detach().cpu().numpy() if isinstance(weights, torch.Tensor) else weights[:, logic_idx]
-        w_neural = weights[:, neural_idx].detach().cpu().numpy() if isinstance(weights, torch.Tensor) else weights[:, neural_idx]
+        w_logic = (
+            weights[:, logic_idx].detach().cpu().numpy() if isinstance(weights, torch.Tensor) else weights[:, logic_idx]
+        )
+        w_neural = (
+            weights[:, neural_idx].detach().cpu().numpy()
+            if isinstance(weights, torch.Tensor)
+            else weights[:, neural_idx]
+        )
 
         gmm_path = Path(f"in/datasets/pyrenees/per_problem/{prob_name}/gmm_scaler.npz")
         if not gmm_path.exists():
@@ -149,32 +168,36 @@ def extract_model_routing_data(discovered: dict, sample_size: int = 4000) -> dic
         pure_neu_pct = float(np.mean(w_neural >= 0.90) * 100.0)
         mixed_pct = float(np.mean((w_neural > 0.10) & (w_neural < 0.90)) * 100.0)
 
-        authority_rows.append({
-            "Model": prob_name,
-            "Method": clean_label(meta["method"]),
-            "N_States": n_states,
-            "Mean Logic Weight": float(np.mean(w_logic)),
-            "Mean Neural Weight": float(np.mean(w_neural)),
-            "Pure Logic % (>=0.90)": pure_log_pct,
-            "Pure Neural % (>=0.90)": pure_neu_pct,
-            "Mixed % (0.10-0.90)": mixed_pct,
-        })
+        authority_rows.append(
+            {
+                "Model": prob_name,
+                "Method": clean_label(meta["method"]),
+                "N_States": n_states,
+                "Mean Logic Weight": float(np.mean(w_logic)),
+                "Mean Neural Weight": float(np.mean(w_neural)),
+                "Pure Logic % (>=0.90)": pure_log_pct,
+                "Pure Neural % (>=0.90)": pure_neu_pct,
+                "Mixed % (0.10-0.90)": mixed_pct,
+            }
+        )
 
         # 2. Tiers
         for t_label, t_val in [("Low Tier", 0), ("Med Tier", 1), ("High Tier", 2)]:
-            m = (tiers == t_val)
+            m = tiers == t_val
             n_t = int(m.sum())
             if n_t > 0:
-                tier_rows.append({
-                    "Model": prob_name,
-                    "Method": clean_label(meta["method"]),
-                    "Tier": t_label,
-                    "N_States": n_t,
-                    "Mean Logic Weight": float(np.mean(w_logic[m])),
-                    "Mean Neural Weight": float(np.mean(w_neural[m])),
-                    "Pure Logic % (>=0.90)": float(np.mean(w_logic[m] >= 0.90) * 100.0),
-                    "Pure Neural % (>=0.90)": float(np.mean(w_neural[m] >= 0.90) * 100.0),
-                })
+                tier_rows.append(
+                    {
+                        "Model": prob_name,
+                        "Method": clean_label(meta["method"]),
+                        "Tier": t_label,
+                        "N_States": n_t,
+                        "Mean Logic Weight": float(np.mean(w_logic[m])),
+                        "Mean Neural Weight": float(np.mean(w_neural[m])),
+                        "Pure Logic % (>=0.90)": float(np.mean(w_logic[m] >= 0.90) * 100.0),
+                        "Pure Neural % (>=0.90)": float(np.mean(w_neural[m] >= 0.90) * 100.0),
+                    }
+                )
 
         # 3. OOD Distance
         sub_n = min(n_states, sample_size)
@@ -188,22 +211,24 @@ def extract_model_routing_data(discovered: dict, sample_size: int = 4000) -> dic
         ood_score = distances[:, -1]
 
         n_bins = 5
-        bin_labels = [f"Q{i+1}" for i in range(n_bins)]
+        bin_labels = [f"Q{i + 1}" for i in range(n_bins)]
         try:
             ood_bins = pd.qcut(ood_score, q=n_bins, labels=bin_labels)
             for b_name in bin_labels:
-                m_b = (ood_bins == b_name)
+                m_b = ood_bins == b_name
                 if m_b.sum() > 0:
-                    ood_handover_rows.append({
-                        "Model": prob_name,
-                        "Method": clean_label(meta["method"]),
-                        "OOD_Quantile": b_name,
-                        "Mean_OOD_Distance": float(ood_score[m_b].mean()),
-                        "Mean_Logic_Weight": float(sub_w_logic[m_b].mean()),
-                        "Mean_Neural_Weight": float(sub_w_neural[m_b].mean()),
-                        "Pure_Logic_Pct": float((sub_w_logic[m_b] >= 0.90).mean() * 100.0),
-                        "Pure_Neural_Pct": float((sub_w_neural[m_b] >= 0.90).mean() * 100.0),
-                    })
+                    ood_handover_rows.append(
+                        {
+                            "Model": prob_name,
+                            "Method": clean_label(meta["method"]),
+                            "OOD_Quantile": b_name,
+                            "Mean_OOD_Distance": float(ood_score[m_b].mean()),
+                            "Mean_Logic_Weight": float(sub_w_logic[m_b].mean()),
+                            "Mean_Neural_Weight": float(sub_w_neural[m_b].mean()),
+                            "Pure_Logic_Pct": float((sub_w_logic[m_b] >= 0.90).mean() * 100.0),
+                            "Pure_Neural_Pct": float((sub_w_neural[m_b] >= 0.90).mean() * 100.0),
+                        }
+                    )
         except Exception:
             pass
 

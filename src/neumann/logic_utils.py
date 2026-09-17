@@ -29,9 +29,9 @@ def get_lang(lark_path, lang_base_path, dataset_type, dataset, term_depth, use_l
         du.base_path + 'bk_clauses.txt', lang))
     bk = du.load_atoms(du.base_path + 'bk.txt', lang)
     terms = generate_terms(lang, max_depth=term_depth)
-    print("{} terms are generated!".format(len(terms)))
+    print(f"{len(terms)} terms are generated!")
     atoms = generate_atoms(lang, terms, dataset_type)
-    print("{} ground atoms are generated!".format(len(atoms)))
+    print(f"{len(atoms)} ground atoms are generated!")
     # atoms = du.get_facts(lang)
     return lang, clauses, bk, bk_clauses, terms, atoms
 
@@ -94,7 +94,7 @@ def generate_terms(lang, max_depth):
             for args in args_list:
                 # generate list by removing duplications of elements
                 if len(args) == 2:
-                    if not args[0] in to_list(args[1]):
+                    if args[0] not in to_list(args[1]):
                         # print(args[1], to_list(args[1]))
                         # for list pruning adhoc
                         new_terms.append(FuncTerm(f, args))
@@ -139,7 +139,7 @@ def generate_atoms(lang, terms, dataset_type, max_term_depth=2):
                       for dtype in dtypes]
         # consts_list = [lang.get_by_dtype(dtype) for dtype in dtypes]
         args_list = []
-        print("Generating ground atoms for predicate: {}".format(pred.name))
+        print(f"Generating ground atoms for predicate: {pred.name}")
         for terms_ in tqdm(set(itertools.product(*terms_list))):
             if dataset_type in ['kandinsky', 'clevr-hans']:
                 if len(list(set(terms_))) == len(terms_):
@@ -149,7 +149,7 @@ def generate_atoms(lang, terms, dataset_type, max_term_depth=2):
         for args in args_list:
             atoms.append(Atom(pred, args))
     atoms = set(atoms)
-    print("Sorting {} atoms...".format(len(list(atoms))))
+    print(f"Sorting {len(list(atoms))} atoms...")
     return [true] + sorted(list(atoms))
 
 
@@ -183,7 +183,7 @@ def get_all_vars_with_dtype(atoms):
     for atom in atoms:
         vd_list = atom.all_vars_and_dtypes()
         for vd in vd_list:
-            if not vd in var_dtype_list:
+            if vd not in var_dtype_list:
                 var_dtype_list.append(vd)
 
     return var_dtype_list
@@ -193,7 +193,7 @@ def get_all_vars_with_depth(atoms):
     for atom in atoms:
         vd_list = atom.all_vars_with_depth()
         for v, depth in vd_list:
-            if not v in [vd[0] for vd in var_depth_list]:
+            if v not in [vd[0] for vd in var_depth_list]:
                 var_depth_list.append((v, depth))
             else:
                 for i, (v_, depth_) in enumerate(var_depth_list):

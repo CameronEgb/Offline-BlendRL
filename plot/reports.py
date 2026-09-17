@@ -8,10 +8,11 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 import argparse
-import pandas as pd
 import json
-import yaml
 from typing import Optional
+
+import pandas as pd
+import yaml
 
 from plot.base import BasePlotter, clean_label, get_method_aliases
 
@@ -20,18 +21,17 @@ def format_duration(seconds: float) -> str:
     """Formats seconds into human readable time (e.g., 2m 30.5s or 1h 15m 10s)."""
     if seconds is None or seconds <= 0:
         return "N/A"
-    
+
     hours = int(seconds // 3600)
     minutes = int((seconds % 3600) // 60)
     secs = seconds % 60
-    
+
     if hours > 0:
         return f"{hours}h {minutes}m {secs:.1f}s"
     elif minutes > 0:
         return f"{minutes}m {secs:.1f}s"
     else:
         return f"{secs:.2f}s"
-
 
 
 class ReportsPlotter(BasePlotter):
@@ -42,6 +42,7 @@ class ReportsPlotter(BasePlotter):
         """Attempt to load the resolved config for a specific method run from checkpoints, logs, or Hydra outputs."""
         clean_exp = Path(exp_id).stem
         aliases = get_method_aliases(method)
+        norm_method = method.replace("/", "_")
 
         for alias in aliases:
             # 1. Check method-specific checkpoint directory
@@ -83,7 +84,7 @@ class ReportsPlotter(BasePlotter):
         # 3. Check experiment root configs
         for root_cand in [
             Path("results/checkpoints") / group / clean_exp / "config.yaml",
-            Path("results/logs") / group / clean_exp / "config.yaml"
+            Path("results/logs") / group / clean_exp / "config.yaml",
         ]:
             if root_cand.exists():
                 try:
@@ -117,8 +118,7 @@ class ReportsPlotter(BasePlotter):
                             with open(cfg_path) as f:
                                 run_cfg = yaml.safe_load(f) or {}
                             exp_matches = (
-                                run_cfg.get("experiment_id") in (exp_id, clean_exp) or
-                                run_cfg.get("group") == group
+                                run_cfg.get("experiment_id") in (exp_id, clean_exp) or run_cfg.get("group") == group
                             )
                             agent_name = run_cfg.get("agent", {}).get("name", "")
                             if exp_matches and (agent_name in (method, norm_method) or not agent_name):
@@ -153,7 +153,7 @@ class ReportsPlotter(BasePlotter):
 
         return params
 
-    def run(self, exp_id: str, cli_overrides: Optional[dict] = None):
+    def run(self, exp_id: str, cli_overrides: dict | None = None):
         cfg, group, output_dir = self.get_effective_config(exp_id, cli_overrides)
         clean_exp = Path(exp_id).stem
         runs_data = self.load_metrics(group, exp_id)
@@ -184,10 +184,25 @@ class ReportsPlotter(BasePlotter):
                     if agent_params:
                         # Extract key hyperparameters
                         hp_keys = [
-                            "algorithm", "lr", "learning_rate", "gamma", "batch_size",
-                            "cql_alpha", "soft_target_tau", "tau", "beta", "epochs_per_interval",
-                            "eval_interval_epochs", "actor_mode", "blender_mode", "blend_function",
-                            "modules", "hidden_sizes", "ecm_dthr", "fyd", "fyd_top_k"
+                            "algorithm",
+                            "lr",
+                            "learning_rate",
+                            "gamma",
+                            "batch_size",
+                            "cql_alpha",
+                            "soft_target_tau",
+                            "tau",
+                            "beta",
+                            "epochs_per_interval",
+                            "eval_interval_epochs",
+                            "actor_mode",
+                            "blender_mode",
+                            "blend_function",
+                            "modules",
+                            "hidden_sizes",
+                            "ecm_dthr",
+                            "fyd",
+                            "fyd_top_k",
                         ]
                         f.write("| Parameter | Value |\n")
                         f.write("| --- | --- |\n")
@@ -245,16 +260,18 @@ class ReportsPlotter(BasePlotter):
                 for v_name, df in sorted(versions.items()):
                     t_sec = None
                     v_num = v_name.replace("version_", "")
-                    
+
                     json_candidates = []
                     for alias in aliases:
-                        json_candidates.extend([
-                            Path("results/logs") / group / clean_exp / alias / v_name / "runtime.json",
-                            Path("results/checkpoints") / group / clean_exp / alias / v_num / "runtime.json",
-                            Path("results/logs") / group / clean_exp / alias / "runtime.json",
-                            Path("results/checkpoints") / group / clean_exp / alias / "runtime.json",
-                            Path("results/checkpoints") / group / clean_exp / alias / "0" / "runtime.json",
-                        ])
+                        json_candidates.extend(
+                            [
+                                Path("results/logs") / group / clean_exp / alias / v_name / "runtime.json",
+                                Path("results/checkpoints") / group / clean_exp / alias / v_num / "runtime.json",
+                                Path("results/logs") / group / clean_exp / alias / "runtime.json",
+                                Path("results/checkpoints") / group / clean_exp / alias / "runtime.json",
+                                Path("results/checkpoints") / group / clean_exp / alias / "0" / "runtime.json",
+                            ]
+                        )
 
                     for json_path in json_candidates:
                         if json_path.exists():
@@ -264,7 +281,9 @@ class ReportsPlotter(BasePlotter):
                                     t_sec = float(rdata.get("training_time_seconds", 0.0))
                                     if "gpu_device" in rdata and not gpu_device:
                                         gpu_device = rdata["gpu_device"]
-                                    if "gpu_peak_alloc_gb" in rdata and (peak_vram is None or rdata["gpu_peak_alloc_gb"] > peak_vram):
+                                    if "gpu_peak_alloc_gb" in rdata and (
+                                        peak_vram is None or rdata["gpu_peak_alloc_gb"] > peak_vram
+                                    ):
                                         peak_vram = float(rdata["gpu_peak_alloc_gb"])
                                     if t_sec > 0:
                                         break
@@ -285,7 +304,7 @@ class ReportsPlotter(BasePlotter):
                     for alias in aliases:
                         for scan_dir in [
                             Path("results/checkpoints") / group / clean_exp / alias,
-                            Path("results/logs") / group / clean_exp / alias
+                            Path("results/logs") / group / clean_exp / alias,
                         ]:
                             if scan_dir.exists():
                                 for r_json in sorted(scan_dir.rglob("runtime.json")):
@@ -295,7 +314,9 @@ class ReportsPlotter(BasePlotter):
                                             t_sec = float(rdata.get("training_time_seconds", 0.0))
                                             if "gpu_device" in rdata and not gpu_device:
                                                 gpu_device = rdata["gpu_device"]
-                                            if "gpu_peak_alloc_gb" in rdata and (peak_vram is None or rdata["gpu_peak_alloc_gb"] > peak_vram):
+                                            if "gpu_peak_alloc_gb" in rdata and (
+                                                peak_vram is None or rdata["gpu_peak_alloc_gb"] > peak_vram
+                                            ):
                                                 peak_vram = float(rdata["gpu_peak_alloc_gb"])
                                             if t_sec > 0:
                                                 times.append((r_json.parent.name, t_sec))
@@ -306,15 +327,16 @@ class ReportsPlotter(BasePlotter):
                 if not times:
                     for slurm_dir in [
                         Path("results/logs/slurm") / group / clean_exp,
-                        Path("results/logs/slurm") / clean_exp
+                        Path("results/logs/slurm") / clean_exp,
                     ]:
                         if slurm_dir.exists():
                             for alias in aliases:
                                 for out_file in sorted(slurm_dir.glob(f"*{alias}*.out")):
                                     try:
-                                        with open(out_file, "r") as sf:
+                                        with open(out_file) as sf:
                                             text = sf.read()
                                         import re
+
                                         time_match = re.search(r"Total execution time:\s*([0-9.]+)\s*seconds", text)
                                         if time_match:
                                             t_sec = float(time_match.group(1))
@@ -332,44 +354,47 @@ class ReportsPlotter(BasePlotter):
                 if times:
                     avg_time = sum(t for _, t in times) / len(times)
                     formatted_avg = format_duration(avg_time)
-                    timing_rows.append({
-                        "method_raw": method,
-                        "method": method_label,
-                        "num_runs": len(times),
-                        "avg_time_sec": avg_time,
-                        "formatted_avg": formatted_avg,
-                        "gpu_device": gpu_device or "CPU",
-                        "peak_vram_gb": peak_vram,
-                        "details": times
-                    })
+                    timing_rows.append(
+                        {
+                            "method_raw": method,
+                            "method": method_label,
+                            "num_runs": len(times),
+                            "avg_time_sec": avg_time,
+                            "formatted_avg": formatted_avg,
+                            "gpu_device": gpu_device or "CPU",
+                            "peak_vram_gb": peak_vram,
+                            "details": times,
+                        }
+                    )
                 else:
-                    timing_rows.append({
-                        "method_raw": method,
-                        "method": method_label,
-                        "num_runs": 0,
-                        "avg_time_sec": None,
-                        "formatted_avg": "N/A",
-                        "gpu_device": gpu_device or "CPU",
-                        "peak_vram_gb": peak_vram,
-                        "details": []
-                    })
+                    timing_rows.append(
+                        {
+                            "method_raw": method,
+                            "method": method_label,
+                            "num_runs": 0,
+                            "avg_time_sec": None,
+                            "formatted_avg": "N/A",
+                            "gpu_device": gpu_device or "CPU",
+                            "peak_vram_gb": peak_vram,
+                            "details": [],
+                        }
+                    )
 
             has_gpu_data = any(row["peak_vram_gb"] is not None for row in timing_rows)
 
             csv_records = []
             for row in timing_rows:
                 csv_rec = {
-                    "Method": row['method'],
-                    "Raw_Method": row['method_raw'],
-                    "Runs": row['num_runs'],
-                    "Avg_Time_Seconds": row['avg_time_sec'] if row['avg_time_sec'] is not None else "",
-                    "Formatted_Time": row['formatted_avg']
+                    "Method": row["method"],
+                    "Raw_Method": row["method_raw"],
+                    "Runs": row["num_runs"],
+                    "Avg_Time_Seconds": row["avg_time_sec"] if row["avg_time_sec"] is not None else "",
+                    "Formatted_Time": row["formatted_avg"],
                 }
                 if has_gpu_data:
-                    csv_rec["Peak_VRAM_GB"] = row['peak_vram_gb'] if row['peak_vram_gb'] is not None else ""
-                    csv_rec["GPU_Device"] = row['gpu_device']
+                    csv_rec["Peak_VRAM_GB"] = row["peak_vram_gb"] if row["peak_vram_gb"] is not None else ""
+                    csv_rec["GPU_Device"] = row["gpu_device"]
                 csv_records.append(csv_rec)
 
             pd.DataFrame(csv_records).to_csv(time_csv_path, index=False)
             print(f"  Saved: {time_csv_path}")
-

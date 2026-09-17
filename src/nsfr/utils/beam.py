@@ -1,6 +1,7 @@
+from logic import build_clause_body_infer_module, build_clause_infer_module, build_infer_module
+
 from nsfr.facts_converter import FactsConverter
 from nsfr.nsfr_beam import NSFReasoner
-from logic import build_infer_module, build_clause_infer_module, build_clause_body_infer_module
 from nsfr.valuation import ValuationModule
 
 

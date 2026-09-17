@@ -1,20 +1,25 @@
-import torch
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
-from pathlib import Path
+import torch
 
 from plot.base import clean_label
 
+
 class PyreneesEvaluator:
     def __init__(self, device=None):
-        self.device = device or torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+        self.device = device or torch.device(
+            "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+        )
         self.batch_size = 5000
         self.tier_names = [("Low Tier", 0), ("Med Tier", 1), ("High Tier", 2)]
-        
+
     def _load_agent(self, path):
-        from src.methods.cql_agent import CQLAgent
         from src.methods.cew_agent import CEWAgent
+        from src.methods.cql_agent import CQLAgent
         from src.methods.iql_agent import IQLAgent
+
         last_error = None
         for cls in [CQLAgent, CEWAgent, IQLAgent]:
             try:
@@ -47,7 +52,11 @@ class PyreneesEvaluator:
         use_actor = bool(ag.get_cfg("use_actor", False)) if hasattr(ag, "get_cfg") else getattr(ag, "use_actor", False)
 
         if hasattr(ag, "is_modular") and ag.is_modular:
-            logic_obs = ag._prepare_logic_obs(obs_b) if hasattr(ag, "_prepare_logic_obs") else obs_b.unsqueeze(1).repeat(1, 2, 1)
+            logic_obs = (
+                ag._prepare_logic_obs(obs_b)
+                if hasattr(ag, "_prepare_logic_obs")
+                else obs_b.unsqueeze(1).repeat(1, 2, 1)
+            )
             if is_cql and not use_actor and hasattr(ag.model, "get_q_values"):
                 q_vals = ag.model.get_q_values(obs_b, logic_obs)
                 probs = torch.softmax(q_vals, dim=-1)
@@ -112,7 +121,7 @@ class PyreneesEvaluator:
             if max(feat_idx) < obs_matrix.shape[1]:
                 x_feat = obs_matrix[:, feat_idx]
             else:
-                x_feat = obs_matrix[:, :len(feat_idx)]
+                x_feat = obs_matrix[:, : len(feat_idx)]
 
             d = x_feat.shape[-1]
             const = 0.5 * d * np.log(2.0 * np.pi)
@@ -133,23 +142,19 @@ class PyreneesEvaluator:
     def evaluate(self, discovered_ckpts: dict):
         p_obs, p_acts, p_rews, p_tiers = self._load_problem_data()
         s_obs, s_acts, s_rews, s_tiers, step_exercises = self._load_step_data()
-        
+
         problem_rows = []
         step_rows = []
         tidy_tier_rows = []
-        
+
         if p_obs is not None and len(p_obs) > 0:
-            self._evaluate_problem_level(
-                p_obs, p_acts, p_rews, p_tiers, 
-                discovered_ckpts, problem_rows, tidy_tier_rows
-            )
-            
+            self._evaluate_problem_level(p_obs, p_acts, p_rews, p_tiers, discovered_ckpts, problem_rows, tidy_tier_rows)
+
         if s_obs is not None and len(s_obs) > 0:
             self._evaluate_step_level(
-                s_obs, s_acts, s_rews, s_tiers, step_exercises, 
-                discovered_ckpts, step_rows, tidy_tier_rows
+                s_obs, s_acts, s_rews, s_tiers, step_exercises, discovered_ckpts, step_rows, tidy_tier_rows
             )
-            
+
         return problem_rows, step_rows, tidy_tier_rows
 
     def _load_problem_data(self):
@@ -174,7 +179,7 @@ class PyreneesEvaluator:
         step_exercises = {}
         per_problem_dir = Path("in/datasets/pyrenees/per_problem")
         prob_gmm_path = Path("in/datasets/pyrenees/pyrenees_gmm_scaler.npz")
-        
+
         if per_problem_dir.exists():
             for pdir in sorted(per_problem_dir.iterdir()):
                 if pdir.is_dir() and pdir.name != "problem":
@@ -188,7 +193,10 @@ class PyreneesEvaluator:
                             s_r = np.hstack(s_data["rewards"]).astype(float)
                             s_t = self._compute_gmm_tiers(s_o, gmm_file if gmm_file.exists() else prob_gmm_path)
                             step_exercises[pdir.name] = {
-                                "obs": s_o, "acts": s_a, "rews": s_r, "tiers": s_t,
+                                "obs": s_o,
+                                "acts": s_a,
+                                "rews": s_r,
+                                "tiers": s_t,
                             }
                         except Exception as e:
                             print(f"  Warning [PyreneesEvaluator]: Error loading {pdir.name}: {e}")
@@ -215,7 +223,7 @@ class PyreneesEvaluator:
                 s_tiers = self._compute_gmm_tiers(s_obs, prob_gmm_path)
             else:
                 return None, None, None, None, {}
-                
+
         return s_obs, s_acts, s_rews, s_tiers, step_exercises
 
     def _evaluate_problem_level(self, p_obs, p_acts, p_rews, p_tiers, discovered_ckpts, problem_rows, tidy_tier_rows):
@@ -236,15 +244,23 @@ class PyreneesEvaluator:
             "Agreed Step Reward": float(p_rews.mean()),
         }
 
-        tidy_tier_rows.append({
-            "Level": "Problem", "Dataset": "problem", "Method": "Historical Tutor (Baseline)",
-            "Tier": "Overall", "N_Steps": total_p_steps,
-            "Action_0_Pct (PS)": float(t_ps), "Action_1_Pct (WE)": float(t_we), "Action_2_Pct (FWE)": float(t_fwe),
-            "Tutor_Agreement_Pct": 100.0, "Mean_Reward": float(p_rews.mean())
-        })
+        tidy_tier_rows.append(
+            {
+                "Level": "Problem",
+                "Dataset": "problem",
+                "Method": "Historical Tutor (Baseline)",
+                "Tier": "Overall",
+                "N_Steps": total_p_steps,
+                "Action_0_Pct (PS)": float(t_ps),
+                "Action_1_Pct (WE)": float(t_we),
+                "Action_2_Pct (FWE)": float(t_fwe),
+                "Tutor_Agreement_Pct": 100.0,
+                "Mean_Reward": float(p_rews.mean()),
+            }
+        )
 
         for t_label, t_val in self.tier_names:
-            m = (p_tiers == t_val)
+            m = p_tiers == t_val
             n_t = int(m.sum())
             ps_t = float((p_acts[m] == 0).mean() * 100.0) if n_t > 0 else 0.0
             we_t = float((p_acts[m] == 1).mean() * 100.0) if n_t > 0 else 0.0
@@ -253,12 +269,20 @@ class PyreneesEvaluator:
             p_base_row[f"{t_label} WE %"] = we_t
             p_base_row[f"{t_label} FWE %"] = fwe_t
 
-            tidy_tier_rows.append({
-                "Level": "Problem", "Dataset": "problem", "Method": "Historical Tutor (Baseline)",
-                "Tier": t_label, "N_Steps": n_t,
-                "Action_0_Pct (PS)": ps_t, "Action_1_Pct (WE)": we_t, "Action_2_Pct (FWE)": fwe_t,
-                "Tutor_Agreement_Pct": 100.0, "Mean_Reward": float(p_rews[m].mean()) if n_t > 0 else 0.0
-            })
+            tidy_tier_rows.append(
+                {
+                    "Level": "Problem",
+                    "Dataset": "problem",
+                    "Method": "Historical Tutor (Baseline)",
+                    "Tier": t_label,
+                    "N_Steps": n_t,
+                    "Action_0_Pct (PS)": ps_t,
+                    "Action_1_Pct (WE)": we_t,
+                    "Action_2_Pct (FWE)": fwe_t,
+                    "Tutor_Agreement_Pct": 100.0,
+                    "Mean_Reward": float(p_rews[m].mean()) if n_t > 0 else 0.0,
+                }
+            )
 
         problem_rows.append(p_base_row)
 
@@ -286,7 +310,7 @@ class PyreneesEvaluator:
                     all_pol_acts.extend(acts_tensor.cpu().numpy())
 
             all_pol_acts = np.array(all_pol_acts)
-            matches = (all_pol_acts == p_acts)
+            matches = all_pol_acts == p_acts
             agr = float(matches.mean() * 100.0)
             ps_r = float((all_pol_acts == 0).mean() * 100.0)
             we_r = float((all_pol_acts == 1).mean() * 100.0)
@@ -306,15 +330,23 @@ class PyreneesEvaluator:
                 "Agreed Step Reward": agreed_rew,
             }
 
-            tidy_tier_rows.append({
-                "Level": "Problem", "Dataset": "problem", "Method": display_m,
-                "Tier": "Overall", "N_Steps": total_p_steps,
-                "Action_0_Pct (PS)": ps_r, "Action_1_Pct (WE)": we_r, "Action_2_Pct (FWE)": fwe_r,
-                "Tutor_Agreement_Pct": agr, "Mean_Reward": float(p_rews.mean())
-            })
+            tidy_tier_rows.append(
+                {
+                    "Level": "Problem",
+                    "Dataset": "problem",
+                    "Method": display_m,
+                    "Tier": "Overall",
+                    "N_Steps": total_p_steps,
+                    "Action_0_Pct (PS)": ps_r,
+                    "Action_1_Pct (WE)": we_r,
+                    "Action_2_Pct (FWE)": fwe_r,
+                    "Tutor_Agreement_Pct": agr,
+                    "Mean_Reward": float(p_rews.mean()),
+                }
+            )
 
             for t_label, t_val in self.tier_names:
-                m = (p_tiers == t_val)
+                m = p_tiers == t_val
                 n_t = int(m.sum())
                 ps_t = float((all_pol_acts[m] == 0).mean() * 100.0) if n_t > 0 else 0.0
                 we_t = float((all_pol_acts[m] == 1).mean() * 100.0) if n_t > 0 else 0.0
@@ -325,16 +357,26 @@ class PyreneesEvaluator:
                 p_row[f"{t_label} WE %"] = we_t
                 p_row[f"{t_label} FWE %"] = fwe_t
 
-                tidy_tier_rows.append({
-                    "Level": "Problem", "Dataset": "problem", "Method": display_m,
-                    "Tier": t_label, "N_Steps": n_t,
-                    "Action_0_Pct (PS)": ps_t, "Action_1_Pct (WE)": we_t, "Action_2_Pct (FWE)": fwe_t,
-                    "Tutor_Agreement_Pct": agr_t, "Mean_Reward": float(p_rews[m].mean()) if n_t > 0 else 0.0
-                })
+                tidy_tier_rows.append(
+                    {
+                        "Level": "Problem",
+                        "Dataset": "problem",
+                        "Method": display_m,
+                        "Tier": t_label,
+                        "N_Steps": n_t,
+                        "Action_0_Pct (PS)": ps_t,
+                        "Action_1_Pct (WE)": we_t,
+                        "Action_2_Pct (FWE)": fwe_t,
+                        "Tutor_Agreement_Pct": agr_t,
+                        "Mean_Reward": float(p_rews[m].mean()) if n_t > 0 else 0.0,
+                    }
+                )
 
             problem_rows.append(p_row)
 
-    def _evaluate_step_level(self, s_obs, s_acts, s_rews, s_tiers, step_exercises, discovered_ckpts, step_rows, tidy_tier_rows):
+    def _evaluate_step_level(
+        self, s_obs, s_acts, s_rews, s_tiers, step_exercises, discovered_ckpts, step_rows, tidy_tier_rows
+    ):
         total_s_steps = len(s_obs)
         t_ps_s = (s_acts == 0).mean() * 100.0
         t_we_s = (s_acts == 1).mean() * 100.0
@@ -352,15 +394,23 @@ class PyreneesEvaluator:
             "Agreed Step Reward": float(s_rews.mean()),
         }
 
-        tidy_tier_rows.append({
-            "Level": "Step", "Dataset": "all_steps", "Method": "Historical Tutor (Baseline)",
-            "Tier": "Overall", "N_Steps": total_s_steps,
-            "Action_0_Pct (PS)": float(t_ps_s), "Action_1_Pct (WE)": float(t_we_s), "Action_2_Pct (FWE)": float(t_fwe_s),
-            "Tutor_Agreement_Pct": 100.0, "Mean_Reward": float(s_rews.mean())
-        })
+        tidy_tier_rows.append(
+            {
+                "Level": "Step",
+                "Dataset": "all_steps",
+                "Method": "Historical Tutor (Baseline)",
+                "Tier": "Overall",
+                "N_Steps": total_s_steps,
+                "Action_0_Pct (PS)": float(t_ps_s),
+                "Action_1_Pct (WE)": float(t_we_s),
+                "Action_2_Pct (FWE)": float(t_fwe_s),
+                "Tutor_Agreement_Pct": 100.0,
+                "Mean_Reward": float(s_rews.mean()),
+            }
+        )
 
         for t_label, t_val in self.tier_names:
-            m = (s_tiers == t_val)
+            m = s_tiers == t_val
             n_t = int(m.sum())
             ps_t = float((s_acts[m] == 0).mean() * 100.0) if n_t > 0 else 0.0
             we_t = float((s_acts[m] == 1).mean() * 100.0) if n_t > 0 else 0.0
@@ -369,12 +419,20 @@ class PyreneesEvaluator:
             s_base_row[f"{t_label} WE/Tell %"] = we_t
             s_base_row[f"{t_label} FWE %"] = fwe_t
 
-            tidy_tier_rows.append({
-                "Level": "Step", "Dataset": "all_steps", "Method": "Historical Tutor (Baseline)",
-                "Tier": t_label, "N_Steps": n_t,
-                "Action_0_Pct (PS)": ps_t, "Action_1_Pct (WE)": we_t, "Action_2_Pct (FWE)": fwe_t,
-                "Tutor_Agreement_Pct": 100.0, "Mean_Reward": float(s_rews[m].mean()) if n_t > 0 else 0.0
-            })
+            tidy_tier_rows.append(
+                {
+                    "Level": "Step",
+                    "Dataset": "all_steps",
+                    "Method": "Historical Tutor (Baseline)",
+                    "Tier": t_label,
+                    "N_Steps": n_t,
+                    "Action_0_Pct (PS)": ps_t,
+                    "Action_1_Pct (WE)": we_t,
+                    "Action_2_Pct (FWE)": fwe_t,
+                    "Tutor_Agreement_Pct": 100.0,
+                    "Mean_Reward": float(s_rews[m].mean()) if n_t > 0 else 0.0,
+                }
+            )
 
         step_rows.append(s_base_row)
 
@@ -416,7 +474,7 @@ class PyreneesEvaluator:
                     all_pol_acts.extend(acts_tensor.cpu().numpy())
 
             all_pol_acts = np.array(all_pol_acts)
-            matches = (all_pol_acts == curr_s_acts)
+            matches = all_pol_acts == curr_s_acts
             agr = float(matches.mean() * 100.0)
             ps_r = float((all_pol_acts == 0).mean() * 100.0)
             we_r = float((all_pol_acts == 1).mean() * 100.0)
@@ -439,15 +497,23 @@ class PyreneesEvaluator:
                 "Agreed Step Reward": agreed_rew,
             }
 
-            tidy_tier_rows.append({
-                "Level": "Step", "Dataset": dataset_name, "Method": display_m,
-                "Tier": "Overall", "N_Steps": cur_n_steps,
-                "Action_0_Pct (PS)": ps_r, "Action_1_Pct (WE)": we_r, "Action_2_Pct (FWE)": fwe_r,
-                "Tutor_Agreement_Pct": agr, "Mean_Reward": float(curr_s_rews.mean())
-            })
+            tidy_tier_rows.append(
+                {
+                    "Level": "Step",
+                    "Dataset": dataset_name,
+                    "Method": display_m,
+                    "Tier": "Overall",
+                    "N_Steps": cur_n_steps,
+                    "Action_0_Pct (PS)": ps_r,
+                    "Action_1_Pct (WE)": we_r,
+                    "Action_2_Pct (FWE)": fwe_r,
+                    "Tutor_Agreement_Pct": agr,
+                    "Mean_Reward": float(curr_s_rews.mean()),
+                }
+            )
 
             for t_label, t_val in self.tier_names:
-                m = (curr_s_tiers == t_val)
+                m = curr_s_tiers == t_val
                 n_t = int(m.sum())
                 ps_t = float((all_pol_acts[m] == 0).mean() * 100.0) if n_t > 0 else 0.0
                 we_t = float((all_pol_acts[m] == 1).mean() * 100.0) if n_t > 0 else 0.0
@@ -458,11 +524,19 @@ class PyreneesEvaluator:
                 s_row[f"{t_label} WE/Tell %"] = we_t
                 s_row[f"{t_label} FWE %"] = fwe_t
 
-                tidy_tier_rows.append({
-                    "Level": "Step", "Dataset": dataset_name, "Method": display_m,
-                    "Tier": t_label, "N_Steps": n_t,
-                    "Action_0_Pct (PS)": ps_t, "Action_1_Pct (WE)": we_t, "Action_2_Pct (FWE)": fwe_t,
-                    "Tutor_Agreement_Pct": agr_t, "Mean_Reward": float(curr_s_rews[m].mean()) if n_t > 0 else 0.0
-                })
+                tidy_tier_rows.append(
+                    {
+                        "Level": "Step",
+                        "Dataset": dataset_name,
+                        "Method": display_m,
+                        "Tier": t_label,
+                        "N_Steps": n_t,
+                        "Action_0_Pct (PS)": ps_t,
+                        "Action_1_Pct (WE)": we_t,
+                        "Action_2_Pct (FWE)": fwe_t,
+                        "Tutor_Agreement_Pct": agr_t,
+                        "Mean_Reward": float(curr_s_rews[m].mean()) if n_t > 0 else 0.0,
+                    }
+                )
 
             step_rows.append(s_row)
