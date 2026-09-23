@@ -1,10 +1,11 @@
+# @package _global_
 defaults:
-  - override /env: mimic
+  - early_prediction/_base
 
 task: early_prediction_tune
 
 early_prediction:
-  checkpoint: "results/checkpoints/mimic/tune_mimic_all"
+  checkpoint: "results/checkpoints/mimic/cql_literature"
   dataset_path: "in/datasets/mimic/mimic_lazy_12_clean_with_interventions.npz"
   output_dir: "results/plots/early_prediction/tune_early_pred"
   n_trials: 200

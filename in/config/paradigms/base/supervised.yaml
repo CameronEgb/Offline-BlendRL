@@ -1,0 +1,15 @@
+type: base
+description: "Supervised learning on labeled static data (classifiers, regressors, sequence models)"
+runner: SupervisedRunner
+data_module: SupervisedDataModule
+eval_protocol: ClassificationEvalProtocol
+default_callbacks:
+  - EarlyStoppingCallback
+  - BestCheckpointCallback
+constraints:
+  requires:
+    env.offline_only: true
+  forbids:
+    online_methods: non_empty
+    offline_methods: non_empty
+    eval_episodes: non_zero

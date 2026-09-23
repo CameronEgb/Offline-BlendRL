@@ -1,17 +1,15 @@
 # @package _global_
 defaults:
-  - quick_tests/_base
-  - override /env: cartpole
+  - cartpole/_base
   - override /agent: ppo/blendrl_human_neural
   - override /mode: online
-seed: 1
-total_timesteps: 40000
-intervals_count: 20
-eval_episodes: 100
+
+total_timesteps: 640
+intervals_count: 1
+eval_episodes: 2
 online_methods: ppo/blendrl_human_neural
-offline_methods: 
-save_dataset: true
-recover: false
+offline_methods: []
+no_plot: true
 
 agent:
   lr: 0.007
@@ -29,5 +27,5 @@ env:
 
 trainer:
   accelerator: cpu
-  max_epochs: 62 # 40000 / 640
+  max_epochs: 1
   check_val_every_n_epoch: 3

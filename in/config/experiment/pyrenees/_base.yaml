@@ -4,8 +4,10 @@ defaults:
   - override /agent: cql/dnn
   - override /mode: offline
 
-paradigm: offline_only
+paradigm: offline_rl
 
+intervals_count: 1
+eval_episodes: 0
 
 offline_datasets:
   - problem

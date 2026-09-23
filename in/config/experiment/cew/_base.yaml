@@ -2,5 +2,5 @@
 defaults:
   - override /env: cartpole
 
-paradigm: online_v_offline
+paradigm: online_rl
 

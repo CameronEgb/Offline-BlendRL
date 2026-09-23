@@ -4,38 +4,8 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 
+from src.early_prediction.data_module import EPSepsisDataset, collate_ep_batch
 from src.early_prediction.model import FocalLoss, SepsisLSTM, SepsisTransformer
-
-
-class EPSepsisDataset(Dataset):
-    def __init__(self, X, y, input_dim):
-        self.X = X
-        self.y = y
-        self.input_dim = input_dim
-
-    def __len__(self):
-        return len(self.X)
-
-    def __getitem__(self, idx):
-        seq = self.X[idx]
-        label = self.y[idx] if self.y is not None else 0.0
-        return torch.tensor(seq, dtype=torch.float32), torch.tensor(label, dtype=torch.float32)
-
-
-def collate_ep_batch(batch):
-    sequences, labels = zip(*batch)
-    lengths = torch.tensor([len(seq) for seq in sequences], dtype=torch.long)
-    max_len = max(lengths).item()
-    input_dim = sequences[0].shape[-1]
-
-    padded_seqs = torch.zeros(len(sequences), max_len, input_dim, dtype=torch.float32)
-    padding_mask = torch.ones(len(sequences), max_len, dtype=torch.bool)
-
-    for i, seq in enumerate(sequences):
-        padded_seqs[i, : len(seq), :] = seq
-        padding_mask[i, : len(seq)] = False
-
-    return padded_seqs, torch.stack(labels), lengths, padding_mask
 
 
 class EPSepsisLightningModule(L.LightningModule):

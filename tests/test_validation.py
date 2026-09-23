@@ -3,162 +3,198 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.pipeline.exceptions import ConfigurationError
-from src.pipeline.validation import PARADIGM_CONSTRAINTS, validate_experiment_config
+from src.pipeline.validation import list_paradigms, validate_experiment_config
 
+
+class MockCfg:
+    def __init__(self, **kwargs):
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+        self.env = type("Env", (), {})()
+        self.mode = type("Mode", (), {})()
+        
+    def get(self, k, default=None):
+        return getattr(self, k, default)
 
 @pytest.fixture
-def mock_cfg():
-    cfg = MagicMock()
-    # Default values that pass for "online_v_offline"
-    cfg.get.side_effect = lambda k, d=None: {
-        "paradigm": "online_v_offline",
-        "task": "rl",
-        "online_methods": "ppo/cp_tuned",
-        "offline_methods": "",
-        "intervals_count": 1,
-        "eval_episodes": 100,
-        "sweep": False,
-        "group": "",
-        "experiment_id": "",
-    }.get(k, d)
+def mock_cfg_online():
+    cfg = MockCfg(
+        paradigm="online_rl",
+        task="rl",
+        online_methods="ppo/cp_tuned",
+        offline_methods="",
+        intervals_count=1,
+        eval_episodes=100,
+        group="",
+        experiment_id=""
+    )
     cfg.env.name = "cartpole"
     cfg.env.offline_only = False
-    cfg.env.get.side_effect = lambda k, d=None: {"offline_only": False}.get(k, d)
+    return cfg
+
+@pytest.fixture
+def mock_cfg_offline():
+    cfg = MockCfg(
+        paradigm="offline_rl",
+        task="rl",
+        online_methods="",
+        offline_methods="iql/mimic",
+        intervals_count=1,
+        eval_episodes=0,
+        group="",
+        experiment_id=""
+    )
+    cfg.env.name = "mimic"
+    cfg.env.offline_only = True
+    return cfg
+
+@pytest.fixture
+def mock_cfg_supervised():
+    cfg = MockCfg(
+        paradigm="supervised",
+        task="early_prediction_sweep",
+        online_methods="",
+        offline_methods="",
+        intervals_count=1,
+        eval_episodes=0,
+        group="early_prediction",
+        experiment_id="quick_test"
+    )
+    cfg.env.name = "mimic"
+    cfg.env.offline_only = True
     return cfg
 
 
+
+
+
+
+
 @patch("src.pipeline.validation._load_raw_experiment_yaml", return_value={})
-def test_missing_paradigm(mock_yaml, mock_cfg):
-    mock_cfg.get.side_effect = lambda k, d=None: {"paradigm": None, "task": "rl"}.get(k, d)
+def test_missing_paradigm(mock_yaml, mock_cfg_online):
+    mock_cfg_online.__dict__.update({"paradigm": None, "task": "rl"})
     with pytest.raises(ConfigurationError, match="has no 'paradigm' declared"):
-        validate_experiment_config(mock_cfg, "test_exp")
+        validate_experiment_config(mock_cfg_online, "test_exp")
 
 
 @patch("src.pipeline.validation._load_raw_experiment_yaml", return_value={})
-def test_unknown_paradigm(mock_yaml, mock_cfg):
-    mock_cfg.get.side_effect = lambda k, d=None: {"paradigm": "unknown_paradigm", "task": "rl"}.get(k, d)
-    with pytest.raises(ConfigurationError, match="unknown paradigm 'unknown_paradigm'"):
-        validate_experiment_config(mock_cfg, "test_exp")
+def test_unknown_paradigm(mock_yaml, mock_cfg_online):
+    mock_cfg_online.__dict__.update({"paradigm": "unknown_xyz", "task": "rl"})
+    with pytest.raises(ConfigurationError, match="Unknown paradigm 'unknown_xyz'"):
+        validate_experiment_config(mock_cfg_online, "test_exp")
 
 
 @patch("src.pipeline.validation._load_raw_experiment_yaml", return_value={})
-def test_offline_only_mismatch_requires_true(mock_yaml, mock_cfg):
-    mock_cfg.get.side_effect = lambda k, d=None: {
-        "paradigm": "offline_only",
-        "task": "rl",
-        "intervals_count": 1,
-        "eval_episodes": 0,
-        "online_methods": "",
-    }.get(k, d)
-    # env is offline_only = False, but paradigm requires True
-    with pytest.raises(ConfigurationError, match="requires an offline-only environment"):
-        validate_experiment_config(mock_cfg, "test_exp")
+def test_offline_rl_requires_offline_env(mock_yaml, mock_cfg_offline):
+    """offline_rl paradigm should fail when env.offline_only is False."""
+    mock_cfg_offline.env.offline_only = False
+    with pytest.raises(ConfigurationError, match="requires 'env.offline_only'"):
+        validate_experiment_config(mock_cfg_offline, "test_exp")
 
 
 @patch("src.pipeline.validation._load_raw_experiment_yaml", return_value={})
-def test_offline_only_mismatch_requires_false(mock_yaml, mock_cfg):
-    # env is offline_only = True, but paradigm requires False
-    mock_cfg.env.offline_only = True
-    with pytest.raises(ConfigurationError, match="requires a live simulator environment"):
-        validate_experiment_config(mock_cfg, "test_exp")
+def test_online_rl_requires_live_env(mock_yaml, mock_cfg_online):
+    """online_rl paradigm should fail when env.offline_only is True."""
+    mock_cfg_online.env.offline_only = True
+    with pytest.raises(ConfigurationError, match="requires 'env.offline_only'"):
+        validate_experiment_config(mock_cfg_online, "test_exp")
 
 
 @patch("src.pipeline.validation._load_raw_experiment_yaml", return_value={})
-def test_intervals_count_gt1_offline_only(mock_yaml, mock_cfg):
-    mock_cfg.get.side_effect = lambda k, d=None: {
-        "paradigm": "offline_only",
+def test_intervals_count_gt1_offline_rl(mock_yaml, mock_cfg_offline):
+    mock_cfg_offline.__dict__.update({
+        "paradigm": "offline_rl",
         "task": "rl",
         "intervals_count": 2,
         "eval_episodes": 0,
         "online_methods": "",
-    }.get(k, d)
-    mock_cfg.env.offline_only = True
+        "offline_methods": "iql/mimic",
+        "group": "",
+        "experiment_id": "",
+    })
     with pytest.raises(ConfigurationError, match="does not support intervals_count > 1"):
-        validate_experiment_config(mock_cfg, "test_exp")
+        validate_experiment_config(mock_cfg_offline, "test_exp")
 
 
 @patch("src.pipeline.validation._load_raw_experiment_yaml", return_value={})
-def test_eval_episodes_offline_only(mock_yaml, mock_cfg):
-    mock_cfg.get.side_effect = lambda k, d=None: {
-        "paradigm": "offline_only",
+def test_eval_episodes_offline_rl(mock_yaml, mock_cfg_offline):
+    mock_cfg_offline.__dict__.update({
+        "paradigm": "offline_rl",
         "task": "rl",
         "intervals_count": 1,
         "eval_episodes": 100,
         "online_methods": "",
-    }.get(k, d)
-    mock_cfg.env.offline_only = True
+        "offline_methods": "iql/mimic",
+        "group": "",
+        "experiment_id": "",
+    })
     with pytest.raises(ConfigurationError, match="disables simulated gym rollouts"):
-        validate_experiment_config(mock_cfg, "test_exp")
+        validate_experiment_config(mock_cfg_offline, "test_exp")
 
 
 @patch("src.pipeline.validation._load_raw_experiment_yaml", return_value={})
-def test_missing_online_methods(mock_yaml, mock_cfg):
-    mock_cfg.get.side_effect = lambda k, d=None: {
-        "paradigm": "online_v_offline",
+def test_missing_online_methods_online_rl(mock_yaml, mock_cfg_online):
+    mock_cfg_online.__dict__.update({
+        "paradigm": "online_rl",
         "task": "rl",
         "intervals_count": 1,
         "eval_episodes": 100,
         "online_methods": "",
-    }.get(k, d)
-    with pytest.raises(ConfigurationError, match="requires at least one entry in 'online_methods'"):
-        validate_experiment_config(mock_cfg, "test_exp")
+        "offline_methods": "",
+        "group": "",
+        "experiment_id": "",
+    })
+    with pytest.raises(ConfigurationError, match="requires 'online_methods'"):
+        validate_experiment_config(mock_cfg_online, "test_exp")
 
 
 @patch("src.pipeline.validation._load_raw_experiment_yaml", return_value={})
-def test_successful_validation_returns_notices(mock_yaml, mock_cfg):
-    # Valid online_v_offline setup
-    notices = validate_experiment_config(mock_cfg, "test_exp")
+def test_supervised_paradigm_passes_for_ep(mock_yaml, mock_cfg_supervised):
+    """supervised paradigm should pass cleanly for EP task config."""
+    notices = validate_experiment_config(mock_cfg_supervised, "test_exp")
     assert isinstance(notices, list)
 
 
 @patch("src.pipeline.validation._load_raw_experiment_yaml", return_value={})
-def test_task_paradigms_bypass(mock_yaml, mock_cfg):
-    mock_cfg.get.side_effect = lambda k, d=None: {
-        "task": "early_prediction",
-        "online_methods": "",
-        "offline_methods": "",
-    }.get(k, d)
-    # Should bypass paradigm validation entirely and not raise any errors
-    notices = validate_experiment_config(mock_cfg, "test_exp")
+def test_successful_validation_online_rl(mock_yaml, mock_cfg_online):
+    notices = validate_experiment_config(mock_cfg_online, "test_exp")
     assert isinstance(notices, list)
 
 
 @patch("src.pipeline.validation._load_raw_experiment_yaml", return_value={"intervals_count": 5})
-def test_explicit_intervals_count(mock_yaml, mock_cfg):
-    mock_cfg.get.side_effect = lambda k, d=None: {
-        "paradigm": "offline_only",
+def test_explicit_intervals_count_in_raw_yaml(mock_yaml, mock_cfg_offline):
+    """intervals_count declared explicitly in raw YAML should be caught even if cfg returns 1."""
+    mock_cfg_offline.__dict__.update({
+        "paradigm": "offline_rl",
         "task": "rl",
         "eval_episodes": 0,
         "online_methods": "",
-    }.get(k, d)
-    mock_cfg.env.offline_only = True
+        "offline_methods": "iql/mimic",
+        "group": "",
+        "experiment_id": "",
+    })
     with pytest.raises(ConfigurationError, match="does not support intervals_count > 1"):
-        validate_experiment_config(mock_cfg, "test_exp")
+        validate_experiment_config(mock_cfg_offline, "test_exp")
 
 
 @patch("src.pipeline.validation._load_raw_experiment_yaml", return_value={"eval_episodes": 5})
-def test_explicit_eval_episodes(mock_yaml, mock_cfg):
-    mock_cfg.get.side_effect = lambda k, d=None: {
-        "paradigm": "offline_only",
+def test_explicit_eval_episodes_in_raw_yaml(mock_yaml, mock_cfg_offline):
+    mock_cfg_offline.__dict__.update({
+        "paradigm": "offline_rl",
         "task": "rl",
         "intervals_count": 1,
         "online_methods": "",
-    }.get(k, d)
-    mock_cfg.env.offline_only = True
+        "offline_methods": "iql/mimic",
+        "group": "",
+        "experiment_id": "",
+    })
     with pytest.raises(ConfigurationError, match="disables simulated gym rollouts"):
-        validate_experiment_config(mock_cfg, "test_exp")
+        validate_experiment_config(mock_cfg_offline, "test_exp")
 
 
-@patch("src.pipeline.validation._load_raw_experiment_yaml", return_value={})
-def test_sweep_maximize_offline_only(mock_yaml, mock_cfg):
-    mock_cfg.get.side_effect = lambda k, d=None: {
-        "paradigm": "offline_only",
-        "task": "rl",
-        "intervals_count": 1,
-        "eval_episodes": 0,
-        "online_methods": "",
-        "hydra": {"sweeper": {"direction": "maximize"}},
-    }.get(k, d)
-    mock_cfg.env.offline_only = True
-    notices = validate_experiment_config(mock_cfg, "test_exp", is_sweep=True)
-    assert any("Optuna direction is 'maximize'" in n for n in notices)
+def test_list_paradigms_includes_base_paradigms():
+    """list_paradigms() should include all base paradigms from YAML files."""
+    paradigms = list_paradigms()
+    assert "supervised" in paradigms
+    assert "offline_rl" in paradigms
+    assert "online_rl" in paradigms

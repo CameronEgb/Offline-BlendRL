@@ -9,6 +9,13 @@ import sys
 import time
 from pathlib import Path
 
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+SRC_DIR = os.path.join(PROJECT_ROOT, "src")
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+if SRC_DIR not in sys.path:
+    sys.path.insert(0, SRC_DIR)
+
 import hydra
 from hydra import compose, initialize
 
@@ -99,6 +106,17 @@ def main():
         print(f"\n[Validation Success] Experiment config '{experiment_arg}' is valid and ready to run.")
         sys.exit(0)
 
+    # Load paradigm definition for component assembly
+    paradigm_def = None
+    try:
+        from src.core.paradigm_loader import load_paradigm_definition
+        paradigm_name = cfg.get("paradigm", None)
+        if paradigm_name:
+            paradigm_def = load_paradigm_definition(paradigm_name)
+    except Exception as e:
+        # Paradigm loading is best-effort during transition; log but don't abort
+        print(f"[Notice] Could not load paradigm definition: {e}")
+
     # Execution mode is determined solely by the site profile: site=local -> interactive CLI, any other site -> Slurm cluster
     site_name = getattr(cfg.site, "name", "local") if hasattr(cfg, "site") else "local"
     is_interactive = site_name == "local"
@@ -152,6 +170,7 @@ def main():
         "online_list": online_list,
         "offline_list": offline_list,
         "dataset_list": dataset_list,
+        "paradigm_def": paradigm_def,
     }
 
     # Extract task name

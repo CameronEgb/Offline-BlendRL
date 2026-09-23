@@ -65,7 +65,9 @@ class TemporalAttentionPooling(nn.Module):
 class FocalLoss(nn.Module):
     def __init__(self, pos_weight=1.0, gamma=2.0):
         super().__init__()
-        self.pos_weight = pos_weight
+        if not isinstance(pos_weight, torch.Tensor):
+            pos_weight = torch.tensor([pos_weight], dtype=torch.float32)
+        self.register_buffer("pos_weight", pos_weight)
         self.gamma = gamma
 
     def forward(self, logits, targets):
@@ -73,7 +75,8 @@ class FocalLoss(nn.Module):
         bce_loss = nn.functional.binary_cross_entropy_with_logits(logits, targets, reduction="none")
         p_t = probs * targets + (1 - probs) * (1 - targets)
         focal_factor = (1 - p_t) ** self.gamma
-        weight_factor = targets * self.pos_weight + (1 - targets)
+        pos_w = self.pos_weight.to(targets.device)
+        weight_factor = targets * pos_w + (1 - targets)
         loss = focal_factor * weight_factor * bce_loss
         return loss.mean()
 
@@ -391,12 +394,6 @@ def train_transformer_model(
 import lightning as L
 from torch.utils.data import DataLoader
 
-from src.early_prediction.lightning_module import (
-    EPSepsisDataset,
-    EPSepsisLightningModule,
-    build_ep_trainer,
-    collate_ep_batch,
-)
 
 
 def get_pos_weight(y_train, device):
@@ -423,6 +420,9 @@ def train_lstm_model(
     seed=42,
     use_norm=True,
 ):
+    from src.early_prediction.data_module import EPSepsisDataset, collate_ep_batch
+    from src.early_prediction.lightning_module import EPSepsisLightningModule, build_ep_trainer
+
     L.seed_everything(seed)
     pos_w = get_pos_weight(y_train, device)
 
@@ -449,6 +449,8 @@ def train_lstm_model(
 
 
 def evaluate_lstm_model(model, X_test, input_dim, device="cpu"):
+    from src.early_prediction.data_module import EPSepsisDataset, collate_ep_batch
+
     model.eval()
     model.to(device)
     dataset = EPSepsisDataset(X_test, [0] * len(X_test), input_dim)
@@ -488,6 +490,9 @@ def train_transformer_model(
     seed=42,
     use_norm=True,
 ):
+    from src.early_prediction.data_module import EPSepsisDataset, collate_ep_batch
+    from src.early_prediction.lightning_module import EPSepsisLightningModule, build_ep_trainer
+
     L.seed_everything(seed)
     pos_w = get_pos_weight(y_train, device)
 
@@ -518,6 +523,8 @@ def train_transformer_model(
 
 
 def evaluate_transformer_model(model, X_test, input_dim, device="cpu"):
+    from src.early_prediction.data_module import EPSepsisDataset, collate_ep_batch
+
     model.eval()
     model.to(device)
     dataset = EPSepsisDataset(X_test, [0] * len(X_test), input_dim)
@@ -586,8 +593,8 @@ def main(cfg: DictConfig):
 
     defaults = {
         "exp_id": cfg.experiment_id,
-        "checkpoint": "results/checkpoints/mimic/tune_mimic_cql",
-        "dataset_path": find_default_mimic_npz(),
+        "checkpoint": "results/checkpoints/mimic/cql_literature",
+        "dataset_path": None,  # Must be set explicitly in experiment config early_prediction.dataset_path
         "tune_dir": "results/plots/early_prediction/tune_early_pred",
         "use_tuned_params": True,
         "save_checkpoints": True,
@@ -613,6 +620,12 @@ def main(cfg: DictConfig):
         "output_dir": "results/plots/early_prediction",
     }
     args = Dict2Obj(ep_cfg, defaults)
+
+    if not args.dataset_path:
+        raise ValueError(
+            "early_prediction.dataset_path is required. "
+            "Add it to the experiment YAML under early_prediction.dataset_path."
+        )
 
     w_steps = 2 * args.window_hours
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

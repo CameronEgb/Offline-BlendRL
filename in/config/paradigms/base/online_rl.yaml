@@ -1,0 +1,14 @@
+type: base
+description: "Online RL with a live simulator (PPO, BlendRL online, etc.). Offline agents may optionally be trained on the collected datasets."
+runner: OnlineRLRunner
+data_module: SimulatorDataModule
+eval_protocol: EpisodicRewardEvalProtocol
+allows_eval_episodes: true
+allows_intervals: true
+default_callbacks:
+  - EnvironmentEvaluatorCallback
+  - DatasetWriterCallback
+constraints:
+  requires:
+    env.offline_only: false
+    online_methods: non_empty

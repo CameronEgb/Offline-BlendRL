@@ -3,3 +3,26 @@ defaults:
   - override /env: mimic
 
 task: early_prediction_sweep
+intervals_count: 1
+eval_episodes: 0
+paradigm: supervised
+consolidate: false
+partition: common
+
+early_prediction:
+  checkpoint: "results/checkpoints/mimic/cql_literature"
+  dataset_path: "in/datasets/mimic/mimic_lazy_12_clean_with_interventions.npz"
+  output_dir: "results/plots/early_prediction"
+  ep_ckpt_root: "results/checkpoints/early_prediction"
+  tau_min: 1
+  tau_max: 33
+  tau_step: 4
+  window_hours: 12
+  n_splits: 20
+  use_volatility: true
+
+plots:
+  - ep_dl_sweep
+  - ep_agreement
+  - ep_trajectories
+  - ep_counterfactual_table

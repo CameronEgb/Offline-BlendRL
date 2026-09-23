@@ -2,7 +2,7 @@
 defaults:
   - override /env: cartpole
 
-paradigm: online_v_offline
+paradigm: online_rl
 
 save_dataset: true
 seed: 42

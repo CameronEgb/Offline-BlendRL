@@ -1,0 +1,14 @@
+# @package _global_
+defaults:
+  - override /env: seaquest
+  - override /agent: ppo/dnn
+
+paradigm: online_rl
+
+save_dataset: true
+seed: 1
+recover: false
+
+plots:
+  convergence: {}
+  losses: {}

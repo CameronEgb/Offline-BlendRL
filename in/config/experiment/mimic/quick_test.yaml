@@ -1,0 +1,25 @@
+# @package _global_
+defaults:
+  - mimic/_base
+  - override /agent: cql/dnn
+  - override /mode: offline
+
+offline_datasets:
+  - mimic_lazy_0_interventions_balanced
+
+offline_methods:
+  - cql/dnn
+
+no_plot: true
+
+agent:
+  batch_size: 256
+  epochs_per_interval: 1
+  eval_interval_epochs: 1
+  lr: 1e-4
+  cql_alpha: 2.0
+  weight_decay: 1e-4
+
+trainer:
+  limit_train_batches: 2
+  limit_val_batches: 2
