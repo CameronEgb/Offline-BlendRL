@@ -20,6 +20,7 @@ consolidate: null
 partition: null
 tensorboard: false
 plot_style: null
+plot_only: false
 no_plot: false
 no_online: false
 no_offline: false

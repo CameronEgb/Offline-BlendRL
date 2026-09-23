@@ -36,6 +36,7 @@ def main():
         )
         print("  site=ncshare          Slurm cluster execution on NCShare")
         print("  site=arc              Slurm cluster execution on ARC")
+        print("  plot_only=true        Run plotting phase only (no training, no Slurm submission)")
         print("  no_plot=true          Skip automatic plotting")
         print("  no_online=true        Skip online training phase")
         print("  no_offline=true       Skip offline training phase")
@@ -104,6 +105,15 @@ def main():
 
     if cfg.get("dry_run", False):
         print(f"\n[Validation Success] Experiment config '{experiment_arg}' is valid and ready to run.")
+        sys.exit(0)
+
+    if cfg.get("plot_only", False):
+        print(f"\n=== Running Plotting Phase Only for '{experiment_arg}' ===")
+        run_plotting(
+            experiment=experiment_arg,
+            style=cfg.get("plot_style", None),
+            wipe=cfg.get("wipe", False),
+        )
         sys.exit(0)
 
     # Load paradigm definition for component assembly
