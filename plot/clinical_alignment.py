@@ -41,6 +41,51 @@ from plot.base import BasePlotter, clean_label, get_canonical_method_name, get_m
 from src.method_registry import get_style as get_method_style
 
 
+def compute_trajectory_agreement(
+    p_clin: np.ndarray,
+    p_pol: np.ndarray,
+    metric: str = "windowed_jaccard",
+    window_hours: int = 3,
+    empty_union_score: float = 1.0,
+) -> float:
+    """Compute per-patient trajectory agreement score between clinician and policy.
+
+    Args:
+        p_clin: Clinician binary treatment actions for this patient trajectory.
+        p_pol: Policy binary treatment actions for this patient trajectory.
+        metric: 'windowed_jaccard', 'jaccard', or 'accuracy'.
+        window_hours: Matching window (±hours) for windowed Jaccard.
+        empty_union_score: Score to assign when neither clinician nor policy intervened.
+
+    Returns:
+        float agreement score in [0.0, 1.0].
+    """
+    if metric == "accuracy":
+        return float((p_clin == p_pol).mean()) if len(p_clin) > 0 else 0.0
+
+    clin_pos = np.where(p_clin == 1)[0]
+    pol_pos = np.where(p_pol == 1)[0]
+
+    # Both withheld treatment across entire trajectory
+    if len(clin_pos) == 0 and len(pol_pos) == 0:
+        return empty_union_score
+    # One administered while other never did
+    if len(clin_pos) == 0 or len(pol_pos) == 0:
+        return 0.0
+
+    if metric == "jaccard" or window_hours == 0:
+        tp = int(np.isin(pol_pos, clin_pos).sum())
+        fp = len(pol_pos) - tp
+        fn = len(clin_pos) - tp
+    else:  # windowed_jaccard
+        tp = sum(1 for c in clin_pos if np.min(np.abs(pol_pos - c)) <= window_hours)
+        fn = len(clin_pos) - tp
+        fp = sum(1 for p in pol_pos if np.min(np.abs(clin_pos - p)) > window_hours)
+
+    denom = tp + fp + fn
+    return float(tp / denom) if denom > 0 else empty_union_score
+
+
 class ClinicalAlignmentPlotter(BasePlotter):
     def __init__(self):
         super().__init__("clinical_alignment")
@@ -254,10 +299,37 @@ class ClinicalAlignmentPlotter(BasePlotter):
         )
         total_steps = len(all_clin_acts)
 
+        agreement_metric = str(cfg.get("agreement_metric", "windowed_jaccard")).lower().strip()
+        window_hours = int(cfg.get("window_hours", 3))
+        empty_union_score = float(cfg.get("empty_union_score", 1.0))
+
+        if agreement_metric == "windowed_jaccard":
+            metric_label = f"Clinician – RL Policy Jaccard Similarity (±{window_hours}h) (%)"
+            metric_title = f"Clinician Jaccard (±{window_hours}h)"
+        elif agreement_metric == "jaccard":
+            metric_label = "Clinician – RL Policy Jaccard Similarity (%)"
+            metric_title = "Clinician Jaccard Similarity"
+        else:
+            metric_label = "Clinician – RL Policy Agreement (%)"
+            metric_title = "Clinician Agreement"
+
+        print(f"  Alignment Metric: {agreement_metric} (window: ±{window_hours}h, empty_union: {empty_union_score})")
+
         cache_dir = output_dir / "cache"
         cache_dir.mkdir(parents=True, exist_ok=True)
-        cache_path = cache_dir / "clinical_alignment_cache.npz"
-        history_cache_path = cache_dir / "clinical_alignment_history.npz"
+        metric_tag = f"{agreement_metric}_w{window_hours}" if "window" in agreement_metric else agreement_metric
+        cache_path = cache_dir / f"clinical_alignment_cache_{metric_tag}.npz"
+        history_cache_path = cache_dir / f"clinical_alignment_history_{metric_tag}.npz"
+
+        # Fallback to legacy cache files if accuracy requested and legacy files exist
+        if not cache_path.exists() and agreement_metric == "accuracy":
+            legacy_cache = cache_dir / "clinical_alignment_cache.npz"
+            if legacy_cache.exists():
+                cache_path = legacy_cache
+        if not history_cache_path.exists() and agreement_metric == "accuracy":
+            legacy_hist = cache_dir / "clinical_alignment_history.npz"
+            if legacy_hist.exists():
+                history_cache_path = legacy_hist
 
         remake = cfg.get("remake", False)
         num_patients = X.shape[0]
@@ -314,6 +386,9 @@ class ClinicalAlignmentPlotter(BasePlotter):
             except Exception:
                 results = []
 
+        win_key_f1 = f"Windowed F1 (±{window_hours}h)"
+        win_key_jaccard = f"Windowed Jaccard (±{window_hours}h) %"
+
         if not results:
             # 1. Clinician Baseline
             clin_admin_rate = (all_clin_acts == 1).mean() * 100.0
@@ -328,7 +403,9 @@ class ClinicalAlignmentPlotter(BasePlotter):
                     "Recall": 1.0000,
                     "F1 Score": 1.0000,
                     "Best F1": 1.0000,
-                    "Windowed F1 (±3h)": 1.0000,
+                    "Jaccard Similarity %": 100.0,
+                    win_key_f1: 1.0000,
+                    win_key_jaccard: 100.0,
                     "Windowed Recall %": 100.0,
                     "Opt Threshold": 0.5000,
                 }
@@ -413,7 +490,7 @@ class ClinicalAlignmentPlotter(BasePlotter):
             except Exception:
                 auprc = float("nan")
 
-            # Windowed agreement calculation (±3 hours)
+            # Windowed agreement calculation (±window_hours)
             step_idx = 0
             patient_agrs = []
             win_tp = 0
@@ -431,7 +508,13 @@ class ClinicalAlignmentPlotter(BasePlotter):
                 p_pol = all_policy_acts[step_idx : step_idx + p_len]
                 step_idx += p_len
 
-                p_agree = (p_clin == p_pol).mean()
+                p_agree = compute_trajectory_agreement(
+                    p_clin,
+                    p_pol,
+                    metric=agreement_metric,
+                    window_hours=window_hours,
+                    empty_union_score=empty_union_score,
+                )
                 patient_agrs.append(p_agree)
 
                 clin_pos_indices = np.where(p_clin == 1)[0]
@@ -439,19 +522,21 @@ class ClinicalAlignmentPlotter(BasePlotter):
                 total_clin_pos += len(clin_pos_indices)
 
                 for c_pos in clin_pos_indices:
-                    if len(pol_pos_indices) > 0 and np.min(np.abs(pol_pos_indices - c_pos)) <= 3:
+                    if len(pol_pos_indices) > 0 and np.min(np.abs(pol_pos_indices - c_pos)) <= window_hours:
                         win_tp += 1
                     else:
                         win_fn += 1
 
                 for p_pos in pol_pos_indices:
-                    if len(clin_pos_indices) == 0 or np.min(np.abs(clin_pos_indices - p_pos)) > 3:
+                    if len(clin_pos_indices) == 0 or np.min(np.abs(clin_pos_indices - p_pos)) > window_hours:
                         win_fp += 1
 
             patient_agreements[method_name] = np.array(patient_agrs)
+            jaccard = tp / (tp + fp + fn + 1e-8)
             win_precision = win_tp / (win_tp + win_fp + 1e-8)
             win_recall = win_tp / (total_clin_pos + 1e-8)
             win_f1 = 2 * (win_precision * win_recall) / (win_precision + win_recall + 1e-8)
+            win_jaccard = win_tp / (win_tp + win_fp + win_fn + 1e-8)
 
             results.append(
                 {
@@ -464,7 +549,9 @@ class ClinicalAlignmentPlotter(BasePlotter):
                     "Recall": float(recall),
                     "F1 Score": float(f1),
                     "Best F1": best_f1,
-                    "Windowed F1 (±3h)": float(win_f1),
+                    "Jaccard Similarity %": float(jaccard * 100.0),
+                    win_key_f1: float(win_f1),
+                    win_key_jaccard: float(win_jaccard * 100.0),
                     "Windowed Recall %": float(win_recall * 100.0),
                     "Opt Threshold": opt_thresh,
                 }
@@ -512,7 +599,14 @@ class ClinicalAlignmentPlotter(BasePlotter):
                     p_clin = all_clin_acts[step_idx : step_idx + p_len]
                     p_pol = all_policy_acts[step_idx : step_idx + p_len]
                     step_idx += p_len
-                    ep_agrs.append((p_clin == p_pol).mean())
+                    p_agree = compute_trajectory_agreement(
+                        p_clin,
+                        p_pol,
+                        metric=agreement_metric,
+                        window_hours=window_hours,
+                        empty_union_score=empty_union_score,
+                    )
+                    ep_agrs.append(p_agree)
 
                 interval_agreements.setdefault(method_name, {})[ep] = np.array(ep_agrs)
                 new_interval_data = True
@@ -567,7 +661,15 @@ class ClinicalAlignmentPlotter(BasePlotter):
         if any(k in requested_plots for k in ["clinical_agreement", "agreement_bar", "agreement"]) and results:
             fig, ax = plt.subplots(figsize=(max(8, len(results) * 1.8), 5.5))
             methods = [r["Method"] for r in results]
-            accuracies = [r["Accuracy %"] for r in results]
+            if "jaccard" in agreement_metric:
+                score_key = win_key_jaccard if "window" in agreement_metric else "Jaccard Similarity %"
+                accuracies = [float(r.get(score_key, r.get("Accuracy %", 0.0))) for r in results]
+                bar_ylabel = f"Clinician {metric_title} (%)"
+                bar_title = f"MIMIC Treatment Action {metric_title} ({clean_exp})"
+            else:
+                accuracies = [float(r.get("Accuracy %", 0.0)) for r in results]
+                bar_ylabel = "Clinician Agreement (%)"
+                bar_title = f"MIMIC Treatment Action Agreement ({clean_exp})"
 
             bar_colors = []
             for r in results:
@@ -580,8 +682,8 @@ class ClinicalAlignmentPlotter(BasePlotter):
             bars = ax.bar(
                 methods, accuracies, color=bar_colors, width=0.55, edgecolor="#333333", linewidth=1.0, alpha=0.85
             )
-            ax.set_ylabel("Clinician Agreement (%)", fontsize=12, fontweight="bold")
-            ax.set_title(f"MIMIC Treatment Action Agreement ({clean_exp})", fontsize=13, fontweight="bold")
+            ax.set_ylabel(bar_ylabel, fontsize=12, fontweight="bold")
+            ax.set_title(bar_title, fontsize=13, fontweight="bold")
             ax.set_ylim(0, 110)
             ax.grid(True, axis="y", linestyle="--", alpha=0.4)
             plt.xticks(rotation=15, ha="right", fontsize=10, fontweight="bold")
@@ -626,13 +728,28 @@ class ClinicalAlignmentPlotter(BasePlotter):
         has_valid_data = bool(patient_agreements) and len(outcomes) > 0
         if should_plot_shock and has_valid_data:
             self._plot_agreement_vs_shock(
-                patient_agreements, outcomes, output_dir, clean_exp, color_map, n_evals=n_evals
+                patient_agreements,
+                outcomes,
+                output_dir,
+                clean_exp,
+                color_map,
+                n_evals=n_evals,
+                metric_label=metric_label,
+                metric_title=metric_title,
             )
 
         if should_plot_prog and interval_agreements and len(outcomes) > 0:
             for m_name, epochs_dict in sorted(interval_agreements.items()):
                 self._plot_method_agreement_vs_shock_progression(
-                    m_name, epochs_dict, outcomes, output_dir, clean_exp, color_map, n_evals=n_evals
+                    m_name,
+                    epochs_dict,
+                    outcomes,
+                    output_dir,
+                    clean_exp,
+                    color_map,
+                    n_evals=n_evals,
+                    metric_label=metric_label,
+                    metric_title=metric_title,
                 )
 
         if (
@@ -644,7 +761,14 @@ class ClinicalAlignmentPlotter(BasePlotter):
             and len(outcomes) > 0
         ):
             self._plot_agreement_vs_shock_absolute_progression(
-                interval_agreements, outcomes, output_dir, clean_exp, color_map, n_evals=n_evals
+                interval_agreements,
+                outcomes,
+                output_dir,
+                clean_exp,
+                color_map,
+                n_evals=n_evals,
+                metric_label=metric_label,
+                metric_title=metric_title,
             )
 
         print("==========================================================================================\n")
@@ -738,6 +862,8 @@ class ClinicalAlignmentPlotter(BasePlotter):
         clean_exp: str,
         color_map: dict,
         n_evals: int = 100,
+        metric_label: str = "Clinician – RL Policy Agreement (%)",
+        metric_title: str = "Clinician Agreement",
     ):
         """Plot septic shock rate vs clinician agreement across all methods with connected error bands and background histogram."""
         bins = np.linspace(0, 100, 11)
@@ -804,7 +930,7 @@ class ClinicalAlignmentPlotter(BasePlotter):
                     zorder=2,
                 )
 
-        ax1.set_xlabel("Clinician – RL Policy Agreement (%)", fontsize=12, fontweight="bold")
+        ax1.set_xlabel(metric_label, fontsize=12, fontweight="bold")
         ax1.set_ylabel("True Septic Shock Rate (%)", fontsize=12, fontweight="bold")
         ax1.set_xticks(np.arange(0, 101, 10))
         ax1.set_xlim(-2, 102)
@@ -813,7 +939,7 @@ class ClinicalAlignmentPlotter(BasePlotter):
 
         lines1, labels1 = ax1.get_legend_handles_labels()
         ax1.legend(lines1, labels1, fontsize=10, loc="best", framealpha=0.9)
-        ax1.set_title(f"Septic Shock Rate vs. Clinician Agreement ({clean_exp})", fontsize=13, fontweight="bold")
+        ax1.set_title(f"Septic Shock Rate vs. {metric_title} ({clean_exp})", fontsize=13, fontweight="bold")
 
         fig.tight_layout()
         plot_path = output_dir / "agreement_vs_shock.png"
@@ -860,6 +986,8 @@ class ClinicalAlignmentPlotter(BasePlotter):
         clean_exp: str,
         color_map: dict,
         n_evals: int = 100,
+        metric_label: str = "Clinician – RL Policy Agreement (%)",
+        metric_title: str = "Clinician Agreement",
     ):
         """Plot septic shock rate progression for a single method across training intervals/epochs with connected error bands,
         saved to intervals/interagreement_vs_shock_[method]_progression.png."""
@@ -959,7 +1087,7 @@ class ClinicalAlignmentPlotter(BasePlotter):
                     zorder=zorder - 1,
                 )
 
-        ax1.set_xlabel("Clinician – RL Policy Agreement (%)", fontsize=12, fontweight="bold")
+        ax1.set_xlabel(metric_label, fontsize=12, fontweight="bold")
         ax1.set_ylabel("True Septic Shock Rate (%)", fontsize=12, fontweight="bold")
         ax1.set_xticks(np.arange(0, 101, 10))
         ax1.set_xlim(-2, 102)
@@ -968,7 +1096,7 @@ class ClinicalAlignmentPlotter(BasePlotter):
 
         display_name = clean_label(m_name)
         ax1.set_title(
-            f"Septic Shock Rate vs. Clinician Agreement — {display_name} Progression ({clean_exp})",
+            f"Septic Shock Rate vs. {metric_title} — {display_name} Progression ({clean_exp})",
             fontsize=12.5,
             fontweight="bold",
         )
@@ -999,6 +1127,8 @@ class ClinicalAlignmentPlotter(BasePlotter):
         color_map: dict,
         filename: str | None = None,
         n_evals: int = 100,
+        metric_label: str = "Clinician – RL Policy Agreement (%)",
+        metric_title: str = "Clinician Agreement",
     ):
         """Plot septic shock rate progression across training intervals for all methods with connected error bands."""
         from matplotlib.patches import Patch
@@ -1095,14 +1225,14 @@ class ClinicalAlignmentPlotter(BasePlotter):
                         zorder=zorder - 1,
                     )
 
-        ax1.set_xlabel("Clinician – RL Policy Agreement (%)", fontsize=12, fontweight="bold")
+        ax1.set_xlabel(metric_label, fontsize=12, fontweight="bold")
         ax1.set_ylabel("True Septic Shock Rate (%)", fontsize=12, fontweight="bold")
         ax1.set_xticks(np.arange(0, 101, 10))
         ax1.set_xlim(-2, 102)
         ax1.set_ylim(0, 105)
         ax1.grid(True, linestyle="--", alpha=0.35, zorder=0)
         ax1.set_title(
-            f"Septic Shock Rate vs. Clinician Agreement — Progression ({clean_exp})", fontsize=13, fontweight="bold"
+            f"Septic Shock Rate vs. {metric_title} — Progression ({clean_exp})", fontsize=13, fontweight="bold"
         )
 
         lines1, labels1 = ax1.get_legend_handles_labels()
