@@ -70,6 +70,7 @@ def main():
 
     # Load configuration
     try:
+        print(f"Loading Hydra configuration for '{experiment_arg}'...", flush=True)
         hydra.core.global_hydra.GlobalHydra.instance().clear()
         initialize(version_base=None, config_path="in/config")
         cfg = compose(config_name="config", overrides=overrides_for_compose, return_hydra_config=True)
@@ -204,5 +205,5 @@ def main():
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] not in ("-h", "--help"):
-        print(f"🚀 Initializing BlendRL pipeline for: {sys.argv[1]} ...", flush=True)
+        print(f"Initializing BlendRL pipeline for: {sys.argv[1]} ...", flush=True)
     main()

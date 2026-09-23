@@ -286,6 +286,7 @@ class ClinicalAlignmentPlotter(BasePlotter):
         print("\n==========================================================================================")
         print(f"=== Running MIMIC Clinical Alignment Evaluation for '{exp_id}' ===")
         print("==========================================================================================")
+        print(f"  Loading dataset '{npz_candidate.name}' ({npz_candidate.stat().st_size / (1024*1024):.1f} MB)...", flush=True)
         data = np.load(npz_candidate, allow_pickle=True)
         X = data["X"]  # (N, 240, 49)
         mask = data["mask"]  # (N, 240, 1)
@@ -298,6 +299,7 @@ class ClinicalAlignmentPlotter(BasePlotter):
             "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
         )
         total_steps = len(all_clin_acts)
+        print(f"  Loaded {total_steps:,} valid clinical transitions across {X.shape[0]:,} patient trajectories.", flush=True)
 
         agreement_metric = str(cfg.get("agreement_metric", "windowed_jaccard")).lower().strip()
         window_hours = int(cfg.get("window_hours", 3))
@@ -336,7 +338,9 @@ class ClinicalAlignmentPlotter(BasePlotter):
         outcomes = data["y"].squeeze() if "y" in data else np.zeros(num_patients)
         patient_agreements = {}
 
+        print(f"  Scanning policy checkpoints for '{clean_exp}' in group '{group}'...", flush=True)
         method_ckpts, method_interval_ckpts = self._discover_checkpoints(exp_id, group, clean_exp)
+        print(f"  Discovered {len(method_ckpts)} best checkpoints and {len(method_interval_ckpts)} interval checkpoint sets.", flush=True)
         interval_agreements = {}
 
         if history_cache_path.exists() and not remake:
@@ -430,6 +434,8 @@ class ClinicalAlignmentPlotter(BasePlotter):
             if agent is None:
                 print(f"  Warning [clinical_alignment]: Could not load checkpoint {ckpt_path}")
                 continue
+
+            print(f"  Evaluating {clean_label(method_name)} ({ckpt_p.name})...", flush=True)
 
             all_admin_probs = []
             all_policy_acts = []
