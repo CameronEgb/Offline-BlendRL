@@ -1,0 +1,80 @@
+# @package _global_
+defaults:
+- mimic/_base
+- override /site: ncshare
+
+# Default partition: common (standard compute nodes)
+# Dispatches parallel jobs across compute nodes
+partition: common
+consolidate: false
+
+# Discrete CQL Comparison Benchmark: Pure Neural vs. Value-Based BlendRL
+# Moderate positive action weighting (5.0) + lower CQL penalty (cql_alpha: 0.05)
+# Allows Bellman value propagation to dominate and preserves rare antibiotic interventions with high precision.
+
+env:
+  gamma: 0.95
+
+resources:
+  partition: common
+  cores: 16
+  standalone_cores: 16
+  memory: "32G"
+  standalone_memory: "32G"
+  time: "01:00:00"
+
+methods:
+  # Shared hyperparameters applied across all methods in this experiment
+  params:
+    agent: cql
+    epochs_per_interval: 25
+    eval_interval_epochs: 2
+    batch_size: 1024
+    lr: 3e-4
+    gamma: 0.95
+    cql_alpha: 0.05
+    reward_scale: 1.0
+    pos_action_weight: 5.0
+    bellman_loss: smooth_l1
+    weight_decay: 1e-4
+    use_actor: false
+    blend_q_values: true
+
+  cql_dnn:
+    model: dnn
+
+  cql_dueling_resnet:
+    model: dueling_resnet
+
+  cql_blendrl_human_rigid:
+    model: blendrl
+    rules: rigid
+    modules:
+      - type: nsfr
+        rules: rigid
+      - type: neural
+
+  cql_blendrl_human_dueling_resnet_rigid:
+    model: blendrl
+    neural_actor: dueling_resnet
+    architecture: dueling_resnet
+    hidden_sizes: [512, 512, 256, 128]
+    rules: rigid
+    modules:
+      - type: nsfr
+        rules: rigid
+      - type: neural
+
+  cql_blendrl_cew_dueling_resnet:
+    model: blendrl
+    neural_actor: dueling_resnet
+    architecture: dueling_resnet
+    hidden_sizes: [512, 512, 256, 128]
+    symbolic_actor: cew
+    ecm_dthr: 0.03
+    fyd: false
+    modules:
+      - type: cew
+        fyd: false
+        ecm_dthr: 0.03
+      - type: neural
