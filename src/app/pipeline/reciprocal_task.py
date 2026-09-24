@@ -31,6 +31,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from src.app.pipeline.config import parse_methods_dict
 from src.app.pipeline.datasets import fast_purge_dir
 from src.app.pipeline.runtime import get_python_executable, get_subprocess_env
 from src.app.pipeline.task_registry import register_task
@@ -123,8 +124,8 @@ def run_reciprocal_refinement(cfg, local_val):
             env_vars["EP_SHAPE_CQL_CKPT"] = str(prev_ckpt_dir)
 
         # Build CQL training command
-        methods = cfg.get("methods", {})
-        if methods and hasattr(methods, "items"):
+        methods = parse_methods_dict(cfg)
+        if methods:
             cql_method_name = list(methods.keys())[0]
             mcfg = methods[cql_method_name]
             cql_agent = mcfg.get("agent", "cql")
