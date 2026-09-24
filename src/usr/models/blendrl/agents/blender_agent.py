@@ -405,8 +405,16 @@ class BlenderActorCritic(nn.Module):
 
         # 1. Parse modules from argument, modules list, or hierarchical neural/symbolic blocks
         modules_list = modules if modules is not None else self.get_cfg("modules", None)
-        symbolic_cfg = self.get_cfg("symbolic", None)
-        neural_cfg = self.get_cfg("neural", None)
+        symbolic_cfg = self.get_cfg("symbolic", None) or self.get_cfg("symbolic_actor", None)
+        neural_cfg = self.get_cfg("neural", None) or self.get_cfg("neural_actor", None)
+        blender_cfg = self.get_cfg("blender", None) or self.get_cfg("blender_actor", None)
+
+        if blender_cfg is not None:
+            self.blender_mode = _get_val(blender_cfg, "mode", self.blender_mode)
+            self.blend_function = _get_val(blender_cfg, "blend_function", self.blend_function)
+            blender_reasoner = _get_val(blender_cfg, "reasoner", self.reasoner or "nsfr")
+        else:
+            blender_reasoner = self.reasoner or "nsfr"
 
         if modules_list is None and (symbolic_cfg is not None or neural_cfg is not None):
             modules_list = []
@@ -415,9 +423,9 @@ class BlenderActorCritic(nn.Module):
                     s_dict = {"type": self.reasoner or "nsfr", "rules": symbolic_cfg}
                 else:
                     s_dict = dict(symbolic_cfg) if hasattr(symbolic_cfg, "items") else {}
-                    if "type" not in s_dict:
-                        s_dict["type"] = self.reasoner or "nsfr"
-                    if "rules" not in s_dict and s_dict["type"] in ("nsfr", "neumann"):
+                    s_type = _get_val(s_dict, "type", _get_val(s_dict, "name", _get_val(s_dict, "reasoner", self.reasoner or "nsfr")))
+                    s_dict["type"] = s_type
+                    if "rules" not in s_dict and s_type in ("nsfr", "neumann"):
                         s_dict["rules"] = self.get_cfg("rules", "default")
                 modules_list.append(s_dict)
 
@@ -426,8 +434,8 @@ class BlenderActorCritic(nn.Module):
                     n_dict = {"module_type": "neural", "architecture": neural_cfg}
                 else:
                     n_dict = dict(neural_cfg) if hasattr(neural_cfg, "items") else {}
-                    if "architecture" not in n_dict and "type" in n_dict:
-                        n_dict["architecture"] = n_dict["type"]
+                    arch = _get_val(n_dict, "architecture", _get_val(n_dict, "type", _get_val(n_dict, "name", self.architecture or "dnn")))
+                    n_dict["architecture"] = arch
                     n_dict["module_type"] = "neural"
                 modules_list.append(n_dict)
 
@@ -516,6 +524,7 @@ class BlenderActorCritic(nn.Module):
             blender_rules,
             device,
             blender_mode=self.blender_mode,
+            reasoner=blender_reasoner,
             train=True,
             explain=self.explain,
             out_size=out_size,

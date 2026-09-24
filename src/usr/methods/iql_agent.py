@@ -83,7 +83,7 @@ class IQLAgent(OfflineAgentBase):
                 self.get_cfg("reasoner", cfg.env.reasoner),
                 self.device,
                 architecture=self.get_cfg("architecture", cfg.env.architecture),
-                cfg=cfg.agent,
+                cfg=self.cfg,
             )
         else:
             from src.app.core.factories import get_neural_agent

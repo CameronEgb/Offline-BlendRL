@@ -18,57 +18,55 @@ resources:
   time: "01:00:00"
 
 methods:
-  # Shared hyperparameters applied across all methods in this experiment
+  # Universal parameters applied across all methods in this experiment
   params:
-    agent: cql
     epochs_per_interval: 25
     eval_interval_epochs: 2
-    batch_size: 1024
-    lr: 3e-4
     gamma: 0.95
-    cql_alpha: 0.1
-    reward_scale: 1.0
-    pos_action_weight: 5.0
-    bellman_loss: smooth_l1
-    weight_decay: 1e-4
-    use_actor: false
-    blend_q_values: true
+
+    agent:
+      cql:
+        batch_size: 1024
+        lr: 3e-4
+        cql_alpha: 0.1
+        reward_scale: 1.0
+        pos_action_weight: 5.0
+        bellman_loss: smooth_l1
+        weight_decay: 1e-4
+
+    model:
+      blendrl:
+        blend_q_values: true
 
   cql_dnn:
+    agent: cql
     model: dnn
 
   cql_dueling_resnet:
+    agent: cql
     model: dueling_resnet
 
   cql_blendrl_human_rigid:
-    model: blendrl
-    rules: rigid
-    modules:
-      - type: nsfr
-        rules: rigid
-      - type: neural
+    agent: cql
+    model:
+      blendrl:
+        symbolic:
+          rules: rigid
 
   cql_blendrl_human_dueling_resnet_rigid:
-    model: blendrl
-    neural_actor: dueling_resnet
-    architecture: dueling_resnet
-    hidden_sizes: [512, 512, 256, 128]
-    rules: rigid
-    modules:
-      - type: nsfr
-        rules: rigid
-      - type: neural
+    agent: cql
+    model:
+      blendrl:
+        neural: dueling_resnet
+        symbolic:
+          rules: rigid
 
   cql_blendrl_cew_dueling_resnet:
-    model: blendrl
-    neural_actor: dueling_resnet
-    architecture: dueling_resnet
-    hidden_sizes: [512, 512, 256, 128]
-    symbolic_actor: cew
-    ecm_dthr: 0.03
-    fyd: false
-    modules:
-      - type: cew
-        fyd: false
-        ecm_dthr: 0.03
-      - type: neural
+    agent: cql
+    model:
+      blendrl:
+        neural: dueling_resnet
+        symbolic:
+          cew:
+            ecm_dthr: 0.03
+

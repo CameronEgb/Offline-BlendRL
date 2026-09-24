@@ -41,16 +41,16 @@ def build_method_overrides(
     paradigm = cfg.get("paradigm", "offline_rl") if cfg is not None else "offline_rl"
     agent_val = method_cfg.get("agent")
     if isinstance(agent_val, dict):
-        agent_algo = agent_val.get("name") or agent_val.get("type") or agent_val.get("algo")
-        agent_subparams = {k: v for k, v in agent_val.items() if k not in ("name", "type", "algo")}
+        agent_algo = agent_val.get("name") or agent_val.get("algorithm") or agent_val.get("type") or agent_val.get("algo")
+        agent_subparams = {k: v for k, v in agent_val.items() if k not in ("name", "algorithm", "type", "algo")}
     else:
         agent_algo = agent_val
         agent_subparams = {}
 
     model_val = method_cfg.get("model")
     if isinstance(model_val, dict):
-        model_arch = model_val.get("name") or model_val.get("type") or model_val.get("base")
-        model_subparams = {k: v for k, v in model_val.items() if k not in ("name", "type", "base")}
+        model_arch = model_val.get("name") or model_val.get("architecture") or model_val.get("type") or model_val.get("base")
+        model_subparams = {k: v for k, v in model_val.items() if k not in ("name", "architecture", "type", "base")}
     else:
         model_arch = model_val
         model_subparams = {}
@@ -67,16 +67,31 @@ def build_method_overrides(
         f"model={model_arch}",
     ]
 
-    def _flatten_overrides(prefix, d):
-        for k, v in d.items():
-            if isinstance(v, dict):
+    def _flatten_overrides(prefix, val):
+        if isinstance(val, dict):
+            for k, v in val.items():
                 _flatten_overrides(f"{prefix}.{k}", v)
-            else:
-                formatted_v = _format_hydra_val(v)
-                overrides.append(f"++{prefix}.{k}={formatted_v}")
+        else:
+            formatted_v = _format_hydra_val(val)
+            overrides.append(f"++{prefix}={formatted_v}")
 
-    _flatten_overrides("model", model_subparams)
-    _flatten_overrides("agent", agent_subparams)
+    # Combine explicit subparams with inherited agent_params/model_params
+    merged_agent_params = dict(method_cfg.get("agent_params", {}))
+    merged_agent_params.update(agent_subparams)
+
+    if model_arch == "blendrl":
+        merged_model_params = dict(method_cfg.get("model_params", {}))
+    else:
+        merged_model_params = dict(method_cfg.get("model_params", {}))
+        merged_model_params.update(model_subparams)
+
+    # For BlendRL, if modules was auto-synthesized from neural/symbolic, omit the redundant modules CLI string
+    if model_arch == "blendrl" and not merged_model_params.get("explicit_modules", False):
+        merged_model_params.pop("modules", None)
+    merged_model_params.pop("explicit_modules", None)
+
+    _flatten_overrides("model", merged_model_params)
+    _flatten_overrides("agent", merged_agent_params)
 
     if paradigm == "supervised":
         overrides.append(f"++model.name={agent_name}")
@@ -92,11 +107,13 @@ def build_method_overrides(
     if (paradigm in ("offline_rl", "supervised")) and dataset_path is not None:
         safe_ds_path = str(dataset_path)
         if any(c in safe_ds_path for c in "(), "):
-            safe_ds_path = f'"{{safe_ds_path}}"'
+            safe_ds_path = f'"{safe_ds_path}"'
         overrides.append(f"++dataset_path={safe_ds_path}")
 
-    # Per-method hyperparameter overrides — only applied to this specific method.
-    _STRUCTURAL_KEYS = {"agent", "model"}
+    # Process remaining method-level or global hyperparameter overrides
+    _INTERNAL_KEYS = {"agent", "model", "name", "agent_params", "model_params", "explicit_modules"}
+    if model_arch == "blendrl" and not method_cfg.get("explicit_modules", False) and not merged_model_params.get("explicit_modules", False):
+        _INTERNAL_KEYS.add("modules")
     _MODEL_KEYS = {
         "architecture",
         "modules",
@@ -108,30 +125,32 @@ def build_method_overrides(
         "blender_mode",
         "blend_function",
         "blender",
+        "blender_actor",
         "neural_actor",
         "symbolic_actor",
+        "neural",
+        "symbolic",
         "hidden_sizes",
+        "activation",
+        "blend_q_values",
     }
     for k, v in method_cfg.items():
-        if k in _STRUCTURAL_KEYS:
+        if k in _INTERNAL_KEYS:
             continue
-        formatted_v = _format_hydra_val(v)
-        if isinstance(v, dict):
-            target_ns = "model" if paradigm == "supervised" else "agent"
-            for sub_k, sub_v in v.items():
-                overrides.append(f"++{target_ns}.{k}.{sub_k}={_format_hydra_val(sub_v)}")
-            if k in _MODEL_KEYS and target_ns != "model":
-                for sub_k, sub_v in v.items():
-                    overrides.append(f"++model.{k}.{sub_k}={_format_hydra_val(sub_v)}")
+        if k in merged_agent_params or k in merged_model_params:
+            continue
+
+        if paradigm == "supervised":
+            _flatten_overrides(f"model.{k}", v)
+            if k in ("lr", "batch_size", "epochs", "epochs_per_interval", "eval_interval_epochs", "weight_decay"):
+                overrides.append(f"++{k}={_format_hydra_val(v)}")
         else:
-            if paradigm == "supervised":
-                overrides.append(f"++model.{k}={formatted_v}")
-                if k in ("lr", "batch_size", "epochs", "epochs_per_interval", "eval_interval_epochs", "weight_decay"):
-                    overrides.append(f"++{k}={formatted_v}")
+            if k in _MODEL_KEYS:
+                _flatten_overrides(f"model.{k}", v)
             else:
-                overrides.append(f"++agent.{k}={formatted_v}")
-                if k in _MODEL_KEYS:
-                    overrides.append(f"++model.{k}={formatted_v}")
+                _flatten_overrides(f"agent.{k}", v)
+                if k in ("epochs_per_interval", "eval_interval_epochs", "gamma", "reward_scale", "pos_action_weight", "bellman_loss", "weight_decay"):
+                    overrides.append(f"++{k}={_format_hydra_val(v)}")
 
     if study_name:
         overrides.append(f"++hydra.sweeper.study_name={study_name}")

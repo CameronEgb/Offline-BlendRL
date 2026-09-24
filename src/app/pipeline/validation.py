@@ -203,7 +203,11 @@ def validate_experiment_config(cfg: Any, experiment_name: str, is_sweep: bool = 
 
     # --- Apply paradigm constraints ---
     _check_paradigm_constraints(cfg, paradigm_name, constraints, env_name)
-# --- Optuna sweep direction notice ---
+
+    # --- Paradigm-Method/Agent Validation ---
+    _validate_methods_for_paradigm(cfg, paradigm_name, paradigm_def)
+
+    # --- Optuna sweep direction notice ---
     if is_sweep:
         try:
             sweeper = cfg.get("hydra", {}).get("sweeper", {})
@@ -226,6 +230,82 @@ def validate_experiment_config(cfg: Any, experiment_name: str, is_sweep: bool = 
     return notices
 
 
+def _validate_methods_for_paradigm(cfg: Any, paradigm_name: str, paradigm_def: dict) -> None:
+    """Validate that methods declared in config match the paradigm's agent and model requirements.
+
+    Raises:
+        ConfigurationError: If any method is incompatible with the paradigm (e.g. CQL in supervised).
+    """
+    methods = parse_methods_dict(cfg)
+    if not methods:
+        return
+
+    allowed_agents = paradigm_def.get("allowed_agents", None)
+    forbidden_agents = paradigm_def.get("forbidden_agents", [])
+
+    for method_name, method_cfg in methods.items():
+        ag = method_cfg.get("agent")
+        if isinstance(ag, dict):
+            agent_algo = ag.get("name") or ag.get("algorithm") or ag.get("type") or ag.get("algo")
+        elif isinstance(ag, str):
+            agent_algo = ag
+        else:
+            agent_algo = None
+
+        mo = method_cfg.get("model")
+        if isinstance(mo, dict):
+            model_arch = mo.get("name") or mo.get("architecture") or mo.get("type") or mo.get("base")
+        elif isinstance(mo, str):
+            model_arch = mo
+        else:
+            model_arch = None
+
+        # Every method must have a model
+        if not model_arch:
+            raise ConfigurationError(
+                f"[ConfigurationError] Method '{method_name}' is missing required key 'model'. "
+                f"Every method must specify a model architecture (e.g. 'model: dnn', 'model: blendrl')."
+            )
+
+        # Supervised paradigm validation
+        if paradigm_name == "supervised":
+            if agent_algo:
+                raise ConfigurationError(
+                    f"[ConfigurationError] Paradigm 'supervised' does not use RL agent harnesses, "
+                    f"but method '{method_name}' declared 'agent: {agent_algo}'. "
+                    f"Remove 'agent:' and specify 'model: <architecture>' instead."
+                )
+
+        # Paradigms forbidding agents entirely (e.g. allowed_agents: [])
+        if allowed_agents is not None and len(allowed_agents) == 0:
+            if agent_algo:
+                raise ConfigurationError(
+                    f"[ConfigurationError] Paradigm '{paradigm_name}' does not allow RL agent harnesses, "
+                    f"but method '{method_name}' declared 'agent: {agent_algo}'."
+                )
+
+        # Forbidden agents check
+        if forbidden_agents and agent_algo:
+            if any(agent_algo == f or agent_algo.startswith(f + "_") for f in forbidden_agents):
+                raise ConfigurationError(
+                    f"[ConfigurationError] Method '{method_name}' uses agent '{agent_algo}', "
+                    f"which is forbidden in paradigm '{paradigm_name}'. Forbidden agents: {forbidden_agents}."
+                )
+
+        # Paradigms requiring agents (e.g. online_rl, offline_rl)
+        if allowed_agents:
+            if not agent_algo:
+                raise ConfigurationError(
+                    f"[ConfigurationError] Paradigm '{paradigm_name}' requires an agent harness (allowed: {allowed_agents}), "
+                    f"but method '{method_name}' has no 'agent' declared."
+                )
+            if not any(agent_algo == a or agent_algo.startswith(a + "_") for a in allowed_agents):
+                raise ConfigurationError(
+                    f"[ConfigurationError] Method '{method_name}' uses agent '{agent_algo}', "
+                    f"which is not allowed in paradigm '{paradigm_name}'. Allowed agents: {allowed_agents}."
+                )
+
+
 def _validate_method_registrations(cfg: Any, notices: list[str]) -> None:
     """Append non-fatal notices for methods not found in METHOD_STYLE registry."""
     registered = set(METHOD_STYLE.keys())
@@ -233,9 +313,12 @@ def _validate_method_registrations(cfg: Any, notices: list[str]) -> None:
     methods = parse_methods_dict(cfg)
 
     for method_name, method_cfg in methods.items():
-        base_algo = method_cfg.get("agent", "")
+        ag = method_cfg.get("agent")
+        base_algo = ag.get("name") if isinstance(ag, dict) else (ag or "")
         if base_algo and base_algo not in registered:
             notices.append(f"Notice: Method '{method_name}' uses agent '{base_algo}' which might not match a registered agent style.")
 
+
 def _validate_offline_dataset_paths(cfg: Any, notices: list[str]) -> None:
     pass
+

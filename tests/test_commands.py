@@ -1,0 +1,272 @@
+"""Unit tests for training command construction (src/app/pipeline/commands.py)."""
+
+import pytest
+
+from src.app.pipeline.commands import build_method_overrides
+from src.app.pipeline.config import parse_methods_dict
+
+
+class TestBuildMethodOverrides:
+    """Tests for build_method_overrides generating clean Hydra override arguments."""
+
+    def test_cql_dnn_hierarchical_overrides(self):
+        """cql_dnn should get agent.cql overrides and model.dnn overrides."""
+        cfg_dict = {
+            "experiment_name": "mimic/test_cql",
+            "paradigm": "offline_rl",
+            "methods": {
+                "params": {
+                    "epochs_per_interval": 25,
+                    "agent": {
+                        "cql": {
+                            "cql_alpha": 0.1,
+                            "lr": 3e-4,
+                        }
+                    },
+                    "model": {
+                        "dnn": {
+                            "hidden_sizes": [512, 512],
+                        }
+                    },
+                },
+                "cql_dnn": {
+                    "agent": "cql",
+                    "model": "dnn",
+                },
+            },
+        }
+        methods = parse_methods_dict(cfg_dict)
+        overrides = build_method_overrides(
+            method_name="cql_dnn",
+            method_cfg=methods["cql_dnn"],
+            cfg=cfg_dict,
+        )
+
+        assert "agent=cql" in overrides
+        assert "model=dnn" in overrides
+        assert "++agent.name=cql_dnn" in overrides
+        assert "++agent.cql_alpha=0.1" in overrides
+        assert "++agent.lr=0.0003" in overrides
+        assert "++model.hidden_sizes=[512,512]" in overrides
+        assert "++agent.epochs_per_interval=25" in overrides
+
+    def test_dueling_resnet_relies_on_model_defaults(self):
+        """dueling_resnet should NOT receive model.dnn overrides, relying on its own defaults."""
+        cfg_dict = {
+            "experiment_name": "mimic/test_cql",
+            "paradigm": "offline_rl",
+            "methods": {
+                "params": {
+                    "agent": {
+                        "cql": {
+                            "lr": 3e-4,
+                        }
+                    },
+                    "model": {
+                        "dnn": {
+                            "hidden_sizes": [512, 512],
+                        }
+                    },
+                },
+                "cql_dueling_resnet": {
+                    "agent": "cql",
+                    "model": "dueling_resnet",
+                },
+            },
+        }
+        methods = parse_methods_dict(cfg_dict)
+        overrides = build_method_overrides(
+            method_name="cql_dueling_resnet",
+            method_cfg=methods["cql_dueling_resnet"],
+            cfg=cfg_dict,
+        )
+
+        assert "agent=cql" in overrides
+        assert "model=dueling_resnet" in overrides
+        assert "++agent.lr=0.0003" in overrides
+        # Should NOT receive hidden_sizes from dnn
+        assert not any("hidden_sizes" in o for o in overrides)
+
+    def test_supervised_paradigm_overrides(self):
+        """Supervised learning should configure model without an RL agent."""
+        cfg_dict = {
+            "experiment_name": "tests/ep",
+            "paradigm": "supervised",
+            "methods": {
+                "params": {
+                    "epochs_per_interval": 1,
+                    "batch_size": 128,
+                    "model": {
+                        "lstm": {
+                            "hidden_dim": 64,
+                        }
+                    },
+                },
+                "ep_lstm": {
+                    "model": "lstm",
+                },
+            },
+        }
+        methods = parse_methods_dict(cfg_dict)
+        overrides = build_method_overrides(
+            method_name="ep_lstm",
+            method_cfg=methods["ep_lstm"],
+            cfg=cfg_dict,
+        )
+
+        assert "paradigm=supervised" in overrides
+        assert "model=lstm" in overrides
+        assert "++model.name=ep_lstm" in overrides
+        assert "++agent.name=ep_lstm" in overrides
+        assert not any(o.startswith("agent=") for o in overrides)
+        assert "++model.hidden_dim=64" in overrides
+        assert "++batch_size=128" in overrides
+
+    def test_method_level_override_precedence(self):
+        """Direct method override should take precedence over universal parameters."""
+        cfg_dict = {
+            "experiment_name": "mimic/test_cql",
+            "paradigm": "offline_rl",
+            "methods": {
+                "params": {
+                    "agent": {
+                        "cql": {
+                            "batch_size": 1024,
+                            "lr": 3e-4,
+                        }
+                    }
+                },
+                "cql_fast": {
+                    "agent": "cql",
+                    "model": "dnn",
+                    "batch_size": 256,
+                },
+            },
+        }
+        methods = parse_methods_dict(cfg_dict)
+        overrides = build_method_overrides(
+            method_name="cql_fast",
+            method_cfg=methods["cql_fast"],
+            cfg=cfg_dict,
+        )
+
+        assert "++agent.batch_size=256" in overrides
+        assert "++agent.batch_size=1024" not in overrides
+        assert "++agent.lr=0.0003" in overrides
+
+    def test_blendrl_human_dueling_resnet_rigid_overrides(self):
+        """cql_blendrl_human_dueling_resnet_rigid should generate clean neural and symbolic overrides."""
+        cfg_dict = {
+            "experiment_name": "mimic/final",
+            "paradigm": "offline_rl",
+            "methods": {
+                "params": {
+                    "agent": {
+                        "cql": {
+                            "lr": 3e-4,
+                        }
+                    },
+                    "model": {
+                        "blendrl": {
+                            "blend_q_values": True,
+                        }
+                    },
+                },
+                "cql_blendrl_human_dueling_resnet_rigid": {
+                    "agent": "cql",
+                    "model": "blendrl",
+                    "neural": "dueling_resnet",
+                    "symbolic": {"rules": "rigid"},
+                },
+            },
+        }
+        methods = parse_methods_dict(cfg_dict)
+        overrides = build_method_overrides(
+            method_name="cql_blendrl_human_dueling_resnet_rigid",
+            method_cfg=methods["cql_blendrl_human_dueling_resnet_rigid"],
+            cfg=cfg_dict,
+        )
+
+        assert "agent=cql" in overrides
+        assert "model=blendrl" in overrides
+        assert "++model.blend_q_values=true" in overrides
+        assert "++model.neural.architecture=dueling_resnet" in overrides
+        assert "++model.neural.hidden_sizes=[512,512,256,128]" in overrides
+        assert "++model.symbolic.rules=rigid" in overrides
+        assert "++model.symbolic.type=nsfr" in overrides
+
+    def test_blendrl_cew_dueling_resnet_overrides(self):
+        """cql_blendrl_cew_dueling_resnet should generate clean CEW and neural overrides."""
+        cfg_dict = {
+            "experiment_name": "mimic/final",
+            "paradigm": "offline_rl",
+            "methods": {
+                "params": {
+                    "agent": {
+                        "cql": {
+                            "lr": 3e-4,
+                        }
+                    },
+                },
+                "cql_blendrl_cew_dueling_resnet": {
+                    "agent": "cql",
+                    "model": "blendrl",
+                    "neural": "dueling_resnet",
+                    "symbolic": {
+                        "name": "cew",
+                        "ecm_dthr": 0.03,
+                    },
+                },
+            },
+        }
+        methods = parse_methods_dict(cfg_dict)
+        overrides = build_method_overrides(
+            method_name="cql_blendrl_cew_dueling_resnet",
+            method_cfg=methods["cql_blendrl_cew_dueling_resnet"],
+            cfg=cfg_dict,
+        )
+
+        assert "agent=cql" in overrides
+        assert "model=blendrl" in overrides
+        assert "++model.neural.architecture=dueling_resnet" in overrides
+        assert "++model.neural.hidden_sizes=[512,512,256,128]" in overrides
+        assert "++model.symbolic.type=cew" in overrides
+        assert "++model.symbolic.ecm_dthr=0.03" in overrides
+        assert "++model.symbolic.fyd=false" in overrides
+
+    def test_fully_hierarchical_blendrl_overrides(self):
+        """model.blendrl.neural and model.blendrl.symbolic.cew hierarchical override generation."""
+        cfg_dict = {
+            "experiment_name": "mimic/final",
+            "paradigm": "offline_rl",
+            "methods": {
+                "cql_blendrl_hierarchical": {
+                    "agent": "cql",
+                    "model": {
+                        "blendrl": {
+                            "neural": "dueling_resnet",
+                            "symbolic": {
+                                "cew": {
+                                    "ecm_dthr": 0.03
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        methods = parse_methods_dict(cfg_dict)
+        overrides = build_method_overrides(
+            method_name="cql_blendrl_hierarchical",
+            method_cfg=methods["cql_blendrl_hierarchical"],
+            cfg=cfg_dict,
+        )
+        assert "agent=cql" in overrides
+        assert "model=blendrl" in overrides
+        assert "++model.neural.architecture=dueling_resnet" in overrides
+        assert "++model.neural.hidden_sizes=[512,512,256,128]" in overrides
+        assert "++model.symbolic.type=cew" in overrides
+        assert "++model.symbolic.ecm_dthr=0.03" in overrides
+        assert "++model.symbolic.fyd=false" in overrides
+
+

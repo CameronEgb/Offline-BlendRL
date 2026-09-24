@@ -12,7 +12,7 @@ seed: 1
 total_timesteps: 10000
 intervals_count: 4
 eval_episodes: 100
-save_dataset: true
+save_dataset: false
 recover: false
 paradigm: null
 dataset_path: null

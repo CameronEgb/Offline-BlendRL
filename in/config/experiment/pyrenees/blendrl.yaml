@@ -7,6 +7,4 @@ methods:
     model: blendrl
     epochs_per_interval: 200
     eval_interval_epochs: 20
-    modules:
-    - type: nsfr
-      rules: default
+

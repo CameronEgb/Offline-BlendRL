@@ -12,3 +12,10 @@ constraints:
     methods: non_empty
   forbids:
     eval_episodes: non_zero
+
+allowed_agents: []
+forbidden_agents:
+  - cql
+  - iql
+  - ppo
+  - cew

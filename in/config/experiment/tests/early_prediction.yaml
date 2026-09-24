@@ -15,16 +15,15 @@ trainer:
   limit_val_batches: 2
 
 methods:
-  ep_lstm:
-    model: lstm
+  params:
     epochs_per_interval: 1
     eval_interval_epochs: 1
     batch_size: 128
     lr: 1e-3
 
+  ep_lstm:
+    model: lstm
+
   ep_transformer:
     model: transformer
-    epochs_per_interval: 1
-    eval_interval_epochs: 1
-    batch_size: 128
-    lr: 1e-3
+

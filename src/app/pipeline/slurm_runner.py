@@ -9,7 +9,7 @@ from pathlib import Path
 
 from src.app.pipeline.commands import build_method_overrides, get_sweep_direction
 from src.app.pipeline.config import normalize_agent_name
-from src.app.pipeline.datasets import ensure_online_dataset_path, fast_purge_dir, resolve_dataset_path
+from src.app.pipeline.datasets import fast_purge_dir, resolve_dataset_path
 from src.app.pipeline.optuna_utils import create_optuna_study, delete_optuna_study, get_next_study_name
 from src.app.pipeline.runtime import get_shell_env_block, get_shell_python_cmd
 from src.app.pipeline.slurm import generate_sbatch_header, generate_sbatch_script, submit_sbatch
@@ -94,17 +94,6 @@ def run_slurm_training(cfg, context):
                 except FileNotFoundError as e:
                     print(f"Error: {e}")
                     sys.exit(1)
-            elif paradigm == "online_rl":
-                dataset_path_str, has_pkl = ensure_online_dataset_path(
-                    group=cfg.group,
-                    experiment_id=cfg.experiment_id,
-                    agent_name_internal=agent_name,
-                    is_sweep=is_sweep,
-                )
-                if has_pkl:
-                    script_content += f'echo "Dataset already exists for {method_name}. Skipping."\n\n'
-                    continue
-                dataset_path = dataset_path_str
 
             study_name = get_next_study_name(cfg.group, cfg.experiment_id, agent_name) if is_sweep else None
             
@@ -163,17 +152,6 @@ def run_slurm_training(cfg, context):
             except FileNotFoundError as e:
                 print(f"Error: {e}")
                 sys.exit(1)
-        elif paradigm == "online_rl":
-            dataset_path_str, has_pkl = ensure_online_dataset_path(
-                group=cfg.group,
-                experiment_id=cfg.experiment_id,
-                agent_name_internal=agent_name,
-                is_sweep=is_sweep,
-            )
-            if has_pkl:
-                print(f"Dataset already exists for {method_name}. Skipping.", flush=True)
-                continue
-            dataset_path = dataset_path_str
 
         job_name = f"{agent_name}_{cfg.experiment_id}"
         study_name = get_next_study_name(cfg.group, cfg.experiment_id, agent_name) if is_sweep else None

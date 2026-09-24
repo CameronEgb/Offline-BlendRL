@@ -84,7 +84,7 @@ class PPOAgent(BaseAgent):
                 self.get_cfg("reasoner", cfg.env.reasoner),
                 self.device,
                 architecture=self.get_cfg("architecture", cfg.env.architecture),
-                cfg=cfg.agent,
+                cfg=self.cfg,
             )
             self.logic_shape = (
                 (2, self.observation_space[-1]) if len(self.observation_space) == 1 else self.observation_space

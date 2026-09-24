@@ -193,3 +193,84 @@ def test_list_paradigms_includes_base_paradigms():
     assert "supervised" in paradigms
     assert "offline_rl" in paradigms
     assert "online_rl" in paradigms
+
+
+@patch("src.app.pipeline.validation._load_raw_experiment_yaml", return_value={})
+def test_cql_forbidden_in_supervised(mock_yaml, mock_cfg_supervised):
+    """Supervised paradigm must reject RL agents like cql."""
+    mock_cfg_supervised.__dict__["methods"] = {
+        "cql_dnn": {"agent": "cql", "model": "dnn"}
+    }
+    with pytest.raises(ConfigurationError, match="does not use RL agent harnesses"):
+        validate_experiment_config(mock_cfg_supervised, "test_exp")
+
+
+@patch("src.app.pipeline.validation._load_raw_experiment_yaml", return_value={})
+def test_ppo_forbidden_in_offline_rl(mock_yaml, mock_cfg_offline):
+    """Offline RL paradigm must reject online agents like ppo."""
+    mock_cfg_offline.__dict__["methods"] = {
+        "ppo_dnn": {"agent": "ppo", "model": "dnn"}
+    }
+    with pytest.raises(ConfigurationError, match="forbidden in paradigm 'offline_rl'"):
+        validate_experiment_config(mock_cfg_offline, "test_exp")
+
+
+@patch("src.app.pipeline.validation._load_raw_experiment_yaml", return_value={})
+def test_disallowed_agent_in_online_rl(mock_yaml, mock_cfg_online):
+    """Online RL paradigm must reject agents not in allowed_agents."""
+    mock_cfg_online.__dict__["methods"] = {
+        "bad_method": {"agent": "unsupported_algo", "model": "dnn"}
+    }
+    with pytest.raises(ConfigurationError, match="not allowed in paradigm 'online_rl'"):
+        validate_experiment_config(mock_cfg_online, "test_exp")
+
+
+@patch("src.app.pipeline.validation._load_raw_experiment_yaml", return_value={})
+def test_cql_forbidden_in_online_rl(mock_yaml, mock_cfg_online):
+    """Online RL paradigm must reject offline agents like cql."""
+    mock_cfg_online.__dict__["methods"] = {
+        "cql_dnn": {"agent": "cql", "model": "dnn"}
+    }
+    with pytest.raises(ConfigurationError, match="forbidden in paradigm 'online_rl'"):
+        validate_experiment_config(mock_cfg_online, "test_exp")
+
+
+@patch("src.app.pipeline.validation._load_raw_experiment_yaml", return_value={})
+def test_iql_forbidden_in_online_rl(mock_yaml, mock_cfg_online):
+    """Online RL paradigm must reject offline agents like iql."""
+    mock_cfg_online.__dict__["methods"] = {
+        "iql_dnn": {"agent": "iql", "model": "dnn"}
+    }
+    with pytest.raises(ConfigurationError, match="forbidden in paradigm 'online_rl'"):
+        validate_experiment_config(mock_cfg_online, "test_exp")
+
+
+@patch("src.app.pipeline.validation._load_raw_experiment_yaml", return_value={})
+def test_cew_forbidden_in_online_rl(mock_yaml, mock_cfg_online):
+    """Online RL paradigm must reject offline agents like cew."""
+    mock_cfg_online.__dict__["methods"] = {
+        "cew_dnn": {"agent": "cew", "model": "dnn"}
+    }
+    with pytest.raises(ConfigurationError, match="forbidden in paradigm 'online_rl'"):
+        validate_experiment_config(mock_cfg_online, "test_exp")
+
+
+@patch("src.app.pipeline.validation._load_raw_experiment_yaml", return_value={})
+def test_method_missing_model_raises(mock_yaml, mock_cfg_offline):
+    """Methods missing required 'model' key must raise ConfigurationError."""
+    mock_cfg_offline.__dict__["methods"] = {
+        "broken_method": {"agent": "cql"}
+    }
+    with pytest.raises(ConfigurationError, match="missing required key 'model'"):
+        validate_experiment_config(mock_cfg_offline, "test_exp")
+
+
+@patch("src.app.pipeline.validation._load_raw_experiment_yaml", return_value={})
+def test_offline_rl_method_missing_agent_raises(mock_yaml, mock_cfg_offline):
+    """Offline RL methods missing required 'agent' key must raise ConfigurationError."""
+    mock_cfg_offline.__dict__["methods"] = {
+        "dnn_only": {"model": "dnn"}
+    }
+    with pytest.raises(ConfigurationError, match="requires an agent harness"):
+        validate_experiment_config(mock_cfg_offline, "test_exp")
+

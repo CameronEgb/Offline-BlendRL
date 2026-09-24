@@ -47,12 +47,10 @@ class EpisodicRewardEvalProtocol(BaseEvalProtocol):
 
 @register_component("OnlineRLRunner")
 class OnlineRLRunner(BaseParadigmRunner):
-    """Runs the online RL training loop, then optionally trains offline agents.
+    """Runs the online RL training loop for simulator-based agents.
 
-    Calls run_online_phase() for each declared online agent. If offline_methods
-    are also configured in the experiment, calls run_offline_phase() afterwards
-    so that a single online_rl experiment can collect data and bench offline agents
-    against it in one pipeline run.
+    Dispatches declared online methods (e.g. PPO, BlendRL online) sequentially
+    or via cluster jobs, followed by the automated plotting phase.
     """
 
     def run(

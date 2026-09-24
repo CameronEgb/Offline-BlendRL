@@ -122,3 +122,282 @@ class TestParseMethodsDict:
         assert res["real_method"]["epochs"] == 10
         assert res["real_method"]["batch_size"] == 32
 
+    def test_hierarchical_agent_and_model_overrides(self):
+        """params.agent.<algo> and params.model.<arch> should apply selectively to matching methods."""
+        from src.app.pipeline.config import parse_methods_dict
+
+        cfg = {
+            "methods": {
+                "params": {
+                    "epochs_per_interval": 25,
+                    "eval_interval_epochs": 2,
+                    "gamma": 0.95,
+                    "agent": {
+                        "cql": {
+                            "cql_alpha": 0.1,
+                            "batch_size": 1024,
+                            "lr": 3e-4,
+                        },
+                        "ppo": {
+                            "clip_coef": 0.2,
+                            "batch_size": 64,
+                        },
+                    },
+                    "model": {
+                        "dnn": {
+                            "hidden_sizes": [512, 512],
+                        },
+                        "blendrl": {
+                            "blend_q_values": True,
+                            "rules": "rigid",
+                        },
+                    },
+                },
+                "cql_dnn": {
+                    "agent": "cql",
+                    "model": "dnn",
+                },
+                "cql_dueling_resnet": {
+                    "agent": "cql",
+                    "model": "dueling_resnet",
+                },
+                "ppo_dnn": {
+                    "agent": "ppo",
+                    "model": "dnn",
+                },
+            }
+        }
+        res = parse_methods_dict(cfg)
+        assert len(res) == 3
+
+        # cql_dnn gets universal globals + agent.cql + model.dnn
+        assert res["cql_dnn"]["agent"] == "cql"
+        assert res["cql_dnn"]["model"] == "dnn"
+        assert res["cql_dnn"]["epochs_per_interval"] == 25
+        assert res["cql_dnn"]["gamma"] == 0.95
+        assert res["cql_dnn"]["cql_alpha"] == 0.1
+        assert res["cql_dnn"]["batch_size"] == 1024
+        assert res["cql_dnn"]["lr"] == 3e-4
+        assert res["cql_dnn"]["hidden_sizes"] == [512, 512]
+        assert "clip_coef" not in res["cql_dnn"]
+        assert "rules" not in res["cql_dnn"]
+
+        # cql_dueling_resnet gets agent.cql but NOT model.dnn (relies on dueling_resnet defaults)
+        assert res["cql_dueling_resnet"]["agent"] == "cql"
+        assert res["cql_dueling_resnet"]["model"] == "dueling_resnet"
+        assert res["cql_dueling_resnet"]["cql_alpha"] == 0.1
+        assert res["cql_dueling_resnet"]["batch_size"] == 1024
+        assert "hidden_sizes" not in res["cql_dueling_resnet"]
+
+        # ppo_dnn gets agent.ppo + model.dnn, but NOT agent.cql
+        assert res["ppo_dnn"]["agent"] == "ppo"
+        assert res["ppo_dnn"]["model"] == "dnn"
+        assert res["ppo_dnn"]["clip_coef"] == 0.2
+        assert res["ppo_dnn"]["batch_size"] == 64
+        assert res["ppo_dnn"]["hidden_sizes"] == [512, 512]
+        assert "cql_alpha" not in res["ppo_dnn"]
+
+    def test_method_override_precedence_over_universal(self):
+        """Method-level declarations must override both universal globals and agent/model blocks."""
+        from src.app.pipeline.config import parse_methods_dict
+
+        cfg = {
+            "methods": {
+                "params": {
+                    "agent": {
+                        "cql": {
+                            "lr": 3e-4,
+                            "batch_size": 1024,
+                        }
+                    },
+                    "model": {
+                        "dnn": {
+                            "hidden_sizes": [512, 512],
+                        }
+                    },
+                },
+                "cql_custom": {
+                    "agent": "cql",
+                    "model": "dnn",
+                    "batch_size": 256,
+                    "hidden_sizes": [1024, 512, 256],
+                },
+            }
+        }
+        res = parse_methods_dict(cfg)
+        assert res["cql_custom"]["lr"] == 3e-4
+        assert res["cql_custom"]["batch_size"] == 256
+        assert res["cql_custom"]["hidden_sizes"] == [1024, 512, 256]
+
+    def test_blendrl_inherits_neural_and_symbolic_defaults(self):
+        """BlendRL without submodel overrides must inherit default dnn and nsfr configs."""
+        from src.app.pipeline.config import parse_methods_dict
+
+        cfg = {
+            "methods": {
+                "cql_blendrl": {
+                    "agent": "cql",
+                    "model": "blendrl",
+                }
+            }
+        }
+        res = parse_methods_dict(cfg)
+        m = res["cql_blendrl"]
+        assert m["model"] == "blendrl"
+        assert m["model_params"]["neural"]["architecture"] == "dnn"
+        assert m["model_params"]["neural"]["hidden_sizes"] == [256, 256]
+        assert m["model_params"]["symbolic"]["type"] == "nsfr"
+        assert m["model_params"]["symbolic"]["rules"] == "default"
+        assert m["model_params"]["blender"]["mode"] == "neural"
+        assert m["model_params"]["blender"]["blend_function"] == "softmax"
+
+    def test_blendrl_neural_overwrite_inherits_base_config(self):
+        """Specifying neural: dueling_resnet must automatically inherit its hidden_sizes from dueling_resnet.yaml."""
+        from src.app.pipeline.config import parse_methods_dict
+
+        cfg = {
+            "methods": {
+                "cql_blendrl_resnet": {
+                    "agent": "cql",
+                    "model": "blendrl",
+                    "neural": "dueling_resnet",
+                    "symbolic": {"rules": "rigid"},
+                }
+            }
+        }
+        res = parse_methods_dict(cfg)
+        m = res["cql_blendrl_resnet"]
+        # Neural actor inherited dueling_resnet.yaml defaults!
+        assert m["model_params"]["neural"]["architecture"] == "dueling_resnet"
+        assert m["model_params"]["neural"]["hidden_sizes"] == [512, 512, 256, 128]
+        # Symbolic actor inherited nsfr.yaml defaults with rules: rigid
+        assert m["model_params"]["symbolic"]["type"] == "nsfr"
+        assert m["model_params"]["symbolic"]["rules"] == "rigid"
+
+    def test_blendrl_symbolic_cew_inherits_cew_defaults(self):
+        """Specifying symbolic: { name: cew, ecm_dthr: 0.03 } must inherit fyd and fyd_top_k from cew.yaml."""
+        from src.app.pipeline.config import parse_methods_dict
+
+        cfg = {
+            "methods": {
+                "cql_blendrl_cew": {
+                    "agent": "cql",
+                    "model": "blendrl",
+                    "neural": "dueling_resnet",
+                    "symbolic": {
+                        "name": "cew",
+                        "ecm_dthr": 0.03,
+                    },
+                }
+            }
+        }
+        res = parse_methods_dict(cfg)
+        m = res["cql_blendrl_cew"]
+        sym = m["model_params"]["symbolic"]
+        assert sym["type"] == "cew"
+        assert sym["ecm_dthr"] == 0.03
+        assert sym["fyd"] is False
+        assert sym["fyd_top_k"] == 50
+
+    def test_blendrl_universal_overrides_in_params(self):
+        """Universal params.model.blendrl overrides should apply to all BlendRL methods."""
+        from src.app.pipeline.config import parse_methods_dict
+
+        cfg = {
+            "methods": {
+                "params": {
+                    "model": {
+                        "blendrl": {
+                            "blend_q_values": True,
+                            "neural": "dueling_resnet",
+                        }
+                    }
+                },
+                "method_a": {
+                    "agent": "cql",
+                    "model": "blendrl",
+                    "symbolic": {"rules": "rigid"},
+                },
+                "method_b": {
+                    "agent": "cql",
+                    "model": "blendrl",
+                    "symbolic": {"name": "cew", "ecm_dthr": 0.05},
+                },
+            }
+        }
+        res = parse_methods_dict(cfg)
+        for m_name in ("method_a", "method_b"):
+            m = res[m_name]
+            assert m["model_params"]["blend_q_values"] is True
+            assert m["model_params"]["neural"]["architecture"] == "dueling_resnet"
+            assert m["model_params"]["neural"]["hidden_sizes"] == [512, 512, 256, 128]
+
+        assert res["method_a"]["model_params"]["symbolic"]["rules"] == "rigid"
+        assert res["method_b"]["model_params"]["symbolic"]["type"] == "cew"
+        assert res["method_b"]["model_params"]["symbolic"]["ecm_dthr"] == 0.05
+
+    def test_blendrl_fully_hierarchical_nesting(self):
+        """Hierarchical specification: model.blendrl.neural and model.blendrl.symbolic.cew."""
+        from src.app.pipeline.config import parse_methods_dict
+
+        cfg = {
+            "methods": {
+                "cql_blendrl_hierarchical": {
+                    "agent": "cql",
+                    "model": {
+                        "blendrl": {
+                            "neural": "dueling_resnet",
+                            "symbolic": {
+                                "cew": {
+                                    "ecm_dthr": 0.03
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        res = parse_methods_dict(cfg)
+        m = res["cql_blendrl_hierarchical"]
+        assert m["model"]["name"] == "blendrl"
+        assert m["model_params"]["neural"]["architecture"] == "dueling_resnet"
+        assert m["model_params"]["neural"]["hidden_sizes"] == [512, 512, 256, 128]
+        assert m["model_params"]["symbolic"]["type"] == "cew"
+        assert m["model_params"]["symbolic"]["ecm_dthr"] == 0.03
+        assert m["model_params"]["symbolic"]["fyd"] is False
+        assert m["model_params"]["symbolic"]["fyd_top_k"] == 50
+
+    def test_blendrl_fully_hierarchical_neural_and_symbolic_params(self):
+        """Hierarchical specification: neural.dueling_resnet and symbolic.nsfr."""
+        from src.app.pipeline.config import parse_methods_dict
+
+        cfg = {
+            "methods": {
+                "cql_blendrl_custom": {
+                    "agent": "cql",
+                    "model": {
+                        "blendrl": {
+                            "neural": {
+                                "dueling_resnet": {
+                                    "hidden_sizes": [256, 128]
+                                }
+                            },
+                            "symbolic": {
+                                "nsfr": {
+                                    "rules": "rigid"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        res = parse_methods_dict(cfg)
+        m = res["cql_blendrl_custom"]
+        assert m["model_params"]["neural"]["architecture"] == "dueling_resnet"
+        assert m["model_params"]["neural"]["hidden_sizes"] == [256, 128]
+        assert m["model_params"]["symbolic"]["type"] == "nsfr"
+        assert m["model_params"]["symbolic"]["rules"] == "rigid"
+
+
+

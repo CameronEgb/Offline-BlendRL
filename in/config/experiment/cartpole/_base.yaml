@@ -4,11 +4,11 @@ defaults:
 
 paradigm: online_rl
 
-save_dataset: true
+save_dataset: false
 seed: 1
 recover: false
 
 plots:
   losses:
-    metrics: ["losses/total_loss", "losses/bellman_loss", "losses/cql_loss", "losses/entropy", "losses/blend_entropy"]
+    metrics: ["losses/total_loss", "losses/policy_loss", "losses/value_loss", "losses/entropy", "losses/blend_entropy"]
   convergence: {}

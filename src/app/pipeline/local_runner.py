@@ -9,7 +9,7 @@ from pathlib import Path
 
 from src.app.pipeline.commands import build_method_overrides, get_sweep_direction
 from src.app.pipeline.config import normalize_agent_name
-from src.app.pipeline.datasets import ensure_online_dataset_path, fast_purge_dir, resolve_dataset_path, run_experiment
+from src.app.pipeline.datasets import fast_purge_dir, resolve_dataset_path, run_experiment
 from src.app.pipeline.optuna_utils import (
     create_optuna_study,
     delete_optuna_study,
@@ -106,18 +106,6 @@ def run_methods(cfg, context) -> None:
                 print(f"Error: {e}")
                 sys.exit(1)
             print(f"Using dataset from: {dataset_path}")
-        elif paradigm == "online_rl":
-            # For online methods, set up dataset save path
-            dataset_path_str, has_pkl = ensure_online_dataset_path(
-                group=cfg.group,
-                experiment_id=cfg.experiment_id,
-                agent_name_internal=agent_name,
-                is_sweep=is_sweep,
-            )
-            if has_pkl:
-                print(f"Dataset already exists at {dataset_path_str}. Skipping {method_name}.")
-                continue
-            dataset_path = dataset_path_str
 
         agent_str = f"agent={method_cfg.get('agent')}, " if method_cfg.get('agent') else ""
         print(f"\n=== Training: {method_name} ({agent_str}model={method_cfg.get('model')}) ===")
