@@ -11,7 +11,7 @@ from sklearn.metrics import roc_auc_score, average_precision_score
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
-from src.methods.cql_agent import CQLAgent
+from src.usr.methods.cql_agent import CQLAgent
 
 def evaluate_mimic_policies(exp_id="mimic_test", group="mimic", dataset_path=None):
     if dataset_path is None:

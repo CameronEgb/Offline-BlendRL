@@ -38,7 +38,7 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import average_precision_score, precision_recall_curve, roc_auc_score
 
 from plot.base import BasePlotter, clean_label, get_canonical_method_name, get_method_aliases
-from src.method_registry import get_style as get_method_style
+from src.usr.methods.method_registry import get_style as get_method_style
 
 
 def compute_trajectory_agreement(
@@ -132,7 +132,7 @@ class ClinicalAlignmentPlotter(BasePlotter):
                 best_ckpt = None
                 storage_url = exp_cfg.get("hydra", {}).get("sweeper", {}).get("storage", None)
                 if storage_url:
-                    from src.pipeline.optuna_utils import get_best_trial_id
+                    from src.app.pipeline.optuna_utils import get_best_trial_id
 
                     study_name = f"{clean_exp}_{m_name}"
                     best_id = get_best_trial_id(storage_url, study_name)
@@ -175,9 +175,9 @@ class ClinicalAlignmentPlotter(BasePlotter):
         return method_ckpts, method_interval_ckpts
 
     def _load_agent(self, path, dev):
-        from src.methods.cew_agent import CEWAgent
-        from src.methods.cql_agent import CQLAgent
-        from src.methods.iql_agent import IQLAgent
+        from src.usr.methods.cew_agent import CEWAgent
+        from src.usr.methods.cql_agent import CQLAgent
+        from src.usr.methods.iql_agent import IQLAgent
 
         last_error = None
         for cls in [CQLAgent, CEWAgent, IQLAgent]:

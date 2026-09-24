@@ -6,11 +6,17 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 src_path = os.path.join(PROJECT_ROOT, "src")
-if src_path not in sys.path:
-    sys.path.insert(0, src_path)
-fyd_path = os.path.join(PROJECT_ROOT, "src", "fyd_repo", "src")
-if fyd_path not in sys.path:
-    sys.path.insert(0, fyd_path)
+for p in [
+    src_path,
+    os.path.join(src_path, "app"),
+    os.path.join(src_path, "usr"),
+    os.path.join(src_path, "usr", "models"),
+    os.path.join(src_path, "usr", "environments"),
+    os.path.join(src_path, "usr", "eval"),
+    os.path.join(src_path, "usr", "models", "fyd_repo", "src"),
+]:
+    if os.path.isdir(p) and p not in sys.path:
+        sys.path.insert(0, p)
 
 import matplotlib
 import numpy as np
@@ -24,7 +30,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import matplotlib.pyplot as plt
 
 # Import styling and alias resolution from the unified method registry
-from src.method_registry import clean_label, get_canonical_method_name, get_method_aliases, get_style_info
+from src.usr.methods.method_registry import clean_label, get_canonical_method_name, get_method_aliases, get_style_info
 
 
 def moving_average(a: np.ndarray, n: int = 5) -> np.ndarray:

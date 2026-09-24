@@ -11,3 +11,4 @@ hydra:
     direction: maximize
     storage: "sqlite:///results/optuna/optuna.db"
     n_jobs: 1
+paradigm: online_rl

@@ -1,25 +1,10 @@
 # @package _global_
 defaults:
-  - cartpole/_base
-  - override /agent: ppo/blendrl_human_neural
-  - override /mode: online
-
+- cartpole/_base
 total_timesteps: 640
 intervals_count: 1
 eval_episodes: 2
-online_methods: ppo/blendrl_human_neural
-offline_methods: []
 no_plot: true
-
-agent:
-  lr: 0.007
-  logic_lr: 0.007
-  blender_lr: 0.02
-  ent_coef: 0.002
-  blend_ent_coef: 0.002
-  num_minibatches: 4
-  update_epochs: 10
-  clip_coef: 0.2
 
 env:
   num_envs: 10
@@ -29,3 +14,15 @@ trainer:
   accelerator: cpu
   max_epochs: 1
   check_val_every_n_epoch: 3
+methods:
+  ppo_blendrl_human_neural:
+    agent: ppo
+    model: blendrl
+    lr: 0.007
+    logic_lr: 0.007
+    blender_lr: 0.02
+    ent_coef: 0.002
+    blend_ent_coef: 0.002
+    num_minibatches: 4
+    update_epochs: 10
+    clip_coef: 0.2

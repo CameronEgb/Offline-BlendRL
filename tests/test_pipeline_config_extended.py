@@ -2,7 +2,7 @@ import os
 
 import pytest
 
-from src.pipeline.config import parse_method_list, resolve_experiment_config_name
+from src.app.pipeline.config import parse_method_list, resolve_experiment_config_name
 
 
 def test_parse_method_list_empty():

@@ -1,36 +1,13 @@
 # @package _global_
 defaults:
-  - pyrenees/_base
-  - override /hydra/sweeper: optuna_offline
+- pyrenees/_base
+- override /hydra/sweeper: optuna_offline
 
 consolidate: true
 
-offline_datasets:
-  - problem
-  - ex132(w)
-  - ex132a(w)
-  - ex152a(w)
-  - ex212(w)
-  - ex242(w)
-  - ex252(w)
-  - ex252a(w)
-  - exc137(w)
-  - exp426d(w)
-  - exp426e(w)
-
-offline_methods:
-  - cql/blendrl_human_neural
-  - cql/blendrl_human_neural_logic
-  - cql/blendrl_human_dueling_resnet_logic
-
-agent:
-  epochs_per_interval: 50
-  eval_interval_epochs: 5
-  batch_size: 512
-
 hydra:
   sweeper:
-    storage: null
+    storage:
     study_name: "pyrenees_3way_sweep"
     direction: minimize
     n_trials: 350
@@ -41,3 +18,22 @@ hydra:
       agent.blender_lr: tag(log, interval(5e-5, 2e-3))
       agent.logic_lr: tag(log, interval(1e-3, 5e-2))
       agent.blend_ent_coef: tag(log, interval(0.005, 0.1))
+methods:
+  cql_blendrl_human_neural:
+    agent: cql
+    model: blendrl
+    epochs_per_interval: 50
+    eval_interval_epochs: 5
+    batch_size: 512
+  cql_blendrl_human_neural_logic:
+    agent: cql
+    model: blendrl
+    epochs_per_interval: 50
+    eval_interval_epochs: 5
+    batch_size: 512
+  cql_blendrl_human_dueling_resnet_logic:
+    agent: cql
+    model: blendrl
+    epochs_per_interval: 50
+    eval_interval_epochs: 5
+    batch_size: 512

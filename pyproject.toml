@@ -76,8 +76,8 @@ include = [
     "plot", "plot.*",
 ]
 exclude = [
-    "src.fyd_repo", "src.fyd_repo.*",
-    "src.cew_repo", "src.cew_repo.*",
+    "src.usr.models.fyd_repo", "src.usr.models.fyd_repo.*",
+    "src.usr.models.cew_repo", "src.usr.models.cew_repo.*",
 ]
 
 # ── Ruff (linting + formatting) ─────────────────────────────
@@ -85,11 +85,11 @@ exclude = [
 target-version = "py310"
 line-length = 120
 extend-exclude = [
-    "src/fyd_repo",
-    "src/cew_repo",
-    "src/nsfr",
-    "src/nudge",
-    "src/neumann",
+    "src/usr/models/fyd_repo",
+    "src/usr/models/cew_repo",
+    "src/usr/models/nsfr",
+    "src/usr/environments/nudge",
+    "src/usr/models/neumann",
     "in/envs",
     "venv",
 ]
@@ -128,8 +128,8 @@ warn_unused_configs = true
 ignore_missing_imports = true
 follow_imports = "silent"
 exclude = [
-    "src/fyd_repo",
-    "src/cew_repo",
+    "src/usr/models/fyd_repo",
+    "src/usr/models/cew_repo",
     "in/envs",
     "venv",
 ]
@@ -138,11 +138,11 @@ exclude = [
 [tool.coverage.run]
 source = ["src", "plot"]
 omit = [
-    "src/fyd_repo/*",
-    "src/cew_repo/*",
-    "src/nsfr/*",
-    "src/neumann/*",
-    "src/nudge/*",
+    "src/usr/models/fyd_repo/*",
+    "src/usr/models/cew_repo/*",
+    "src/usr/models/nsfr/*",
+    "src/usr/models/neumann/*",
+    "src/usr/environments/nudge/*",
     "*/test_*",
     "*/conftest.py",
 ]

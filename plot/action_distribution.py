@@ -27,8 +27,8 @@ import matplotlib.pyplot as plt
 
 from plot.base import BasePlotter, clean_label, get_canonical_method_name, get_method_aliases
 from plot.pyrenees_reporter import PyreneesReporter
-from src.method_registry import get_style as get_method_style
-from src.pyrenees_evaluator import PyreneesEvaluator
+from src.usr.methods.method_registry import get_style as get_method_style
+from src.usr.eval.pyrenees_evaluator import PyreneesEvaluator
 
 
 class ActionDistributionPlotter(BasePlotter):
@@ -110,7 +110,7 @@ class ActionDistributionPlotter(BasePlotter):
 
             best_ckpt = entry
             if storage_url:
-                from src.pipeline.optuna_utils import get_best_trial_id
+                from src.app.pipeline.optuna_utils import get_best_trial_id
 
                 study_name = f"{clean_exp}_{parent_dir_name}"
                 best_id = get_best_trial_id(storage_url, study_name)

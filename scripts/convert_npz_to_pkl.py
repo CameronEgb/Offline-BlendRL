@@ -4,13 +4,13 @@ import sys
 import pickle
 from pathlib import Path
 
-# Fix path to load src.dataset_utils
+# Fix path to load src.app.dataset_utils
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from src.dataset_utils import DatasetWriter
+from src.app.dataset_utils import DatasetWriter
 
 # Ensure project root is in sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from src.pipeline.datasets import resolve_mimic_npz_path
+from src.app.pipeline.datasets import resolve_mimic_npz_path
 
 # Select NPZ file
 target_arg = sys.argv[1] if len(sys.argv) > 1 else None

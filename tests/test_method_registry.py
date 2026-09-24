@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.method_registry import (
+from src.usr.methods.method_registry import (
     METHOD_STYLE,
     clean_label,
     get_canonical_method_name,

@@ -1,7 +1,7 @@
 defaults:
-  - agent: ppo/dnn
+  - agent: ppo
+  - model: dnn
   - env: cartpole
-  - mode: online
   - site: local
   - _self_
 
@@ -14,6 +14,8 @@ intervals_count: 4
 eval_episodes: 100
 save_dataset: true
 recover: false
+paradigm: null
+dataset_path: null
 
 # Pipeline Orchestration Flags
 consolidate: null
@@ -22,8 +24,6 @@ tensorboard: false
 plot_style: null
 plot_only: false
 no_plot: false
-no_online: false
-no_offline: false
 dry_run: false
 dash: false
 dash_only: false
@@ -43,9 +43,6 @@ resources:
 
 # Paths
 results_dir: "results"
-experiment_dir: "${results_dir}/experiments/${experiment_id}"
-dataset_root: "in/datasets/${group}/${experiment_id}"
-dataset_path: "${dataset_root}/${agent.name}/${hydra:job.num}"
 
 # Redirect Hydra output and multirun directories inside results/hydra/
 hydra:

@@ -4,6 +4,11 @@ defaults:
   - override /hydra/sweeper: optuna_offline
 
 
+methods:
+  cql_dnn:
+    agent: cql
+    model: dnn
+
 hydra:
   sweeper:
     n_trials: 30

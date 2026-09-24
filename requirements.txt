@@ -23,7 +23,7 @@ lark
 igraph
 captum
 rtpt
--r src/fyd_repo/requirements.txt
+-r src/usr/models/fyd_repo/requirements.txt
 
 # Utilities & Data
 kneed

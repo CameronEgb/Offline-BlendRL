@@ -1,14 +1,13 @@
 # @package _global_
 defaults:
-  - pyrenees/_base
-  - override /agent: cql/blendrl_human_cew_dueling_resnet
-  - override /hydra/sweeper: optuna_offline
+- pyrenees/_base
+- override /hydra/sweeper: optuna_offline
 
 
-agent:
-  epochs_per_interval: 15
-  eval_interval_epochs: 3
-  batch_size: 512
+methods:
+  cql_blendrl_cew_dueling_resnet:
+    agent: cql
+    model: blendrl
 
 hydra:
   sweeper:

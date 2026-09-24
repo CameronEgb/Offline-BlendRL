@@ -1,7 +1,7 @@
 # @package _global_
 defaults:
-  - cartpole/_base
-  - override /hydra/sweeper: optuna_online
+- cartpole/_base
+- override /hydra/sweeper: optuna_online
 
 # Culminating Experiment for CartPole
 total_timesteps: 100000
@@ -9,16 +9,6 @@ eval_episodes: 100
 intervals_count: 10
 
 # Phase 1: High-Performance Online Generation
-online_methods: ppo/final_cp,ppo/blendrl_final_cp
-
-# Phase 2: Comprehensive Offline Comparison
-offline_methods: >-
-  iql/cp_tuned,iql/blendrl_cp_tuned,
-  iql/blendrl_arch1,iql/blendrl_arch2,iql/blendrl_arch3
-
-# Only train on the absolute best online datasets
-offline_datasets: ppo/final_cp,ppo/blendrl_final_cp
-
 hydra:
   sweeper:
     sampler:
@@ -35,8 +25,33 @@ hydra:
       ++agent.tau: interval(0.5, 0.95)
       ++agent.beta: interval(1.0, 10.0)
       ++agent.lr: interval(1e-4, 5e-3)
-      
+
       # Architecture exploration for multi_arch runs
       # (Placeholders allow these to be safely passed even if not used by all)
       ++agent.logic_lr: interval(1e-4, 5e-3)
       ++agent.blend_ent_coef: interval(0.0, 0.05)
+methods:
+  ppo_final_cp:
+    agent: ppo
+    model: dnn
+  ppo_blendrl_final_cp:
+    agent: ppo
+    model: blendrl
+  iql_cp_tuned:
+    agent: iql
+    model: dnn
+  iql_blendrl_cp_tuned:
+    agent: iql
+    model: blendrl
+  iql_blendrl_arch1:
+    agent: iql
+    model: blendrl
+    '# TODO': variant-specific params needed
+  iql_blendrl_arch2:
+    agent: iql
+    model: blendrl
+    '# TODO': variant-specific params needed
+  iql_blendrl_arch3:
+    agent: iql
+    model: blendrl
+    '# TODO': variant-specific params needed

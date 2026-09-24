@@ -8,7 +8,7 @@ from sklearn.model_selection import train_test_split
 
 # Dynamic dataset directory detection
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from src.pipeline.datasets import resolve_mimic_npz_path
+from src.app.pipeline.datasets import resolve_mimic_npz_path
 
 src_path = str(resolve_mimic_npz_path("mimic_lazy_0_interventions_balanced.npz"))
 out_dir = os.path.dirname(src_path)

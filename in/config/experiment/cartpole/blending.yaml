@@ -1,14 +1,25 @@
 # @package _global_
 defaults:
-  - cartpole/_base
+- cartpole/_base
 
 total_timesteps: 100000
 eval_episodes: 100
-online_methods: ppo/cp_tuned,ppo/blendrl_multi_logic
-offline_methods: iql/cp_tuned,iql/blendrl_multi_logic
 intervals_count: 10
 
 env:
   rules: "default, variant1"
   architecture: mlp
 
+methods:
+  ppo_cp_tuned:
+    agent: ppo
+    model: dnn
+  ppo_blendrl_multi_logic:
+    agent: ppo
+    model: blendrl
+  iql_cp_tuned:
+    agent: iql
+    model: dnn
+  iql_blendrl_multi_logic:
+    agent: iql
+    model: blendrl

@@ -9,7 +9,6 @@ default_callbacks:
 constraints:
   requires:
     env.offline_only: true
+    methods: non_empty
   forbids:
-    online_methods: non_empty
-    offline_methods: non_empty
     eval_episodes: non_zero

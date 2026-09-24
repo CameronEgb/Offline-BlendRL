@@ -1,27 +1,27 @@
 # @package _global_
 defaults:
-  - csc510/_base
+- csc510/_base
 
 # CSC510 Online CartPole Demo: Neural PPO vs Hybrid BlendRL (Logic+Neural)
 total_timesteps: 3000
 eval_episodes: 1
 intervals_count: 1
-no_offline: true
+
 
 # Two online methods comparing standard RL vs neuro-symbolic RL
-online_methods:
-  - ppo/cp_tuned
-
-# Visualization configuration for losses and training efficiency
 plots:
   convergence:
     smoothing_window: 3
     metrics:
-      - eval/reward
+    - eval/reward
   losses:
     smoothing_window: 5
     metrics:
-      - losses/total_loss
-      - losses/policy_loss
+    - losses/total_loss
+    - losses/policy_loss
   reports:
     include_hyperparameters: true
+methods:
+  ppo_cp_tuned:
+    agent: ppo
+    model: dnn

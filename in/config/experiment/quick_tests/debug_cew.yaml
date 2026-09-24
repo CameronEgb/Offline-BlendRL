@@ -1,24 +1,22 @@
 # @package _global_
 defaults:
-  - override /env: cartpole
+- override /env: cartpole
 
 total_timesteps: 250000
 intervals_count: 1
 eval_episodes: 100
-online_methods: []
-offline_methods: cew
-offline_datasets: ppo/cp_tuned
-
-agent:
-  epochs_per_interval: 20
-  lr: 1e-3
-  cql_alpha: 10.0
-  ecm_dthr: 0.1
-  batch_size: 32
-
 trainer:
   limit_train_batches: 1000
 
 save_dataset: false
 seed: 1
 recover: false
+methods:
+  cew_dnn:
+    agent: cew
+    model: dnn
+    epochs_per_interval: 20
+    lr: 1e-3
+    cql_alpha: 10.0
+    ecm_dthr: 0.1
+    batch_size: 32

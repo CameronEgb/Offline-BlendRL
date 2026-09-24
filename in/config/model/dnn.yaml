@@ -1,0 +1,5 @@
+# Standard MLP architecture
+architecture: dnn
+hidden_sizes: [256, 256]
+activation: relu
+

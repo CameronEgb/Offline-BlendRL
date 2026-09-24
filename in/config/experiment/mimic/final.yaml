@@ -1,7 +1,7 @@
 # @package _global_
 defaults:
-  - mimic/_base
-  - override /site: ncshare
+- mimic/_base
+- override /site: ncshare
 
 # Default partition: common (standard compute nodes)
 # Dispatches parallel jobs across compute nodes
@@ -10,28 +10,6 @@ consolidate: false
 
 # Discrete CQL Comparison Benchmark: Pure Neural vs. Value-Based BlendRL
 # All models train under identical discrete CQL Bellman + LogSumExp loss on Q-values.
-
-offline_methods:
-  # Pure Neural Baselines
-  - cql/dnn
-  - cql/dueling_resnet
-  # Value-Based BlendRL Hybrids (Q-Blending)
-  - cql/blendrl_human_rigid
-  - cql/blendrl_human_dueling_resnet_rigid
-  - cql/blendrl_cew_dueling_resnet
-
-agent:
-  epochs_per_interval: 25
-  eval_interval_epochs: 2
-  batch_size: 1024
-  lr: 3e-4
-  gamma: 0.95
-  cql_alpha: 0.5
-  reward_scale: 0.1
-  bellman_loss: smooth_l1
-  weight_decay: 1e-4
-  use_actor: false        # Pure value-based Q-learning (no separate actor)
-  blend_q_values: true   # Blend Q-values directly across modules
 
 env:
   gamma: 0.95
@@ -44,3 +22,79 @@ resources:
   standalone_memory: "32G"
   time: "01:00:00"
 
+methods:
+  cql_dnn:
+    agent: cql
+    model: dnn
+    epochs_per_interval: 25
+    eval_interval_epochs: 2
+    batch_size: 1024
+    lr: 3e-4
+    gamma: 0.95
+    cql_alpha: 0.1
+    reward_scale: 1.0
+    pos_action_weight: 15.0
+    bellman_loss: smooth_l1
+    weight_decay: 1e-4
+    use_actor: false
+    blend_q_values: true
+  cql_dueling_resnet:
+    agent: cql
+    model: dueling_resnet
+    epochs_per_interval: 25
+    eval_interval_epochs: 2
+    batch_size: 1024
+    lr: 3e-4
+    gamma: 0.95
+    cql_alpha: 0.1
+    reward_scale: 1.0
+    pos_action_weight: 15.0
+    bellman_loss: smooth_l1
+    weight_decay: 1e-4
+    use_actor: false
+    blend_q_values: true
+  cql_blendrl_human_rigid:
+    agent: cql
+    model: blendrl
+    epochs_per_interval: 25
+    eval_interval_epochs: 2
+    batch_size: 1024
+    lr: 3e-4
+    gamma: 0.95
+    cql_alpha: 0.1
+    reward_scale: 1.0
+    pos_action_weight: 15.0
+    bellman_loss: smooth_l1
+    weight_decay: 1e-4
+    use_actor: false
+    blend_q_values: true
+  cql_blendrl_human_dueling_resnet_rigid:
+    agent: cql
+    model: blendrl
+    epochs_per_interval: 25
+    eval_interval_epochs: 2
+    batch_size: 1024
+    lr: 3e-4
+    gamma: 0.95
+    cql_alpha: 0.1
+    reward_scale: 1.0
+    pos_action_weight: 15.0
+    bellman_loss: smooth_l1
+    weight_decay: 1e-4
+    use_actor: false
+    blend_q_values: true
+  cql_blendrl_cew_dueling_resnet:
+    agent: cql
+    model: blendrl
+    epochs_per_interval: 25
+    eval_interval_epochs: 2
+    batch_size: 1024
+    lr: 3e-4
+    gamma: 0.95
+    cql_alpha: 0.1
+    reward_scale: 1.0
+    pos_action_weight: 15.0
+    bellman_loss: smooth_l1
+    weight_decay: 1e-4
+    use_actor: false
+    blend_q_values: true

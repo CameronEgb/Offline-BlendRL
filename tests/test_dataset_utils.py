@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 import torch
 
-from src.dataset_utils import DatasetWriter
+from src.app.dataset_utils import DatasetWriter
 
 
 @pytest.fixture

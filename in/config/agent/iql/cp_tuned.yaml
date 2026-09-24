@@ -1,9 +1,0 @@
-defaults:
-  - /agent/iql/dnn
-
-# CartPole-specific IQL overrides
-name: iql_cp_tuned
-lr: 0.0003
-
-# Placeholders for sweep compatibility
-ent_coef: 0.01

@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.core.metadata import collect_run_metadata, get_git_info, save_git_diff
+from src.app.core.metadata import collect_run_metadata, get_git_info, save_git_diff
 
 
 def test_get_git_info_success():
@@ -52,7 +52,7 @@ def test_save_git_diff_clean(tmp_path):
 
 
 def test_collect_run_metadata_no_cfg():
-    with patch("src.core.metadata.get_git_info", return_value=("hash", "dev", False)):
+    with patch("src.app.core.metadata.get_git_info", return_value=("hash", "dev", False)):
         meta = collect_run_metadata()
         assert meta["git_commit"] == "hash"
         assert meta["git_branch"] == "dev"
@@ -65,7 +65,7 @@ def test_collect_run_metadata_no_cfg():
 def test_collect_run_metadata_with_cfg():
     cfg = MagicMock()
     cfg.seed = 42
-    with patch("src.core.metadata.get_git_info", return_value=("hash", "dev", True)):
+    with patch("src.app.core.metadata.get_git_info", return_value=("hash", "dev", True)):
         meta = collect_run_metadata(cfg)
         assert meta["seed"] == 42
         assert meta["git_dirty"] is True

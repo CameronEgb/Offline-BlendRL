@@ -16,7 +16,7 @@ from pathlib import Path
 import numpy as np
 import torch as th
 
-from src.core.env_vectorized import VectorizedBaseEnv
+from src.app.core.env_vectorized import VectorizedBaseEnv
 
 
 class VectorizedNudgeEnv(VectorizedBaseEnv):

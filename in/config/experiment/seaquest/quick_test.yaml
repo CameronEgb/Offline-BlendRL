@@ -1,8 +1,11 @@
 # @package _global_
 defaults:
-  - seaquest/_base
+- seaquest/_base
 
 total_timesteps: 1000
 eval_episodes: 5
 intervals_count: 2
-online_methods: ppo/dnn
+methods:
+  ppo_dnn:
+    agent: ppo
+    model: dnn

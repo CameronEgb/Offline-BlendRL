@@ -11,4 +11,4 @@ default_callbacks:
 constraints:
   requires:
     env.offline_only: false
-    online_methods: non_empty
+    methods: non_empty

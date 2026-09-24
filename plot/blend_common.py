@@ -14,7 +14,7 @@ import torch
 from sklearn.neighbors import NearestNeighbors
 
 from plot.base import clean_label, get_canonical_method_name
-from src.pyrenees_evaluator import PyreneesEvaluator
+from src.usr.eval.pyrenees_evaluator import PyreneesEvaluator
 
 KNOWN_PYRENEES_PROBLEMS = [
     "problem",
@@ -78,9 +78,9 @@ def discover_blendrl_checkpoints(exp_id: str, group: str, clean_exp: str) -> dic
 
 
 def load_modular_agent(path: Path):
-    from src.methods.cew_agent import CEWAgent
-    from src.methods.cql_agent import CQLAgent
-    from src.methods.iql_agent import IQLAgent
+    from src.usr.methods.cew_agent import CEWAgent
+    from src.usr.methods.cql_agent import CQLAgent
+    from src.usr.methods.iql_agent import IQLAgent
 
     for cls in [CQLAgent, CEWAgent, IQLAgent]:
         try:

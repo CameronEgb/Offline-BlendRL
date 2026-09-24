@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.pipeline.config import normalize_agent_name
+from src.app.pipeline.config import normalize_agent_name
 
 
 class TestNormalizeAgentName:

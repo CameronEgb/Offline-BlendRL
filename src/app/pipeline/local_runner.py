@@ -1,0 +1,174 @@
+"""Local training phase runner.
+
+Exposes composable phase functions driven by the structured methods: dict.
+Each method in cfg.methods is dispatched individually with proper overrides.
+"""
+
+import sys
+from pathlib import Path
+
+from src.app.pipeline.commands import build_method_overrides, get_sweep_direction
+from src.app.pipeline.config import normalize_agent_name
+from src.app.pipeline.datasets import ensure_online_dataset_path, fast_purge_dir, resolve_dataset_path, run_experiment
+from src.app.pipeline.optuna_utils import (
+    create_optuna_study,
+    delete_optuna_study,
+    get_next_study_name,
+    promote_best_trial_checkpoint,
+)
+
+
+# ---------------------------------------------------------------------------
+# Shared setup
+# ---------------------------------------------------------------------------
+
+def _setup_output_dirs(cfg) -> None:
+    """Purge and recreate checkpoint, log, and plot directories unless recovering."""
+    if cfg.get("recover", False):
+        return
+
+    ckpt_dir = Path("results/checkpoints") / cfg.group / cfg.experiment_id
+    fast_purge_dir(ckpt_dir)
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
+
+    exp_log_dir = Path("results/logs") / cfg.group / cfg.experiment_id
+    fast_purge_dir(exp_log_dir)
+    exp_log_dir.mkdir(parents=True, exist_ok=True)
+
+    clean_exp = Path(cfg.experiment_id).stem
+    exp_plot_dir = Path("results/plots") / cfg.group / clean_exp
+    fast_purge_dir(exp_plot_dir)
+    exp_plot_dir.mkdir(parents=True, exist_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Method dispatch
+# ---------------------------------------------------------------------------
+
+def _resolve_dataset_for_method(method_name, method_cfg, cfg):
+    """Resolve the dataset path for an offline method."""
+    explicit_ds = method_cfg.get("dataset_path") or cfg.get("dataset_path")
+    if explicit_ds and Path(explicit_ds).exists():
+        return Path(explicit_ds)
+
+    # For offline paradigms, dataset comes from the environment config
+    env_dataset = None
+    env_name = None
+    if hasattr(cfg, "env"):
+        env_dataset = cfg.env.get("dataset_name", None)
+        env_name = cfg.env.get("name", None)
+        if env_dataset:
+            try:
+                return resolve_dataset_path(
+                    dataset_id=str(env_dataset).replace(".npz", ""),
+                    group=env_name or cfg.get("group", ""),
+                    experiment_id=cfg.get("experiment_id", ""),
+                    yaml_ds_path=str(explicit_ds) if explicit_ds else None,
+                )
+            except FileNotFoundError:
+                pass
+
+    # Fallback: look in standard dataset directories
+    ds_root = Path("in/datasets") / cfg.group / cfg.experiment_id
+    if ds_root.exists():
+        return ds_root
+
+    raise FileNotFoundError(
+        f"Cannot resolve dataset for method '{method_name}'. "
+        f"No dataset_name in env config and no datasets found at {ds_root}."
+    )
+
+
+def run_methods(cfg, context) -> None:
+    """Execute all methods declared in cfg.methods."""
+    methods = context["methods"]
+    sanitized_extra_args = context["sanitized_extra_args"]
+    storage_url = context["storage_url"]
+    is_sweep = context["is_sweep"]
+    paradigm = cfg.get("paradigm", "offline_rl")
+
+    for method_name, method_cfg in methods.items():
+        # Convert OmegaConf to plain dict if needed
+        if hasattr(method_cfg, "items"):
+            method_cfg = dict(method_cfg)
+        else:
+            method_cfg = dict(method_cfg)
+
+        agent_name = normalize_agent_name(method_name)
+        study_name = get_next_study_name(cfg.group, cfg.experiment_id, agent_name)
+
+        # Resolve dataset for offline paradigms
+        dataset_path = None
+        if paradigm in ("offline_rl", "supervised"):
+            try:
+                dataset_path = _resolve_dataset_for_method(method_name, method_cfg, cfg)
+            except FileNotFoundError as e:
+                print(f"Error: {e}")
+                sys.exit(1)
+            print(f"Using dataset from: {dataset_path}")
+        elif paradigm == "online_rl":
+            # For online methods, set up dataset save path
+            dataset_path_str, has_pkl = ensure_online_dataset_path(
+                group=cfg.group,
+                experiment_id=cfg.experiment_id,
+                agent_name_internal=agent_name,
+                is_sweep=is_sweep,
+            )
+            if has_pkl:
+                print(f"Dataset already exists at {dataset_path_str}. Skipping {method_name}.")
+                continue
+            dataset_path = dataset_path_str
+
+        agent_str = f"agent={method_cfg.get('agent')}, " if method_cfg.get('agent') else ""
+        print(f"\n=== Training: {method_name} ({agent_str}model={method_cfg.get('model')}) ===")
+
+        overrides = build_method_overrides(
+            method_name=method_name,
+            method_cfg=method_cfg,
+            dataset_path=dataset_path,
+            extra_args=sanitized_extra_args,
+            cfg=cfg,
+            study_name=study_name if is_sweep else None,
+        )
+
+        if is_sweep:
+            delete_optuna_study(storage_url, study_name)
+            direction = get_sweep_direction(cfg, paradigm)
+            create_optuna_study(storage_url, study_name, direction=direction)
+
+        run_experiment(overrides)
+
+        if is_sweep:
+            promote_best_trial_checkpoint(
+                cfg.group, cfg.experiment_id, agent_name, storage_url, study_name
+            )
+
+
+# ---------------------------------------------------------------------------
+# Plotting
+# ---------------------------------------------------------------------------
+
+def run_plotting_phase(cfg, context) -> None:
+    """Run automated plotting after training completes."""
+    from src.app.pipeline.datasets import run_plotting
+
+    site_cfg = getattr(cfg, "site", None)
+    run_plotting(
+        cfg.experiment_id,
+        style=cfg.get("plot_style", None),
+        base_experiment=cfg.get("experiment_name", ""),
+        site_cfg=site_cfg,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Main entry point
+# ---------------------------------------------------------------------------
+
+def run_local_training(cfg, context) -> None:
+    """Execute all phases sequentially: setup → methods → plot."""
+    _setup_output_dirs(cfg)
+    run_methods(cfg, context)
+
+    if not cfg.get("no_plot", False):
+        run_plotting_phase(cfg, context)

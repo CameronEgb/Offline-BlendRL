@@ -1,0 +1,30 @@
+# @package _global_
+defaults:
+  - early_prediction/_base
+
+dataset_path: in/datasets/mimic/mimic_lazy_0_interventions_balanced.npz
+no_plot: true
+
+data:
+  window_hours: 12
+  tau_train: 12
+  use_volatility: true
+
+trainer:
+  limit_train_batches: 2
+  limit_val_batches: 2
+
+methods:
+  ep_lstm:
+    model: lstm
+    epochs_per_interval: 1
+    eval_interval_epochs: 1
+    batch_size: 128
+    lr: 1e-3
+
+  ep_transformer:
+    model: transformer
+    epochs_per_interval: 1
+    eval_interval_epochs: 1
+    batch_size: 128
+    lr: 1e-3

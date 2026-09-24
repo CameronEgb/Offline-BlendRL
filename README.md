@@ -39,13 +39,18 @@ pytest tests/ -v
 ```
 ├── run_pipeline.py                 # Primary entry point (orchestrates online/offline phases & sweeps)
 ├── src/                            # Core package source code
-│   ├── train.py                    # PyTorch Lightning driver script
-│   ├── methods/                    # RL agents (PPO, IQL, CQL, BlendRL variants)
-│   ├── core/                       # Environment vectorizer, architecture factories, callbacks
-│   ├── data/                       # Offline replay data modules & transition readers
-│   ├── blendrl/                    # BlendRL hybrid neural-symbolic architecture
-│   ├── nsfr/                       # Neural-Symbolic Forward Reasoner engine
-│   └── nudge/                      # Logic predicate & rule evaluation wrappers
+│   ├── app/                        # Application framework & engine
+│   │   ├── pipeline/               # Orchestrator, tasks, slurm runner, sweeps, validation
+│   │   ├── core/                   # Base interfaces, paradigm loaders, vectorizers, factories
+│   │   ├── data/                   # Offline replay data modules
+│   │   ├── api/                    # FastAPI backend service
+│   │   ├── dataset_utils.py        # Transition serialization & replay readers
+│   │   └── train.py                # PyTorch Lightning driver script
+│   └── usr/                        # User domain & research components
+│       ├── methods/                # RL agents (PPO, IQL, CQL, CEW) & registry
+│       ├── models/                 # Model architectures (BlendRL, NSFR, Neumann, CEW, FYD, Neural)
+│       ├── environments/           # Environment engines & wrappers (Nudge)
+│       └── eval/                   # Domain tasks & evaluators (Early prediction, Pyrenees, Reward shaping)
 ├── in/                             # All input specifications & datasets
 │   ├── config/                     # Hydra configuration system (agent, env, experiment, mode)
 │   ├── datasets/                   # Static offline datasets (MIMIC, Pyrenees, generated replay buffers)

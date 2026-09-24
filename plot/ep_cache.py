@@ -26,7 +26,7 @@ def get_ep_eval_data(exp_id, cfg, group, output_dir):
         with open(cache_path, "rb") as f:
             return pickle.load(f)
 
-    from src.early_prediction.eval_logic import compute_ep_eval_data
+    from src.usr.eval.early_prediction.eval_logic import compute_ep_eval_data
 
     if not ckpt_dir.exists():
         print(f"Error: Could not find checkpoint directory for {exp_id}")

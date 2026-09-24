@@ -4,7 +4,7 @@ import gymnasium as gym
 import numpy as np
 import torch as th
 
-from src.core.env_vectorized import VectorizedBaseEnv
+from src.app.core.env_vectorized import VectorizedBaseEnv
 
 
 class ReverseMountainCarWrapper(gym.Wrapper):

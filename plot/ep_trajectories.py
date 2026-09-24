@@ -4,7 +4,7 @@ from typing import Optional
 
 from plot.base import BasePlotter
 from plot.ep_cache import get_ep_eval_data
-from src.early_prediction.eval_logic import plot_ep_shock_over_tau
+from src.usr.eval.early_prediction.eval_logic import plot_ep_shock_over_tau
 
 
 class EpTrajectoriesPlotter(BasePlotter):

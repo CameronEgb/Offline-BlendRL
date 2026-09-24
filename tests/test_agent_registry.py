@@ -1,11 +1,11 @@
 import pytest
 
-from src.methods.registry import AGENT_REGISTRY, get_agent_class, list_registered_agents, register_agent
+from src.usr.methods.registry import AGENT_REGISTRY, get_agent_class, list_registered_agents, register_agent
 
 
 @pytest.fixture(autouse=True)
 def clean_registry():
-    from src.methods.registry import auto_discover
+    from src.usr.methods.registry import auto_discover
 
     auto_discover()
     original = AGENT_REGISTRY.copy()

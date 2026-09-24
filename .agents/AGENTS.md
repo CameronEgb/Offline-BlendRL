@@ -62,7 +62,7 @@ For static datasets without an online simulator (e.g., MIMIC, Pyrenees).
 - **Configuration:** All experiment parameters are in YAML files in `in/config/`.
 - **Precedence:** CLI arguments > experiment YAML > group `_base.yaml` > env/mode/site defaults > `config.yaml` root defaults.
 - **Entry Point:** `python run_pipeline.py <experiment_name> [optional Hydra overrides]` is the sole entry point.
-- **Task Registry:** Dispatches via `src/pipeline/task_registry.py`. `@register_task("name")` auto-registers. Default task: `"rl"`. Others: `early_prediction`, `reciprocal_refinement`.
+- **Task Registry:** Dispatches via `src/app/pipeline/task_registry.py`. `@register_task("name")` auto-registers. Default task: `"rl"`. Others: `early_prediction`, `reciprocal_refinement`.
 - **Dynamic Orchestration:** Reads `online_methods` and `offline_methods` from the config. Executes online then offline sequentially.
 
 ### Declarative Environment Config Keys
@@ -99,14 +99,14 @@ Priority: CLI flags > experiment `resources:` > site config > hardcoded fallback
 ---
 
 ## 4. Data Saving & Dataset Schema
-- **Writer:** `DatasetWriter` (`src/dataset_utils.py`) serializes transitions during online phase.
+- **Writer:** `DatasetWriter` (`src/app/dataset_utils.py`) serializes transitions during online phase.
 - **Compression:** Observations converted to `uint8` (images) or `float32` (vectors) on CPU before saving. Chunked `.pkl` files (default `chunk_size=100,000`).
 - **Dataset Manifest:** `DatasetWriter.close()` writes `dataset_manifest.json` with: agent, experiment_id, group, env, seed, total transitions, chunk count, timestamp (ISO-8601), git commit, branch, dirty flag.
 - **Transition Schema:**
     - `obs` / `next_obs`: Neural input.
     - `logic_obs` / `next_logic_obs`: Symbolic input (hybrid agents).
     - `action`, `reward`, `done`: Standard RL fields.
-- **Downstream Usage:** `RLDataModule` (`src/data/rl_data_module.py`) reads chunks into the offline replay buffer.
+- **Downstream Usage:** `RLDataModule` (`src/app/data/rl_data_module.py`) reads chunks into the offline replay buffer.
 
 ---
 
@@ -128,7 +128,7 @@ Priority: CLI flags > experiment `resources:` > site config > hardcoded fallback
     - **Config audit:** `.hydra/config.yaml` in the hydra outputs folder.
 - **Logic Rule Changes:** Always investigate Python valuation code first before touching rules in `in/rules/`. Ask before modifying rules — they are domain ground truths.
 - **Surgical Updates:** Do not refactor unrelated code.
-- **Verification:** Ensure `run_pipeline.py` orchestration is never broken and `src/train.py` remains compatible with Hydra.
+- **Verification:** Ensure `run_pipeline.py` orchestration is never broken and `src/app/train.py` remains compatible with Hydra.
 
 ---
 
@@ -136,24 +136,24 @@ Priority: CLI flags > experiment `resources:` > site config > hardcoded fallback
 - **Logger:** `CSVLogger` (`metrics.csv`) is the foundational logger. `TensorBoardLogger` is optional, disabled by default (`tensorboard: true` to enable).
 - **Metrics Source:** `results/logs/[GROUP]/[EXP_ID]/[AGENT]/version_X/metrics.csv`.
 - **Universal X-Axis:** `transitions` column — aligns online and offline agents at identical data exposure.
-- **Reproducibility (`src/core/metadata.py`):** Every run captures git provenance (commit, branch, dirty flag + patch), system info, CLI command, seed. Written to `runtime.json` in both checkpoint and log directories.
+- **Reproducibility (`src/app/core/metadata.py`):** Every run captures git provenance (commit, branch, dirty flag + patch), system info, CLI command, seed. Written to `runtime.json` in both checkpoint and log directories.
 - **Hydra Overrides:** `.hydra/overrides.yaml` copied into the log version directory.
 
 ---
 
 ## 8. Environment Customization & Wrappers
-- **Interface:** All environments wrapped via `VectorizedNudgeBaseEnv` (`src/blendrl/env_vectorized.py`).
-- **Evaluation:** `EnvironmentEvaluatorCallback` (`src/utils.py`) executes fixed episode counts (default 100) at transition intervals.
+- **Interface:** All environments wrapped via `VectorizedNudgeBaseEnv` (`src/app/core/env_vectorized.py`).
+- **Evaluation:** `EnvironmentEvaluatorCallback` (`src/app/core/callbacks.py`) executes fixed episode counts (default 100) at transition intervals.
 - **Environment Rules:** `in/envs/[ENV]/` — custom reward shaping (`blenderl_reward.py`) and architecture definitions (`mlp.py`).
 
 ---
 
 ## 9. Agent Implementation Guide
-Agents are PyTorch Lightning Modules in `src/methods/`:
+Agents are PyTorch Lightning Modules in `src/usr/methods/`:
 - `PPOAgent`: Standard online actor-critic RL.
 - `IQLAgent`: Offline RL using Implicit Q-Learning.
 - `BlendRLAgent` / `BlendRLIQLAgent`: Hybrid logic-neural agents.
-- **Architecture Selection:** `get_neural_agent` (`src/utils.py`) selects CNN or MLP based on env config.
+- **Architecture Selection:** `get_neural_agent` (`src/app/core/factories.py`) selects CNN or MLP based on env config.
 
 See `pipeline-crud` skill for step-by-step instructions on adding new agents.
 
@@ -161,14 +161,14 @@ See `pipeline-crud` skill for step-by-step instructions on adding new agents.
 
 ## 10. Logic-Neural Bridge (The "Blender")
 - **Reasoners:** NSFR (Neural Symbolic Forward Reasoner) or Neumann.
-- **Rule Loading:** `get_blender` (`src/utils.py`) initializes from `in/rules/`.
+- **Rule Loading:** `get_blender` (`src/app/core/factories.py`) initializes from `in/rules/`.
 - **Hybrid Forward Pass:** Raw observations processed by neural encoders and logic reasoners simultaneously; outputs blended into a single policy.
 
 ---
 
 ## 11. Method Style Registry
-- **Source of Truth:** `src/method_registry.py` — display names, colors, linestyles, markers.
-- **One entry per architecture.** Both `plot/base.py` and `src/early_prediction/eval.py` import from here.
+- **Source of Truth:** `src/usr/methods/method_registry.py` — display names, colors, linestyles, markers.
+- **One entry per architecture.** Both `plot/base.py` and `src/usr/eval/early_prediction/eval_logic.py` import from here.
 - **Prefix Matching:** `get_style("ppo_cp_tuned")` resolves to `"ppo"`. Longest prefix wins.
 
 ---
@@ -183,23 +183,23 @@ See `pipeline-crud` skill for adding new plotters.
 
 ---
 
-## 13. Pipeline Architecture (`run_pipeline.py` & `src/pipeline/`)
-- **`src/pipeline/task_registry.py`**: `@register_task("name")` with longest-prefix dispatch.
-- **`src/pipeline/config.py`**: Name normalization, method list parsing, CLI arg sanitization.
-- **`src/pipeline/datasets.py`**: Dataset path resolution, online symlinking, plotting dispatch.
-- **`src/pipeline/slurm.py`**: Slurm header builder (`generate_sbatch_header`), job submission (`submit_sbatch`). Mail: `--mail-type=END,FAIL`, `--mail-user=egbertcm23@gmail.com`.
-- **`src/pipeline/local_runner.py`**: Local sequential online & offline phase execution.
-- **`src/pipeline/slurm_runner.py`**: Cluster batch script generation and job dependency orchestration.
-- **`src/pipeline/early_prediction_task.py`**: EP sweeps, checkpoint evals, Optuna tuning. `@register_task("early_prediction")`.
-- **`src/pipeline/reciprocal_task.py`**: EP ↔ CQL co-training. `@register_task("reciprocal_refinement")`.
-- **`src/pipeline/optuna_utils.py`**: SQLite URL constants, study management, dashboard launching.
-- **`src/pipeline/validation.py`**: Pre-flight paradigm compatibility and config validation.
+## 13. Pipeline Architecture (`run_pipeline.py` & `src/app/pipeline/`)
+- **`src/app/pipeline/task_registry.py`**: `@register_task("name")` with longest-prefix dispatch.
+- **`src/app/pipeline/config.py`**: Name normalization, method list parsing, CLI arg sanitization.
+- **`src/app/pipeline/datasets.py`**: Dataset path resolution, online symlinking, plotting dispatch.
+- **`src/app/pipeline/slurm.py`**: Slurm header builder (`generate_sbatch_header`), job submission (`submit_sbatch`). Mail: `--mail-type=END,FAIL`, `--mail-user=egbertcm23@gmail.com`.
+- **`src/app/pipeline/local_runner.py`**: Local sequential online & offline phase execution.
+- **`src/app/pipeline/slurm_runner.py`**: Cluster batch script generation and job dependency orchestration.
+- **`src/app/pipeline/early_prediction_task.py`**: EP sweeps, checkpoint evals, Optuna tuning. `@register_task("early_prediction")`.
+- **`src/app/pipeline/reciprocal_task.py`**: EP ↔ CQL co-training. `@register_task("reciprocal_refinement")`.
+- **`src/app/pipeline/optuna_utils.py`**: SQLite URL constants, study management, dashboard launching.
+- **`src/app/pipeline/validation.py`**: Pre-flight paradigm compatibility and config validation.
 
 ---
 
 ## 14. Reciprocal Refinement (EP ↔ CQL Co-Training)
 - **Concept:** EP septic shock predictor and CQL policy iteratively improve each other.
-- **Reward Shaping (`src/reward_shaping.py`):** Potential-based (Ng et al. 1999):
+- **Reward Shaping (`src/usr/eval/reward_shaping.py`):** Potential-based (Ng et al. 1999):
     - Φ(s) = −P_EP(shock | observation window ending at s)
     - r_shaped = r_TQN + λ * (γ * Φ(s') − Φ(s))
 - **Config:** `in/config/env/mimic.yaml` under `reward_shaping:`. `reward_type: ep_shaped` activates it via `in/envs/mimic/hooks.py`.

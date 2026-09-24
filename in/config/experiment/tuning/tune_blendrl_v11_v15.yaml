@@ -1,15 +1,32 @@
 # @package _global_
 defaults:
-  - tuning/_base
-  - override /env: cartpole
+- tuning/_base
+- override /env: cartpole
 
 # Targeted Hyperparameter Sweep v11-v15
 total_timesteps: 50000
 
 eval_episodes: 100
-online_methods: ppo/cp_tuned,blendrl/v11,blendrl/v12,blendrl/v13,blendrl/v14,blendrl/v15
-offline_methods: 
 intervals_count: 20
 
 save_dataset: true
 recover: false
+methods:
+  ppo_cp_tuned:
+    agent: ppo
+    model: dnn
+  blendrl_v11:
+    agent: blendrl
+    model: dnn
+  blendrl_v12:
+    agent: blendrl
+    model: dnn
+  blendrl_v13:
+    agent: blendrl
+    model: dnn
+  blendrl_v14:
+    agent: blendrl
+    model: dnn
+  blendrl_v15:
+    agent: blendrl
+    model: dnn

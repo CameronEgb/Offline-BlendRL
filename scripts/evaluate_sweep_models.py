@@ -10,7 +10,7 @@ from pathlib import Path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, PROJECT_ROOT)
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "src"))
-sys.path.insert(0, os.path.join(PROJECT_ROOT, "src", "fyd_repo", "src"))
+sys.path.insert(0, os.path.join(PROJECT_ROOT, "src", "usr", "models", "fyd_repo", "src"))
 os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
 
 import torch
@@ -18,9 +18,9 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import roc_auc_score, average_precision_score, precision_score, recall_score, f1_score
 
-from src.methods.cql_agent import CQLAgent
-from src.methods.cew_agent import CEWAgent
-from src.methods.iql_agent import IQLAgent
+from src.usr.methods.cql_agent import CQLAgent
+from src.usr.methods.cew_agent import CEWAgent
+from src.usr.methods.iql_agent import IQLAgent
 
 def load_policy_agent(path, dev):
     for cls in [CQLAgent, CEWAgent, IQLAgent]:

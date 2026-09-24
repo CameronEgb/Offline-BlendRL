@@ -1,13 +1,12 @@
 # @package _global_
 defaults:
-  - pyrenees/_base
-  - override /agent: cql/blendrl_human_neural
-
-offline_methods: [cql/blendrl_human_neural]
-
-agent:
-  epochs_per_interval: 200
-  eval_interval_epochs: 20
-  modules:
+- pyrenees/_base
+methods:
+  cql_blendrl_human_neural:
+    agent: cql
+    model: blendrl
+    epochs_per_interval: 200
+    eval_interval_epochs: 20
+    modules:
     - type: nsfr
       rules: default

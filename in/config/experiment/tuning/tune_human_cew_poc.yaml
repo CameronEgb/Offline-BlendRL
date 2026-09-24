@@ -1,18 +1,13 @@
 # @package _global_
 defaults:
-  - tuning/_base
-  - override /env: cartpole
-  - override /hydra/sweeper: optuna_offline
-  - _self_
+- tuning/_base
+- override /env: cartpole
+- override /hydra/sweeper: optuna_offline
+- _self_
 
 total_timesteps: 10000
 eval_episodes: 20
-online_methods: ppo/cp_tuned
-offline_methods: blendrl_cql/human_cew
 intervals_count: 2
-
-agent:
-  epochs_per_interval: 2
 
 env:
   architecture: mlp
@@ -35,3 +30,12 @@ hydra:
       ++agent.cql_alpha: interval(0.1, 5.0)
       ++agent.ecm_dthr: interval(0.01, 0.5)
       ++agent.soft_target_tau: interval(0.001, 0.1)
+methods:
+  ppo_cp_tuned:
+    agent: ppo
+    model: dnn
+    epochs_per_interval: 2
+  blendrl_cql_human_cew:
+    agent: blendrl_cql
+    model: blendrl
+    epochs_per_interval: 2

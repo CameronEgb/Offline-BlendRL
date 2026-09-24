@@ -1,35 +1,12 @@
 # @package _global_
 defaults:
-  - pyrenees/_base
-  - override /agent: cql/blendrl_human_dueling_resnet
-  - override /hydra/sweeper: optuna_offline
+- pyrenees/_base
+- override /hydra/sweeper: optuna_offline
 
-
-offline_datasets:
-  - problem
-  - ex132(w)
-  - ex132a(w)
-  - ex152a(w)
-  - ex212(w)
-  - ex242(w)
-  - ex252(w)
-  - ex252a(w)
-  - exc137(w)
-  - exp426d(w)
-  - exp426e(w)
-
-offline_methods:
-  - cql/blendrl_human_dueling_resnet
-  - cql/blendrl_human_dueling_resnet_logic
-
-agent:
-  epochs_per_interval: 35
-  eval_interval_epochs: 5
-  batch_size: 512
 
 hydra:
   sweeper:
-    storage: null
+    storage:
     study_name: "pyrenees_blendrl_human_dueling_resnet"
     direction: minimize
     n_trials: 70
@@ -39,3 +16,16 @@ hydra:
       agent.cql_alpha: tag(log, interval(0.05, 5.0))
       agent.soft_target_tau: interval(0.001, 0.03)
       agent.blender_lr: tag(log, interval(5e-5, 2e-3))
+methods:
+  cql_blendrl_human_dueling_resnet:
+    agent: cql
+    model: blendrl
+    epochs_per_interval: 35
+    eval_interval_epochs: 5
+    batch_size: 512
+  cql_blendrl_human_dueling_resnet_logic:
+    agent: cql
+    model: blendrl
+    epochs_per_interval: 35
+    eval_interval_epochs: 5
+    batch_size: 512

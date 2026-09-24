@@ -9,10 +9,7 @@
 # Theory: Ng, Harada, Russell (1999) — preserves optimal policies.
 
 defaults:
-  - mimic/_base
-  - override /agent: cql/dnn
-  - override /mode: offline
-
+- mimic/_base
 task: reciprocal_refinement
 
 resources:
@@ -27,7 +24,7 @@ reciprocal:
   lambda_coef: 1.0         # Initial reward shaping coefficient λ
   lambda_decay: 1.0        # Multiply λ by this each round (1.0 = no decay)
   convergence_threshold: 0.005  # Stop if Δ(mortality) < this between rounds
-  ep_architecture: null    # null = use all EP architectures, or e.g. "transformer_with_v"
+  ep_architecture:         # null = use all EP architectures, or e.g. "transformer_with_v"
 
   # CQL-specific overrides per round (Hydra syntax)
   cql_overrides: []
@@ -39,17 +36,6 @@ reciprocal:
     tau_train: 12
 
 # CQL training hyperparameters (applied each round)
-agent:
-  batch_size: 1024
-  lr: 3e-4
-  epochs_per_interval: 2
-  eval_interval_epochs: 1
-  weight_decay: 1e-4
-
-  cql:
-    cql_alpha: 2.0
-    soft_target_tau: 0.005
-
 env:
   reward_type: tqn  # Base reward (overridden to ep_shaped in round > 0)
 

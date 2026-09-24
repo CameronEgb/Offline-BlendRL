@@ -1,33 +1,17 @@
 # @package _global_
 defaults:
-  - pyrenees/_base
-  - override /agent: cql/dueling_resnet
-
-
-offline_datasets:
-  - problem
-  - ex132(w)
-  - ex132a(w)
-  - ex152a(w)
-  - ex212(w)
-  - ex242(w)
-  - ex252(w)
-  - ex252a(w)
-  - exc137(w)
-  - exp426d(w)
-  - exp426e(w)
-
-offline_methods:
-  - cql/blendrl_human_dueling_resnet
-
-agent:
-  epochs_per_interval: 30
-  eval_interval_epochs: 5
-  batch_size: 512
-  lr: 3e-4
-  cql_alpha: 1.0
-
+- pyrenees/_base
 plots:
   losses:
-    metrics: ["losses/total_loss", "losses/bellman_loss", "losses/cql_loss", "losses/q_loss", "losses/actor_loss"]
+    metrics: ["losses/total_loss", "losses/bellman_loss", "losses/cql_loss", "losses/q_loss",
+      "losses/actor_loss"]
   reports: {}
+methods:
+  cql_blendrl_human_dueling_resnet:
+    agent: cql
+    model: blendrl
+    epochs_per_interval: 30
+    eval_interval_epochs: 5
+    batch_size: 512
+    lr: 3e-4
+    cql_alpha: 1.0

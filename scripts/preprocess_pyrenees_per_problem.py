@@ -36,7 +36,7 @@ if str(PROJECT_ROOT) not in sys.path:
 if str(PROJECT_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from src.dataset_utils import DatasetWriter
+from src.app.dataset_utils import DatasetWriter
 
 META_COLS = [
     "feature_recordID", "answerID", "time", "userID", "problem",

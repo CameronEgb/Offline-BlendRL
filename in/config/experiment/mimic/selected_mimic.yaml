@@ -1,22 +1,66 @@
 # @package _global_
 defaults:
-  - mimic/_base
+- mimic/_base
 
 
-offline_methods:
-  - cql/dueling_resnet
-  - cql/blendrl_human_dueling_resnet_rigid
-  - cql/blendrl_human_dueling_resnet_continuous
-  - cql/blendrl_cew_dueling_resnet
-  - cql/blendrl_cross_attention
-
-agent:
-  epochs_per_interval: 25
-  eval_interval_epochs: 5
-  lr: 2e-4
-  cql_alpha: 2.0
-  reward_scale: 0.1
-  bellman_loss: smooth_l1
-  blend_ent_coef: 0.1
-  ent_coef: 0.05
-  weight_decay: 1e-4
+methods:
+  cql_dueling_resnet:
+    agent: cql
+    model: dueling_resnet
+    epochs_per_interval: 25
+    eval_interval_epochs: 5
+    lr: 2e-4
+    cql_alpha: 2.0
+    reward_scale: 0.1
+    bellman_loss: smooth_l1
+    blend_ent_coef: 0.1
+    ent_coef: 0.05
+    weight_decay: 1e-4
+  cql_blendrl_human_dueling_resnet_rigid:
+    agent: cql
+    model: blendrl
+    epochs_per_interval: 25
+    eval_interval_epochs: 5
+    lr: 2e-4
+    cql_alpha: 2.0
+    reward_scale: 0.1
+    bellman_loss: smooth_l1
+    blend_ent_coef: 0.1
+    ent_coef: 0.05
+    weight_decay: 1e-4
+  cql_blendrl_human_dueling_resnet_continuous:
+    agent: cql
+    model: blendrl
+    epochs_per_interval: 25
+    eval_interval_epochs: 5
+    lr: 2e-4
+    cql_alpha: 2.0
+    reward_scale: 0.1
+    bellman_loss: smooth_l1
+    blend_ent_coef: 0.1
+    ent_coef: 0.05
+    weight_decay: 1e-4
+  cql_blendrl_cew_dueling_resnet:
+    agent: cql
+    model: blendrl
+    epochs_per_interval: 25
+    eval_interval_epochs: 5
+    lr: 2e-4
+    cql_alpha: 2.0
+    reward_scale: 0.1
+    bellman_loss: smooth_l1
+    blend_ent_coef: 0.1
+    ent_coef: 0.05
+    weight_decay: 1e-4
+  cql_blendrl_cross_attention:
+    agent: cql
+    model: blendrl
+    epochs_per_interval: 25
+    eval_interval_epochs: 5
+    lr: 2e-4
+    cql_alpha: 2.0
+    reward_scale: 0.1
+    bellman_loss: smooth_l1
+    blend_ent_coef: 0.1
+    ent_coef: 0.05
+    weight_decay: 1e-4

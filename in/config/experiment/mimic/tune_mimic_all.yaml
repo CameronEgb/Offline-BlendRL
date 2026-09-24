@@ -1,25 +1,16 @@
 # @package _global_
 defaults:
-  - mimic/_base
-  - override /agent: cql/blendrl_human_neural
-  - override /hydra/sweeper: optuna_offline
+- mimic/_base
+- override /hydra/sweeper: optuna_offline
 
 consolidate: true
 
-agent:
-  epochs_per_interval: 2
-  eval_interval_epochs: 1
-
-  cql:
-    cql_alpha: 2.0
-    weight_decay: 1e-4
-
-  blendrl:
-    blender_mode: neural
-    blend_function: softmax
-
 env:
   reward_type: tqn
+methods:
+  cql_blendrl:
+    agent: cql
+    model: blendrl
 
 hydra:
   sweeper:

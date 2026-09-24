@@ -3,7 +3,7 @@ import os
 import numpy as np
 import torch as th
 
-from src.core.env_vectorized import VectorizedBaseEnv
+from src.app.core.env_vectorized import VectorizedBaseEnv
 
 
 def compute_tqn_stage_severity(obs):
@@ -126,7 +126,7 @@ class VectorizedNudgeEnv(VectorizedBaseEnv):
         self.seed = seed if seed is not None else 42
         
         # Load dataset
-        from src.pipeline.datasets import resolve_mimic_npz_path
+        from src.app.pipeline.datasets import resolve_mimic_npz_path
         path = str(resolve_mimic_npz_path(dataset_name))
                     
         if not os.path.exists(path):

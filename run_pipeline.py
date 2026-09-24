@@ -11,20 +11,27 @@ from pathlib import Path
 
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 SRC_DIR = os.path.join(PROJECT_ROOT, "src")
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
-if SRC_DIR not in sys.path:
-    sys.path.insert(0, SRC_DIR)
+for p in [
+    PROJECT_ROOT,
+    SRC_DIR,
+    os.path.join(SRC_DIR, "app"),
+    os.path.join(SRC_DIR, "usr"),
+    os.path.join(SRC_DIR, "usr", "models"),
+    os.path.join(SRC_DIR, "usr", "environments"),
+    os.path.join(SRC_DIR, "usr", "eval"),
+]:
+    if p not in sys.path:
+        sys.path.insert(0, p)
 
 import hydra
 from hydra import compose, initialize
 
-from src.pipeline.config import normalize_agent_name, parse_method_list, resolve_experiment_config_name
-from src.pipeline.datasets import run_plotting
-from src.pipeline.exceptions import ConfigurationError
-from src.pipeline.optuna_utils import launch_optuna_dashboard
-from src.pipeline.slurm import generate_sbatch_header, submit_sbatch
-from src.pipeline.validation import validate_experiment_config
+from src.app.pipeline.config import normalize_agent_name, resolve_experiment_config_name
+from src.app.pipeline.datasets import run_plotting
+from src.app.pipeline.exceptions import ConfigurationError
+from src.app.pipeline.optuna_utils import launch_optuna_dashboard
+from src.app.pipeline.slurm import generate_sbatch_header, submit_sbatch
+from src.app.pipeline.validation import validate_experiment_config
 
 
 def main():
@@ -121,7 +128,7 @@ def main():
     # Load paradigm definition for component assembly
     paradigm_def = None
     try:
-        from src.core.paradigm_loader import load_paradigm_definition
+        from src.app.core.paradigm_loader import load_paradigm_definition
         paradigm_name = cfg.get("paradigm", None)
         if paradigm_name:
             paradigm_def = load_paradigm_definition(paradigm_name)
@@ -159,29 +166,39 @@ def main():
         print("Error: Could not find Optuna storage URL in configuration.")
         sys.exit(1)
 
-    online_methods = cfg.get("online_methods", "")
-    offline_methods = cfg.get("offline_methods", "")
-    offline_datasets = cfg.get("offline_datasets", "")
+    # Parse structured methods: dict
+    methods = cfg.get("methods", None)
+    if not methods:
+        raise ConfigurationError(
+            f"[ConfigurationError] Experiment '{experiment_arg}' has no 'methods:' dict. "
+            f"Declare methods as a dict with agent + model per entry."
+        )
 
-    online_list = parse_method_list(online_methods)
-    offline_list = parse_method_list(offline_methods)
-    dataset_list = parse_method_list(offline_datasets)
+    # Reject legacy keys
+    for legacy_key in ("online_methods", "offline_methods", "offline_datasets"):
+        if cfg.get(legacy_key, None):
+            raise ConfigurationError(
+                f"[ConfigurationError] Legacy key '{legacy_key}' found in config. "
+                f"Use the 'methods:' dict instead."
+            )
 
-    print(f"Detected Online Methods: {online_list}")
-    print(f"Detected Offline Methods: {offline_list}")
-    print(f"Using Datasets for Offline Training: {dataset_list}")
+    # Convert OmegaConf to plain dict
+    from omegaconf import OmegaConf
+    methods_dict = OmegaConf.to_container(methods, resolve=True)
+
+    print(f"Declared Methods:")
+    for name, mcfg in methods_dict.items():
+        agent_str = f"agent={mcfg.get('agent')}, " if mcfg.get('agent') else ""
+        print(f"  {name}: {agent_str}model={mcfg.get('model')}")
 
     # Build context for tasks
     context = {
         "is_interactive": is_interactive,
         "site_name": site_name,
-        "local_val": is_interactive,
         "sanitized_extra_args": sanitized_extra_args,
         "storage_url": storage_url,
         "is_sweep": is_sweep,
-        "online_list": online_list,
-        "offline_list": offline_list,
-        "dataset_list": dataset_list,
+        "methods": methods_dict,
         "paradigm_def": paradigm_def,
     }
 
@@ -190,7 +207,7 @@ def main():
     if not task_name:
         task_name = "rl"
 
-    from src.pipeline.task_registry import get_task
+    from src.app.pipeline.task_registry import get_task
 
     task_fn = get_task(task_name)
 

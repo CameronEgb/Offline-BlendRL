@@ -1,41 +1,11 @@
 # @package _global_
 defaults:
   - override /env: mimic
-  - override /agent: cql/dnn
-  - override /mode: offline
 
 paradigm: offline_rl
 
 intervals_count: 1
 eval_episodes: 0
-
-offline_datasets: [mimic_lazy_0_interventions_balanced]
-offline_methods: [cql/dnn, cql/blendrl_human_neural, cql/blendrl_human_cew, cew/fyd]
-
-agent:
-  # Shared offline training parameters
-  batch_size: 1024
-  lr: 3e-4
-  epochs_per_interval: 2
-  eval_interval_epochs: 1
-  weight_decay: 1e-4
-  ent_coef: 0.05
-  hidden_sizes: [512, 512, 256, 128]
-
-  # CQL algorithm settings
-  cql:
-    cql_alpha: 2.0
-    soft_target_tau: 0.005
-
-  # CEW algorithm settings
-  cew:
-    ecm_dthr: 0.1
-    fyd_top_k: 50
-
-  # BlendRL hybrid arbitration settings
-  blendrl:
-    blender_mode: neural
-    blend_function: softmax
 
 plots:
   losses:
@@ -52,4 +22,3 @@ plots:
   clinical: {}
   reports:
     include_hyperparameters: true
-

@@ -1,18 +1,41 @@
 # @package _global_
 defaults:
-  - tuning/_base
-  - override /env: cartpole
-  - override /mode: online
-
-# Tuning Experiment for BlendRL on CartPole (10 variants)
+- tuning/_base
+- override /env: cartpole
 total_timesteps: 50000
 intervals_count: 10
 eval_episodes: 100
 
-online_methods: >-
-  blendrl/v1,blendrl/v2,blendrl/v3,blendrl/v4,blendrl/v5,
-  blendrl/v6,blendrl/v7,blendrl/v8,blendrl/v9,blendrl/v10
-
-offline_methods: 
 save_dataset: true
 recover: false
+methods:
+  blendrl_v1:
+    agent: blendrl
+    model: dnn
+  blendrl_v2:
+    agent: blendrl
+    model: dnn
+  blendrl_v3:
+    agent: blendrl
+    model: dnn
+  blendrl_v4:
+    agent: blendrl
+    model: dnn
+  blendrl_v5:
+    agent: blendrl
+    model: dnn
+  blendrl_v6:
+    agent: blendrl
+    model: dnn
+  blendrl_v7:
+    agent: blendrl
+    model: dnn
+  blendrl_v8:
+    agent: blendrl
+    model: dnn
+  blendrl_v9:
+    agent: blendrl
+    model: dnn
+  blendrl_v10:
+    agent: blendrl
+    model: dnn

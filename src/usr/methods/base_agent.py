@@ -1,0 +1,247 @@
+"""
+Base agent classes — shared interface and utilities for all RL agents.
+
+Hierarchy:
+    BaseAgent (ABC)
+    ├── OnlineAgentBase   — rollout buffers, env stepping, GAE, dataset writing
+    └── OfflineAgentBase  — interval limit calc, reader.sample(), target networks
+"""
+
+from abc import ABC, abstractmethod
+from typing import Any
+
+import lightning as L
+import numpy as np
+import torch
+import torch.optim as optim
+from omegaconf import DictConfig
+
+
+class BaseAgent(L.LightningModule, ABC):
+    """Abstract base class for all RL agents in the BlendRL framework.
+
+    Provides:
+        - Unified config traversal (get_cfg)
+        - Soft target network updates (_soft_update)
+        - Standard interface contract via abstract methods
+        - Common environment initialization helpers
+    """
+
+    def __init__(self, cfg: dict[str, Any]):
+        super().__init__()
+        self.cfg = cfg
+        self.automatic_optimization = False
+
+    # ──────────────────────────────────────────────
+    # Config Utilities
+    # ──────────────────────────────────────────────
+
+    def get_cfg(self, key, default=None):
+        """Unified config traversal — searches agent, env, then top-level config.
+
+        Handles Hydra's nested DictConfig structures, dotted keys (e.g. 'cql.cql_alpha'),
+        and sub-dictionaries (e.g., cfg.agent.cew, cfg.agent.cql, cfg.agent.blendrl).
+        """
+        cfg = self.cfg
+
+        def _get_nested(root, k):
+            if not isinstance(root, (dict, DictConfig)):
+                return None, False
+            if k in root:
+                return root[k], True
+            if "." in k:
+                parts = k.split(".")
+                curr = root
+                for p in parts:
+                    if isinstance(curr, (dict, DictConfig)) and p in curr:
+                        curr = curr[p]
+                    else:
+                        return None, False
+                return curr, True
+            return None, False
+
+        # Search in agent config
+        if hasattr(cfg, "agent"):
+            val, found = _get_nested(cfg.agent, key)
+            if found:
+                return val
+            # Handle double-nested agent config from Hydra inheritance
+            if "agent" in cfg.agent and isinstance(cfg.agent.agent, (dict, DictConfig)):
+                val, found = _get_nested(cfg.agent.agent, key)
+                if found:
+                    return val
+            # Search sub-dictionaries in cfg.agent (e.g., cfg.agent.cew, cfg.agent.cql, cfg.agent.blendrl)
+            for sub_k, sub_v in cfg.agent.items():
+                if isinstance(sub_v, (dict, DictConfig)):
+                    val, found = _get_nested(sub_v, key)
+                    if found:
+                        return val
+
+        # Search in model config
+        if hasattr(cfg, "model"):
+            val, found = _get_nested(cfg.model, key)
+            if found:
+                return val
+            for sub_k, sub_v in cfg.model.items():
+                if isinstance(sub_v, (dict, DictConfig)):
+                    val, found = _get_nested(sub_v, key)
+                    if found:
+                        return val
+
+        # Search in env config
+        if hasattr(cfg, "env"):
+            val, found = _get_nested(cfg.env, key)
+            if found:
+                return val
+
+        # Search in top-level config
+        val, found = _get_nested(cfg, key)
+        if found:
+            return val
+
+        return default
+
+    # ──────────────────────────────────────────────
+    # Network Utilities
+    # ──────────────────────────────────────────────
+
+    def _soft_update(self, model, target_model, tau: float | None = None):
+        """Polyak averaging for target network updates."""
+        if tau is None:
+            tau = self.get_cfg("soft_target_tau", 0.005)
+        for param, target_param in zip(model.parameters(), target_model.parameters()):
+            target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
+
+    # ──────────────────────────────────────────────
+    # Environment Helpers
+    # ──────────────────────────────────────────────
+
+    def _init_env(self, n_envs=None):
+        """Initialize the vectorized environment and extract observation/action spaces.
+
+        Args:
+            n_envs: Number of parallel environments. Defaults to cfg value for online,
+                    1 for offline (evaluation only).
+
+        Returns:
+            Observation tensor from env.reset().
+        """
+        from src.app.core.env_vectorized import VectorizedBaseEnv
+
+        if n_envs is None:
+            n_envs = self.get_cfg("num_envs", 4)
+
+        algorithm = self.get_cfg("algorithm", self.get_cfg("name", self.cfg.env.name))
+
+        self.env = VectorizedBaseEnv.from_name(
+            self.cfg.env.name, n_envs=n_envs, mode=algorithm, seed=self.get_cfg("seed", getattr(self.cfg, "seed", 1))
+        )
+
+        obs = self.env.reset()
+        if isinstance(obs, tuple):
+            obs = obs[0]
+        self.observation_space = obs.shape[1:]
+        self.n_actions = self.env.n_actions if not callable(self.env.n_actions) else self.env.n_actions()
+
+        return obs
+
+    # ──────────────────────────────────────────────
+    # Abstract Interface (enforced contract)
+    # ──────────────────────────────────────────────
+
+    @abstractmethod
+    def get_action_and_value(self, obs, logic_obs=None, action=None):
+        """Compute action, log probability, entropy, and value for given observations.
+
+        Returns:
+            Tuple of (action, logprob, entropy, value) — or with blend_entropy for hybrid agents.
+        """
+        ...
+
+    @abstractmethod
+    def get_value(self, obs, logic_obs=None):
+        """Compute value estimate for given observations."""
+        ...
+
+    def get_action_probs(self, obs, logic_obs=None):
+        """Compute action probabilities according to the agent's policy paradigm.
+
+        Subclasses should override this method to define their canonical policy distribution.
+        """
+        if hasattr(self, "actor") and hasattr(self.actor, "get_action_probs"):
+            return self.actor.get_action_probs(obs)
+        raise NotImplementedError(f"{self.__class__.__name__} must implement get_action_probs.")
+
+    def get_action(self, obs, logic_obs=None):
+        """Select discrete action for given observation (default: argmax of action probs)."""
+        probs = self.get_action_probs(obs, logic_obs)
+        return torch.argmax(probs, dim=-1)
+
+    def get_blending_weights(self, obs: torch.Tensor, logic_obs: torch.Tensor | None = None) -> torch.Tensor | None:
+        """Return blending weights for hybrid/modular architectures if applicable, else None."""
+        if (
+            hasattr(self, "model")
+            and hasattr(self.model, "actor")
+            and hasattr(self.model.actor, "to_blender_policy_distribution")
+        ):
+            if getattr(self, "is_modular", False) and hasattr(self, "_prepare_logic_obs"):
+                logic_obs = self._prepare_logic_obs(obs, logic_obs)
+            return self.model.actor.to_blender_policy_distribution(obs, logic_obs)
+        return None
+
+
+class OfflineAgentBase(BaseAgent):
+    """Base class for all offline RL agents (IQL, CQL, CEW, and their BlendRL variants).
+
+    Provides:
+        - Device transfer for train and validation readers
+        - Interval-based dataset limit management (on_train_epoch_start)
+        - Common offline training epoch tracking
+    """
+
+    def on_train_start(self):
+        """Preload datasets to agent device on training start."""
+        datamodule = getattr(self.trainer, "datamodule", None)
+        if datamodule is not None:
+            if hasattr(datamodule, "reader") and datamodule.reader is not None:
+                datamodule.reader.device = self.device
+            if hasattr(datamodule, "val_reader") and datamodule.val_reader is not None:
+                datamodule.val_reader.device = self.device
+
+    def on_train_epoch_start(self):
+        """Set dataset limit based on current training interval.
+
+        Implements the progressive data exposure schedule defined by
+        intervals_count and epochs_per_interval (when intervals_count > 1).
+        """
+        datamodule = getattr(self.trainer, "datamodule", None)
+        if datamodule is not None and hasattr(datamodule, "reader") and datamodule.reader is not None:
+            is_offline_only = getattr(self.cfg.env, "offline_only", False)
+            intervals_count = 1 if is_offline_only else self.cfg.get("intervals_count", 1)
+            if intervals_count > 1:
+                epochs_per_interval = self.get_cfg("epochs_per_interval", 1)
+                current_interval = self.current_epoch // epochs_per_interval
+                interval_size = self.cfg.total_timesteps // intervals_count
+                current_limit = interval_size * (current_interval + 1)
+                datamodule.reader.set_limit(min(current_limit, len(datamodule.reader)))
+            else:
+                datamodule.reader.set_limit(len(datamodule.reader))
+
+    def _log_offline_transitions(self):
+        """Calculate and log the current transition count for offline training."""
+        cfg = self.cfg
+        is_offline_only = getattr(cfg.env, "offline_only", False)
+        intervals_count = 1 if is_offline_only else cfg.get("intervals_count", 1)
+        if intervals_count > 1:
+            epochs_per_interval = self.get_cfg("epochs_per_interval", 1)
+            current_interval = self.current_epoch // epochs_per_interval
+            interval_size = cfg.total_timesteps // intervals_count
+            current_transitions = interval_size * (current_interval + 1)
+        else:
+            current_transitions = (
+                cfg.total_timesteps
+                if hasattr(cfg, "total_timesteps") and isinstance(cfg.total_timesteps, (int, float))
+                else len(self.trainer.datamodule.reader)
+            )
+        self.log("transitions", float(current_transitions), logger=False, prog_bar=True)
+        return current_transitions

@@ -1,6 +1,6 @@
 # @package _global_
 defaults:
-  - override /env: cartpole
+- override /env: cartpole
 
 paradigm: online_rl
 

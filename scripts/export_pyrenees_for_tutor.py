@@ -12,7 +12,7 @@ PROJECT_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from src.methods.cql_agent import CQLAgent
+from src.usr.methods.cql_agent import CQLAgent
 
 
 class StandalonePyreneesPolicy(torch.nn.Module):

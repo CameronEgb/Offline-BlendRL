@@ -2,7 +2,7 @@
 
 import torch
 
-from src.core.types import ActionResult
+from src.app.core.types import ActionResult
 
 
 class TestActionResult:

@@ -1,13 +1,16 @@
 # @package _global_
 defaults:
-  - tuning/_base
-  - override /env: cartpole
-  - override /agent: ppo/dnn
-  - override /mode: online
-  - override /hydra/sweeper: optuna_online
+- tuning/_base
+- override /env: cartpole
+- override /hydra/sweeper: optuna_online
 total_timesteps: 100000
 intervals_count: 5
 eval_episodes: 10
+
+methods:
+  ppo_dnn:
+    agent: ppo
+    model: dnn
 
 hydra:
   sweeper:

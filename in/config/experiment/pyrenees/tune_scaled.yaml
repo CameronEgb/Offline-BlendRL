@@ -1,32 +1,8 @@
 # @package _global_
 defaults:
-  - pyrenees/_base
-  - override /hydra/sweeper: optuna_offline
+- pyrenees/_base
+- override /hydra/sweeper: optuna_offline
 
-
-offline_datasets:
-  - problem
-  - ex132(w)
-  - ex132a(w)
-  - ex152a(w)
-  - ex212(w)
-  - ex242(w)
-  - ex252(w)
-  - ex252a(w)
-  - exc137(w)
-  - exp426d(w)
-  - exp426e(w)
-
-offline_methods:
-  - cql/dueling_resnet
-  - cql/blendrl_human_dueling_resnet
-  - cql/blendrl_cross_attention
-
-agent:
-  epochs_per_interval: 15
-  eval_interval_epochs: 3
-  batch_size: 512
-  soft_target_tau: 0.005
 
 hydra:
   sweeper:
@@ -39,3 +15,25 @@ hydra:
       agent.cql_alpha: tag(log, interval(0.02, 1.5))
       agent.blender_lr: tag(log, interval(1e-4, 2e-3))
       agent.weight_decay: tag(log, interval(1e-5, 1e-2))
+methods:
+  cql_dueling_resnet:
+    agent: cql
+    model: dueling_resnet
+    epochs_per_interval: 15
+    eval_interval_epochs: 3
+    batch_size: 512
+    soft_target_tau: 0.005
+  cql_blendrl_human_dueling_resnet:
+    agent: cql
+    model: blendrl
+    epochs_per_interval: 15
+    eval_interval_epochs: 3
+    batch_size: 512
+    soft_target_tau: 0.005
+  cql_blendrl_cross_attention:
+    agent: cql
+    model: blendrl
+    epochs_per_interval: 15
+    eval_interval_epochs: 3
+    batch_size: 512
+    soft_target_tau: 0.005
