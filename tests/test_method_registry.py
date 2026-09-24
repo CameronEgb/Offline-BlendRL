@@ -51,6 +51,12 @@ class TestGetStyle:
         style = get_style("cql")
         assert style["label"] is not None
 
+    def test_cql_blendrl_cew_fyd_dueling_resnet_style(self):
+        style = get_style("cql_blendrl_cew_fyd_dueling_resnet")
+        assert style["label"] == "BlendRL CEW+FYD+ResNet"
+        assert style["color"] == "#bcbd22"
+        assert style["marker"] == "p"
+
 
 class TestCleanLabel:
     """Tests for the clean_label display name helper."""
@@ -92,6 +98,10 @@ class TestGetCanonicalMethodName:
     def test_slash_to_underscore(self):
         result = get_canonical_method_name("cql/dueling_resnet")
         assert result == "cql_dueling_resnet"
+
+    def test_blendrl_cql_cew_fyd_aliases(self):
+        result = get_canonical_method_name("blendrl_cql_cew_fyd_dueling_resnet")
+        assert result == "cql_blendrl_cew_fyd_dueling_resnet"
 
     def test_unknown_passes_through(self):
         assert get_canonical_method_name("my_custom_agent") == "my_custom_agent"

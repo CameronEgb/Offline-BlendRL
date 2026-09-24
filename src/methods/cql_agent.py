@@ -29,6 +29,8 @@ from src.methods.registry import register_agent
     "cql_blendrl_cross_attention",
     "cql_blendrl_human_cew",
     "cql_blendrl_cew_only",
+    "cql_blendrl_cew_dueling_resnet",
+    "cql_blendrl_cew_fyd_dueling_resnet",
     "blendrl_cql_human_neural",
     "blendrl_cql_human_rigid",
     "blendrl_cql_human_continuous",
@@ -39,6 +41,8 @@ from src.methods.registry import register_agent
     "blendrl_cql_cross_attention",
     "blendrl_cql_human_cew",
     "blendrl_cql_cew_only",
+    "blendrl_cql_cew_dueling_resnet",
+    "blendrl_cql_cew_fyd_dueling_resnet",
 )
 class CQLAgent(OfflineAgentBase):
     """Unified Conservative Q-Learning (CQL) Offline RL Agent.

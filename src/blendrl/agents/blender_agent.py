@@ -394,6 +394,7 @@ class BlenderActorCritic(nn.Module):
 
         # 1. Parse modules from argument or config
         modules_list = modules if modules is not None else (cfg.get("modules") if cfg and "modules" in cfg else None)
+        self.module_cfgs = list(modules_list) if modules_list else []
 
         if modules_list:
             for m_cfg in modules_list:
@@ -525,6 +526,27 @@ class BlenderActorCritic(nn.Module):
         for i, m in enumerate(self.policy_modules):
             if self.module_types[i] == "cew":
                 print(f"Self-organizing CEW module {i}...")
+                m_cfg = self.module_cfgs[i] if hasattr(self, "module_cfgs") and i < len(self.module_cfgs) else {}
+
+                def _get_val(cfg_obj, key, fallback=None):
+                    if cfg_obj is None:
+                        return fallback
+                    try:
+                        if hasattr(cfg_obj, key):
+                            val = getattr(cfg_obj, key)
+                            if val is not None:
+                                return val
+                    except Exception:
+                        pass
+                    try:
+                        if isinstance(cfg_obj, dict) or (hasattr(cfg_obj, "__contains__") and key in cfg_obj):
+                            val = cfg_obj[key]
+                            if val is not None:
+                                return val
+                    except Exception:
+                        pass
+                    return fallback
+
                 obs = dataset_sample_obs.cpu().numpy()
                 # Flatten obs if it has more than 2 dimensions (B, entities, features) -> (B, entities*features)
                 if len(obs.shape) > 2:
@@ -536,16 +558,19 @@ class BlenderActorCritic(nn.Module):
                 # CLIP
                 antecedents = run_CLIP(obs, mins, maxes)
                 # ECM
-                dthr = self.get_cfg("ecm_dthr", 0.05)
+                dthr = _get_val(m_cfg, "ecm_dthr", self.get_cfg("ecm_dthr", 0.05))
                 clusters = run_ECM(obs, [], dthr)
                 reduced_X = np.array([c.center for c in clusters])
                 # WM
                 antecedents, rules = rule_creation(reduced_X, antecedents)
 
                 # FYD (optional)
-                if self.get_cfg("fyd", False):
-                    top_k = self.get_cfg("fyd_top_k", None)
+                use_fyd = _get_val(m_cfg, "fyd", self.get_cfg("fyd", False))
+                if use_fyd:
+                    top_k = _get_val(m_cfg, "fyd_top_k", self.get_cfg("fyd_top_k", None))
+                    n_rules_before = len(rules)
                     rules, antecedents = run_FYD(rules, obs, antecedents, top_k=top_k)
+                    print(f"FYD pruning for CEW module {i}: {n_rules_before} -> {len(rules)} rules (top_k={top_k})")
 
                 # Check if architecture changed
                 current_rules = getattr(m.flcs[0], "links", None)

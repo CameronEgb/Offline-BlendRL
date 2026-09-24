@@ -135,6 +135,18 @@ METHOD_STYLE = {
         "marker": "h",
         "linestyle": "-",
     },
+    "cql_blendrl_cew_fyd_dueling_resnet": {
+        "label": "BlendRL CEW+FYD+ResNet",
+        "color": "#bcbd22",
+        "marker": "p",
+        "linestyle": "-",
+    },
+    "blendrl_cql_cew_fyd_dueling_resnet": {
+        "label": "BlendRL CEW+FYD+ResNet",
+        "color": "#bcbd22",
+        "marker": "p",
+        "linestyle": "-",
+    },
     "cql_blendrl_human_cew_dueling_resnet": {
         "label": "BlendRL Human+CEW+ResNet",
         "color": "#6a3d9a",
@@ -212,6 +224,8 @@ def get_canonical_method_name(name: str) -> str:
         "blendrl_cql_human_transformer": "cql_blendrl_human_transformer",
         "blendrl_cql_human_cew": "cql_blendrl_human_cew",
         "blendrl_cql_cew_only": "cql_blendrl_cew_only",
+        "blendrl_cql_cew_dueling_resnet": "cql_blendrl_cew_dueling_resnet",
+        "blendrl_cql_cew_fyd_dueling_resnet": "cql_blendrl_cew_fyd_dueling_resnet",
         "blendrl_iql_human_neural": "iql_blendrl_human_neural",
         "blendrl_ppo_human_neural": "ppo_blendrl_human_neural",
         "cql": "cql_dnn",

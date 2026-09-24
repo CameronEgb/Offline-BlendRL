@@ -8,11 +8,10 @@ blender_mode: neural
 blend_function: softmax
 architecture: dueling_resnet
 ecm_dthr: 0.03
-fyd_top_k: 150
+fyd: false
 
 modules:
   - type: cew
-    fyd: true
+    fyd: false
     ecm_dthr: 0.03
-    fyd_top_k: 150
   - type: neural

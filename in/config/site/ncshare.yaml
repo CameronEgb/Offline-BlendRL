@@ -2,7 +2,7 @@
 name: ncshare
 python_executable: auto
 venv_dir: venv
-mail_user: cegbert@ncsu.edu
+mail_user: egbertcm23@gmail.com
 mail_type: "END,FAIL"
 consolidate: true
 gres_format: "gpu:{gpu_type}:{gpus}"   # e.g. gpu:a100:1

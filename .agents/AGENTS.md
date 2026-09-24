@@ -187,7 +187,7 @@ See `pipeline-crud` skill for adding new plotters.
 - **`src/pipeline/task_registry.py`**: `@register_task("name")` with longest-prefix dispatch.
 - **`src/pipeline/config.py`**: Name normalization, method list parsing, CLI arg sanitization.
 - **`src/pipeline/datasets.py`**: Dataset path resolution, online symlinking, plotting dispatch.
-- **`src/pipeline/slurm.py`**: Slurm header builder (`generate_sbatch_header`), job submission (`submit_sbatch`). Mail: `--mail-type=END,FAIL`, `--mail-user=cegbert@ncsu.edu`.
+- **`src/pipeline/slurm.py`**: Slurm header builder (`generate_sbatch_header`), job submission (`submit_sbatch`). Mail: `--mail-type=END,FAIL`, `--mail-user=egbertcm23@gmail.com`.
 - **`src/pipeline/local_runner.py`**: Local sequential online & offline phase execution.
 - **`src/pipeline/slurm_runner.py`**: Cluster batch script generation and job dependency orchestration.
 - **`src/pipeline/early_prediction_task.py`**: EP sweeps, checkpoint evals, Optuna tuning. `@register_task("early_prediction")`.
