@@ -21,16 +21,20 @@ offline_methods:
   - cql/blendrl_cew_dueling_resnet
 
 agent:
-  epochs_per_interval: 75 
-  eval_interval_epochs: 15
+  epochs_per_interval: 25
+  eval_interval_epochs: 2
   batch_size: 1024
-  lr: 2e-4
-  cql_alpha: 2.0
+  lr: 3e-4
+  gamma: 0.95
+  cql_alpha: 0.5
   reward_scale: 0.1
   bellman_loss: smooth_l1
   weight_decay: 1e-4
   use_actor: false        # Pure value-based Q-learning (no separate actor)
   blend_q_values: true   # Blend Q-values directly across modules
+
+env:
+  gamma: 0.95
 
 resources:
   partition: common
@@ -38,5 +42,5 @@ resources:
   standalone_cores: 16
   memory: "32G"
   standalone_memory: "32G"
-  time: "08:00:00"
+  time: "04:00:00"
 

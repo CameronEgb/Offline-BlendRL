@@ -266,7 +266,7 @@ class CQLAgent(OfflineAgentBase):
         dones = real_batch["done"].to(self.device, non_blocking=True)
 
         cql_alpha = self.get_cfg("cql_alpha", 1.0)
-        gamma = cfg.env.gamma
+        gamma = float(self.get_cfg("gamma", getattr(self.cfg.env, "gamma", 0.99)))
         bellman_loss_fn = str(self.get_cfg("bellman_loss", "smooth_l1")).lower()
 
         if self.is_modular:
@@ -384,6 +384,7 @@ class CQLAgent(OfflineAgentBase):
         next_obs = val_batch["next_obs"].to(self.device, non_blocking=True)
         dones = val_batch["done"].to(self.device, non_blocking=True)
         cql_alpha = self.get_cfg("cql_alpha", 1.0)
+        gamma = float(self.get_cfg("gamma", getattr(self.cfg.env, "gamma", 0.99)))
         bellman_loss_fn = str(self.get_cfg("bellman_loss", "smooth_l1")).lower()
 
         with torch.no_grad():
@@ -393,7 +394,7 @@ class CQLAgent(OfflineAgentBase):
                 online_next_q = self.model.get_q_values(next_obs, next_logic_obs)
                 best_next_action = torch.argmax(online_next_q, dim=1, keepdim=True)
                 next_v = self.target_model.get_q_values(next_obs, next_logic_obs).gather(1, best_next_action).squeeze(1)
-                q_target = rewards + self.cfg.env.gamma * next_v * (1 - dones)
+                q_target = rewards + gamma * next_v * (1 - dones)
                 all_q_values = self.model.get_q_values(obs, logic_obs)
                 if self.get_cfg("use_actor", False):
                     probs, _ = self.model.actor(obs, logic_obs)
@@ -404,7 +405,7 @@ class CQLAgent(OfflineAgentBase):
                 online_next_q = self.q_network(next_obs)
                 best_next_action = torch.argmax(online_next_q, dim=1, keepdim=True)
                 next_v = self.target_q_network(next_obs).gather(1, best_next_action).squeeze(1)
-                q_target = rewards + self.cfg.env.gamma * next_v * (1 - dones)
+                q_target = rewards + gamma * next_v * (1 - dones)
                 all_q_values = self.q_network(obs)
                 pred_acts = torch.argmax(all_q_values, dim=-1)
 
