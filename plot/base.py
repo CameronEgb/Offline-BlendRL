@@ -407,9 +407,20 @@ class BasePlotter:
                             all_y.append(y_vals)
 
                 if all_y:
-                    has_data = True
-                    display_name = clean_label(method_name)
-                    color, ls, marker = get_style_info(method_name)
+                    # Resolve style from experiment config or group methods YAML
+                    method_style = None
+                    if isinstance(cfg, dict) and "methods" in cfg and isinstance(cfg["methods"], dict):
+                        m_entry = cfg["methods"].get(method_name, {})
+                        if isinstance(m_entry, dict) and "style" in m_entry:
+                            method_style = m_entry["style"]
+                    if method_style is None:
+                        from src.app.pipeline.config import find_group_method_config
+                        gm_cfg = find_group_method_config(method_name, group=group)
+                        if gm_cfg and "style" in gm_cfg:
+                            method_style = gm_cfg["style"]
+
+                    display_name = clean_label(method_name, style_override=method_style)
+                    color, ls, marker = get_style_info(method_name, style_override=method_style)
 
                     if len(all_y) > 1:
                         # Multi-version: compute mean ± SEM across versions

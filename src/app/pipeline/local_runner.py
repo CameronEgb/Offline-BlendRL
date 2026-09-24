@@ -84,7 +84,7 @@ def run_methods(cfg, context) -> None:
     methods = context["methods"]
     sanitized_extra_args = context["sanitized_extra_args"]
     storage_url = context["storage_url"]
-    is_sweep = context["is_sweep"]
+    global_is_sweep = context.get("is_sweep", False)
     paradigm = cfg.get("paradigm", "offline_rl")
 
     for method_name, method_cfg in methods.items():
@@ -95,7 +95,12 @@ def run_methods(cfg, context) -> None:
             method_cfg = dict(method_cfg)
 
         agent_name = normalize_agent_name(method_name)
-        study_name = get_next_study_name(cfg.group, cfg.experiment_id, agent_name)
+        method_tune = method_cfg.get("tune") or method_cfg.get("search_space") or {}
+        method_is_sweep = bool(global_is_sweep) or bool(method_tune)
+
+        study_name = None
+        if method_is_sweep:
+            study_name = get_next_study_name(cfg.group, cfg.experiment_id, agent_name)
 
         # Resolve dataset for offline paradigms
         dataset_path = None
@@ -108,7 +113,8 @@ def run_methods(cfg, context) -> None:
             print(f"Using dataset from: {dataset_path}")
 
         agent_str = f"agent={method_cfg.get('agent')}, " if method_cfg.get('agent') else ""
-        print(f"\n=== Training: {method_name} ({agent_str}model={method_cfg.get('model')}) ===")
+        mode_str = " [Optuna Sweep]" if method_is_sweep else ""
+        print(f"\n=== Training: {method_name} ({agent_str}model={method_cfg.get('model')}){mode_str} ===")
 
         overrides = build_method_overrides(
             method_name=method_name,
@@ -116,17 +122,23 @@ def run_methods(cfg, context) -> None:
             dataset_path=dataset_path,
             extra_args=sanitized_extra_args,
             cfg=cfg,
-            study_name=study_name if is_sweep else None,
+            study_name=study_name,
+            is_sweep=method_is_sweep,
         )
 
-        if is_sweep:
-            delete_optuna_study(storage_url, study_name)
-            direction = get_sweep_direction(cfg, paradigm)
+        if method_is_sweep:
+            if cfg.get("remake", False):
+                delete_optuna_study(storage_url, study_name)
+            direction = (
+                cfg.get("tuning", {}).get("direction")
+                if hasattr(cfg, "get") and cfg.get("tuning")
+                else None
+            ) or get_sweep_direction(cfg, paradigm)
             create_optuna_study(storage_url, study_name, direction=direction)
 
         run_experiment(overrides)
 
-        if is_sweep:
+        if method_is_sweep:
             promote_best_trial_checkpoint(
                 cfg.group, cfg.experiment_id, agent_name, storage_url, study_name
             )

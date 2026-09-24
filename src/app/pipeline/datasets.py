@@ -166,18 +166,8 @@ def run_experiment(overrides, site_cfg=None):
 
     env = get_subprocess_env(site_cfg)
 
-    sanitized_overrides = []
-    for arg in overrides:
-        if "=" in arg:
-            k, v = arg.split("=", 1)
-            if ("(" in v or ")" in v) and not (
-                v.startswith("'") or v.startswith('"') or v.startswith("[") or v.startswith("{")
-            ):
-                arg = f"{k}='{v}'"
-        sanitized_overrides.append(arg)
-
     venv_python = get_python_executable()
-    cmd = [venv_python, "src/app/train.py"] + sanitized_overrides
+    cmd = [venv_python, "src/app/train.py"] + list(overrides)
     print(f"Running: {' '.join(cmd)}")
     subprocess.run(cmd, check=True, env=env)
 

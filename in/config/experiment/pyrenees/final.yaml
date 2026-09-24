@@ -7,9 +7,7 @@ consolidate: false
 resources:
   partition: common
   cores: 8
-  standalone_cores: 8
   memory: "4G"
-  standalone_memory: "4G"
   time: "04:00:00"
 
 methods:

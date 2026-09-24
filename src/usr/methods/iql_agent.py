@@ -29,6 +29,7 @@ class IQLAgent(OfflineAgentBase):
         self.save_hyperparameters()
 
         self._init_env(n_envs=1)
+        self.gamma = float(self.get_cfg("gamma", getattr(self.cfg.env, "gamma", 0.99)))
 
         hidden_sizes = self.get_cfg("hidden_sizes", [256, 256])
         if hidden_sizes is not None:
@@ -146,7 +147,7 @@ class IQLAgent(OfflineAgentBase):
         # 1. Update Q-networks
         with torch.no_grad():
             next_v = self.value_network(next_obs).view(-1)
-            q_target = rewards + cfg.env.gamma * next_v * (1 - dones)
+            q_target = rewards + self.gamma * next_v * (1 - dones)
 
         current_q1 = self.q_network(obs)
         current_q2 = self.q_network2(obs)
@@ -276,7 +277,7 @@ class IQLAgent(OfflineAgentBase):
             value_loss = (weight * (u**2)).mean()
 
             next_v = self.value_network(next_obs).squeeze(-1)
-            q_target = rewards + self.cfg.env.gamma * next_v * (1 - dones)
+            q_target = rewards + self.gamma * next_v * (1 - dones)
             pred_q1 = self.q_network(obs).gather(1, actions.unsqueeze(1)).squeeze(1)
             pred_q2 = self.q_network2(obs).gather(1, actions.unsqueeze(1)).squeeze(1)
             q_loss = F.mse_loss(pred_q1, q_target) + F.mse_loss(pred_q2, q_target)

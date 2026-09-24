@@ -1,0 +1,8 @@
+agent: cql
+model: transformer
+
+style:
+  label: "Transformer"
+  color: "#e377c2"
+  marker: "p"
+  linestyle: "-"

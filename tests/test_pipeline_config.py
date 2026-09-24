@@ -399,5 +399,147 @@ class TestParseMethodsDict:
         assert m["model_params"]["symbolic"]["type"] == "nsfr"
         assert m["model_params"]["symbolic"]["rules"] == "rigid"
 
+    def test_group_method_resolution(self):
+        """Methods defined in in/config/experiment/<group>/methods/ should resolve automatically."""
+        from src.app.pipeline.config import parse_methods_dict
+
+        cfg = {
+            "group": "mimic",
+            "methods": {
+                "cql_blendrl_cew_dueling_resnet": None,
+                "cql_dnn": {},
+            },
+        }
+        res = parse_methods_dict(cfg)
+        assert "cql_blendrl_cew_dueling_resnet" in res
+        m_cew = res["cql_blendrl_cew_dueling_resnet"]
+        assert m_cew["agent"] == "cql"
+        assert (m_cew["model"] == "blendrl" or m_cew["model"]["name"] == "blendrl")
+        assert m_cew["model_params"]["neural"]["architecture"] == "dueling_resnet"
+        assert m_cew["model_params"]["symbolic"]["type"] == "cew"
+        assert m_cew["model_params"]["symbolic"]["ecm_dthr"] == 0.03
+        assert "style" in m_cew
+        assert m_cew["style"]["label"] == "BlendRL CEW+ResNet"
+
+        assert "cql_dnn" in res
+        m_dnn = res["cql_dnn"]
+        assert m_dnn["agent"] == "cql"
+        assert m_dnn["model"] == "dnn"
+        assert m_dnn["style"]["label"] == "DNN"
+
+    def test_group_method_override_precedence(self):
+        """Experiment-level overrides on top of group methods should take precedence."""
+        from src.app.pipeline.config import parse_methods_dict
+
+        cfg = {
+            "group": "mimic",
+            "methods": {
+                "cql_blendrl_cew_dueling_resnet": {
+                    "model": {
+                        "blendrl": {
+                            "symbolic": {
+                                "cew": {
+                                    "ecm_dthr": 0.09
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+        }
+        res = parse_methods_dict(cfg)
+        m = res["cql_blendrl_cew_dueling_resnet"]
+        assert m["model_params"]["symbolic"]["ecm_dthr"] == 0.09
+        assert m["model_params"]["neural"]["architecture"] == "dueling_resnet"
+        assert m["style"]["label"] == "BlendRL CEW+ResNet"
+
+    def test_method_level_tune_search_space(self):
+        """Methods can declare their own tune: block specifying search space intervals."""
+        from src.app.pipeline.config import parse_methods_dict
+
+        cfg = {
+            "methods": {
+                "cql_dnn": {
+                    "agent": "cql",
+                    "model": "dnn",
+                    "tune": {
+                        "lr": "interval(1e-4, 1e-2)",
+                        "cql_alpha": "choice(0.1, 1.0)",
+                    },
+                }
+            }
+        }
+        res = parse_methods_dict(cfg)
+        m = res["cql_dnn"]
+        assert "tune" in m
+        assert m["tune"]["lr"] == "interval(1e-4, 1e-2)"
+        assert m["tune"]["cql_alpha"] == "choice(0.1, 1.0)"
+        # Ensure tune was not copied into agent_params as a literal parameter
+        assert "tune" not in m.get("agent_params", {})
+
+    def test_shared_params_tune_inheritance(self):
+        """methods.params.tune provides universal search spaces inherited by all methods."""
+        from src.app.pipeline.config import parse_methods_dict
+
+        cfg = {
+            "methods": {
+                "params": {
+                    "tune": {
+                        "lr": "interval(1e-4, 1e-2)",
+                    }
+                },
+                "cql_dnn": {
+                    "agent": "cql",
+                    "model": "dnn",
+                    "tune": {
+                        "cql_alpha": "choice(0.1, 1.0)",
+                    },
+                },
+                "ppo_dnn": {
+                    "agent": "ppo",
+                    "model": "dnn",
+                },
+            }
+        }
+        res = parse_methods_dict(cfg)
+        # cql_dnn merges shared + method tune
+        assert res["cql_dnn"]["tune"]["lr"] == "interval(1e-4, 1e-2)"
+        assert res["cql_dnn"]["tune"]["cql_alpha"] == "choice(0.1, 1.0)"
+        # ppo_dnn inherits shared tune
+        assert res["ppo_dnn"]["tune"]["lr"] == "interval(1e-4, 1e-2)"
+
+    def test_from_study_loads_best_params(self, tmp_path, monkeypatch):
+        """from_study loads winning best_params.yaml into agent and model parameters."""
+        import yaml
+        from src.app.pipeline.config import parse_methods_dict
+
+        study_dir = tmp_path / "results" / "checkpoints" / "mimic" / "tune_cql" / "cql_dnn"
+        study_dir.mkdir(parents=True)
+        best_params = {
+            "agent.lr": 0.0005,
+            "agent.cql_alpha": 2.5,
+            "hidden_sizes": [512, 512],
+        }
+        with open(study_dir / "best_params.yaml", "w") as f:
+            yaml.dump(best_params, f)
+
+        monkeypatch.chdir(tmp_path)
+
+        cfg = {
+            "group": "mimic",
+            "methods": {
+                "cql_dnn": {
+                    "agent": "cql",
+                    "model": "dnn",
+                    "from_study": "mimic/tune_cql",
+                }
+            }
+        }
+        res = parse_methods_dict(cfg)
+        m = res["cql_dnn"]
+        assert m["agent_params"]["lr"] == 0.0005
+        assert m["agent_params"]["cql_alpha"] == 2.5
+        assert m["model_params"]["hidden_sizes"] == [512, 512]
+
 
 

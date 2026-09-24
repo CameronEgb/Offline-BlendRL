@@ -22,6 +22,7 @@ class CEWAgent(OfflineAgentBase):
         # Helper to get config values
         self.lr = self.get_cfg("lr", 3e-4)
         self.algorithm = self.get_cfg("algorithm", self.get_cfg("name", "cew"))
+        self.gamma = float(self.get_cfg("gamma", getattr(self.cfg.env, "gamma", 0.99)))
 
         # Initialize internal state
         self.fuzzy_model = None
@@ -143,7 +144,7 @@ class CEWAgent(OfflineAgentBase):
         with torch.no_grad():
             next_q = self.target_fuzzy_model(next_obs)
             next_v = torch.max(next_q, dim=1)[0]
-            q_target = rewards + self.get_cfg("gamma", 0.99) * next_v * (1 - dones)
+            q_target = rewards + self.gamma * next_v * (1 - dones)
 
         all_q_values = self.fuzzy_model(obs)
         q_action = all_q_values.gather(1, actions.unsqueeze(1)).squeeze(1)
@@ -202,7 +203,7 @@ class CEWAgent(OfflineAgentBase):
         with torch.no_grad():
             next_q = self.target_fuzzy_model(next_obs)
             next_v = torch.max(next_q, dim=1)[0]
-            q_target = rewards + self.get_cfg("gamma", 0.99) * next_v * (1 - dones)
+            q_target = rewards + self.gamma * next_v * (1 - dones)
 
             all_q_values = self.fuzzy_model(obs)
             q_action = all_q_values.gather(1, actions.unsqueeze(1)).squeeze(1)

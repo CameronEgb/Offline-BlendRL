@@ -1,5 +1,4 @@
 # Site profile: Local / interactive command-line execution (local machine or interactive cluster node)
-name: local
 python_executable: auto   # auto-detect from venv or sys.executable
 venv_dir: venv
 mail_user: null

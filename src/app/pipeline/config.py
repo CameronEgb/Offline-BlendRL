@@ -1,7 +1,5 @@
-"""Configuration utilities for the pipeline.
-
-Provides functions for parsing method lists and normalizing agent names.
-"""
+from pathlib import Path
+import yaml
 
 
 def normalize_agent_name(agent_config: str) -> str:
@@ -40,6 +38,68 @@ _RESERVED_METHOD_KEYS = {
 
 _KNOWN_ALGORITHMS = {"cql", "ppo", "iql", "cew"}
 _KNOWN_MODELS = {"dnn", "dueling_resnet", "blendrl", "transformer", "lstm", "cew", "nsfr", "neumann"}
+_MODEL_KEYS = {
+    "architecture",
+    "modules",
+    "rules",
+    "ecm_dthr",
+    "fyd",
+    "fyd_top_k",
+    "actor_mode",
+    "blender_mode",
+    "blend_function",
+    "blender",
+    "blender_actor",
+    "neural_actor",
+    "symbolic_actor",
+    "neural",
+    "symbolic",
+    "hidden_sizes",
+    "activation",
+    "blend_q_values",
+}
+
+
+def resolve_study_best_params(from_study: str, method_name: str, group: str | None = None) -> dict:
+    """Resolve and load best_params.yaml produced by an Optuna study.
+
+    Searches:
+      1. Explicit path: from_study
+      2. results/checkpoints/<from_study>/<normalized_agent>/best_params.yaml
+      3. results/checkpoints/<from_study>/<method_name>/best_params.yaml
+      4. results/checkpoints/<from_study>/best_params.yaml
+      5. results/checkpoints/<group>/<from_study>/<normalized_agent>/best_params.yaml
+    """
+    clean_agent = normalize_agent_name(method_name)
+    candidates = [
+        Path(from_study),
+        Path("results/checkpoints") / from_study / clean_agent / "best_params.yaml",
+        Path("results/checkpoints") / from_study / method_name / "best_params.yaml",
+        Path("results/checkpoints") / from_study / "best_params.yaml",
+    ]
+    if group and "/" not in from_study:
+        candidates.append(Path("results/checkpoints") / group / from_study / clean_agent / "best_params.yaml")
+        candidates.append(Path("results/checkpoints") / group / from_study / method_name / "best_params.yaml")
+        candidates.append(Path("results/checkpoints") / group / from_study / "best_params.yaml")
+
+    for cand in candidates:
+        if cand.is_file() and cand.suffix in (".yaml", ".yml"):
+            try:
+                with open(cand, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f)
+                    if isinstance(data, dict):
+                        return data
+            except Exception:
+                pass
+        elif cand.is_dir() and (cand / "best_params.yaml").is_file():
+            try:
+                with open(cand / "best_params.yaml", "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f)
+                    if isinstance(data, dict):
+                        return data
+            except Exception:
+                pass
+    return {}
 
 
 def deep_merge(base: dict, override: dict) -> dict:
@@ -55,6 +115,35 @@ def deep_merge(base: dict, override: dict) -> dict:
         else:
             result[k] = v
     return result
+
+
+def find_group_method_config(method_name: str, group: str | None = None) -> dict:
+    """Find and load a group-level method config YAML file.
+
+    Location:
+        in/config/experiment/<group>/methods/<method_name>.yaml
+    """
+    if not group or group == "ungrouped":
+        return {}
+
+    clean_name = normalize_agent_name(method_name)
+    candidates = [
+        Path("in/config/experiment") / group / "methods" / f"{clean_name}.yaml",
+    ]
+    if method_name != clean_name:
+        candidates.append(Path("in/config/experiment") / group / "methods" / f"{method_name}.yaml")
+
+    for path in candidates:
+        if path.is_file():
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f)
+                    if isinstance(data, dict):
+                        return data
+            except Exception as e:
+                import logging
+                logging.getLogger("blendrl").warning("Failed to load method YAML %s: %s", path, e)
+    return {}
 
 
 def _extract_name_and_subparams(
@@ -260,10 +349,16 @@ def parse_methods_dict(cfg) -> dict[str, dict]:
     shared_agent = shared_params.get("agent", {})
     shared_model = shared_params.get("model", {})
 
-    # Extract universal global parameters (excluding agent, model, and standalone algo/arch blocks)
+    # Extract shared tuning search space
+    shared_tune = {}
+    for tune_key in ("tune", "search_space"):
+        if tune_key in shared_params and isinstance(shared_params[tune_key], dict):
+            shared_tune = deep_merge(shared_tune, shared_params[tune_key])
+
+    # Extract universal global parameters (excluding agent, model, tune, and standalone algo/arch blocks)
     universal_global = {}
     for k, v in shared_params.items():
-        if k in ("agent", "model"):
+        if k in ("agent", "model", "tune", "search_space"):
             continue
         if k in _KNOWN_ALGORITHMS or k in _KNOWN_MODELS:
             continue
@@ -288,6 +383,23 @@ def parse_methods_dict(cfg) -> dict[str, dict]:
         if any(nk in shared_model for nk in ("name", "architecture", "type", "base")):
             default_model_arch, default_model_sub = _extract_name_and_subparams(shared_model)
 
+    # Infer group for group-level method loading
+    group = getattr(cfg, "group", None) if not isinstance(cfg, dict) else cfg.get("group")
+    if not group or group == "ungrouped":
+        exp_name = getattr(cfg, "experiment_name", None) if not isinstance(cfg, dict) else cfg.get("experiment_name")
+        if exp_name and "/" in str(exp_name):
+            group = str(exp_name).split("/")[0]
+        else:
+            exp_id = getattr(cfg, "experiment_id", None) if not isinstance(cfg, dict) else cfg.get("experiment_id")
+            if exp_id and "/" in str(exp_id):
+                group = str(exp_id).split("/")[0]
+            else:
+                env_cfg = getattr(cfg, "env", None) if not isinstance(cfg, dict) else cfg.get("env")
+                if isinstance(env_cfg, dict) and env_cfg.get("name"):
+                    group = env_cfg.get("name")
+                elif hasattr(env_cfg, "name"):
+                    group = getattr(env_cfg, "name")
+
     # 3. Build resolved method configurations
     result = {}
     for method_name, method_cfg in raw_methods_dict.items():
@@ -300,6 +412,11 @@ def parse_methods_dict(cfg) -> dict[str, dict]:
             m_dict = dict(method_cfg)
         else:
             m_dict = {}
+
+        # Look up reusable group method definition if available
+        base_group_method = find_group_method_config(method_name, group=group)
+        if base_group_method:
+            m_dict = deep_merge(base_group_method, m_dict)
 
         # Resolve method's agent algo and subparams
         raw_m_agent = m_dict.get("agent", default_agent_algo)
@@ -465,9 +582,39 @@ def parse_methods_dict(cfg) -> dict[str, dict]:
                 "blend_function",
             }
 
+        # Support inheriting tuned parameters from a previous Optuna sweep via from_study
+        study_ref = m_dict.get("from_study")
+        if study_ref:
+            resolved_mcfg["from_study"] = study_ref
+            tuned_params = resolve_study_best_params(study_ref, method_name, group=group)
+            if tuned_params:
+                print(f"  [Loaded Tuned Params] {method_name} from study '{study_ref}': {tuned_params}")
+                for pk, pv in tuned_params.items():
+                    if pk.startswith("agent."):
+                        agent_params[pk[len("agent."):]] = pv
+                    elif pk.startswith("model."):
+                        model_params[pk[len("model."):]] = pv
+                    elif pk in _MODEL_KEYS:
+                        model_params[pk] = pv
+                    else:
+                        agent_params[pk] = pv
+            else:
+                import logging
+                logging.getLogger("blendrl").warning(
+                    "Method '%s' specified from_study='%s', but best_params.yaml was not found.",
+                    method_name,
+                    study_ref,
+                )
+
+        # Support method-level tuning search spaces (Tier 3) merged with universal (Tier 2)
+        raw_tune = m_dict.get("tune") or m_dict.get("search_space") or {}
+        combined_tune = deep_merge(shared_tune, raw_tune) if isinstance(raw_tune, dict) else (dict(shared_tune) if shared_tune else {})
+        if combined_tune:
+            resolved_mcfg["tune"] = combined_tune
+
         # Copy non-agent, non-model keys from m_dict (deep-merging if both are dicts)
         for k, v in m_dict.items():
-            if k in ("agent", "model") or k in consumed_keys:
+            if k in ("agent", "model", "tune", "search_space", "from_study") or k in consumed_keys:
                 continue
             if k in agent_params:
                 agent_params[k] = deep_merge(agent_params[k], v) if isinstance(agent_params[k], dict) and isinstance(v, dict) else v

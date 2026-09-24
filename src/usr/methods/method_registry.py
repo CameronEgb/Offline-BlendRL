@@ -181,41 +181,49 @@ METHOD_STYLE = {
 _DEFAULT_STYLE = {"label": None, "color": None, "marker": "o", "linestyle": "-"}
 
 
-def get_style(name: str) -> dict:
+def get_style(name: str, style_override: dict | None = None) -> dict:
     """Look up style by exact match, canonical name, or longest prefix match.
-
-    Examples:
-        get_style("cql")                  -> exact match (DNN)
-        get_style("cql/dueling_resnet")   -> normalized match (Dueling ResNet)
-        get_style("ppo_cp_tuned")          -> prefix match on "ppo"
-        get_style("blendrl_iql_cp_tuned")  -> prefix match on "blendrl_iql"
-        get_style("unknown_method")        -> default with label=name
+    If style_override is provided, its fields take precedence.
     """
     raw = str(name)
     normalized = raw.replace("/", "_")
     canon = get_canonical_method_name(normalized)
 
+    base = None
     for cand in [canon, normalized, raw]:
         if cand in METHOD_STYLE:
-            return METHOD_STYLE[cand]
+            base = dict(METHOD_STYLE[cand])
+            break
 
-    # Prefix match: longest key that is a prefix of candidate wins
-    for cand in [canon, normalized, raw]:
-        for key in sorted(METHOD_STYLE.keys(), key=len, reverse=True):
-            if cand.startswith(key + "_") or cand == key:
-                return METHOD_STYLE[key]
+    if base is None:
+        # Prefix match: longest key that is a prefix of candidate wins
+        for cand in [canon, normalized, raw]:
+            for key in sorted(METHOD_STYLE.keys(), key=len, reverse=True):
+                if cand.startswith(key + "_") or cand == key:
+                    base = dict(METHOD_STYLE[key])
+                    break
+            if base is not None:
+                break
 
-    return {**_DEFAULT_STYLE, "label": name}
+    if base is None:
+        base = {**_DEFAULT_STYLE, "label": name}
+
+    if style_override and isinstance(style_override, dict):
+        for k in ("label", "color", "marker", "linestyle"):
+            if style_override.get(k) is not None:
+                base[k] = style_override[k]
+
+    return base
 
 
-def clean_label(name: str) -> str:
+def clean_label(name: str, style_override: dict | None = None) -> str:
     """Return human-readable display label for a method name."""
-    return str(get_style(name)["label"])
+    return str(get_style(name, style_override=style_override)["label"])
 
 
-def get_style_info(name: str) -> tuple[str | None, str, str]:
+def get_style_info(name: str, style_override: dict | None = None) -> tuple[str | None, str, str]:
     """Return (color, linestyle, marker) tuple for matplotlib plotting."""
-    s = get_style(name)
+    s = get_style(name, style_override=style_override)
     return s["color"], s["linestyle"], s["marker"]
 
 

@@ -95,7 +95,9 @@ def run_slurm_training(cfg, context):
                     print(f"Error: {e}")
                     sys.exit(1)
 
-            study_name = get_next_study_name(cfg.group, cfg.experiment_id, agent_name) if is_sweep else None
+            method_tune = method_cfg.get("tune") or method_cfg.get("search_space") or {}
+            method_is_sweep = bool(is_sweep) or bool(method_tune)
+            study_name = get_next_study_name(cfg.group, cfg.experiment_id, agent_name) if method_is_sweep else None
             
             cmd_args = build_method_overrides(
                 method_name=method_name,
@@ -104,19 +106,22 @@ def run_slurm_training(cfg, context):
                 extra_args=sanitized_extra_args,
                 cfg=cfg,
                 study_name=study_name,
+                is_sweep=method_is_sweep,
             )
             
-            if is_sweep:
-                direction = get_sweep_direction(cfg, paradigm)
+            if method_is_sweep:
+                direction = (
+                    cfg.get("tuning", {}).get("direction")
+                    if hasattr(cfg, "get") and cfg.get("tuning")
+                    else None
+                ) or get_sweep_direction(cfg, paradigm)
                 create_optuna_study(storage_url, study_name, direction=direction)
-                if "--multirun" not in sanitized_extra_args and "-m" not in sanitized_extra_args:
-                    cmd_args.append("--multirun")
 
             train_cmd = " ".join(shlex.quote(arg) for arg in cmd_args)
             script_content += f'echo "=== [Phase: Training] {method_name} ==="\n'
             script_content += f"{python_cmd} src/app/train.py {train_cmd}\n\n"
 
-            if is_sweep:
+            if method_is_sweep:
                 storage_arg = storage_url if storage_url else ""
                 script_content += f'echo "=== Promoting Winning Checkpoint for {method_name} ==="\n'
                 script_content += f"{python_cmd} -c \"from src.app.pipeline.optuna_utils import promote_best_trial_checkpoint; promote_best_trial_checkpoint('{cfg.group}', '{cfg.experiment_id}', '{agent_name}', '{storage_arg}', '{study_name}')\"\n\n"
@@ -153,8 +158,10 @@ def run_slurm_training(cfg, context):
                 print(f"Error: {e}")
                 sys.exit(1)
 
+        method_tune = method_cfg.get("tune") or method_cfg.get("search_space") or {}
+        method_is_sweep = bool(is_sweep) or bool(method_tune)
         job_name = f"{agent_name}_{cfg.experiment_id}"
-        study_name = get_next_study_name(cfg.group, cfg.experiment_id, agent_name) if is_sweep else None
+        study_name = get_next_study_name(cfg.group, cfg.experiment_id, agent_name) if method_is_sweep else None
         
         cmd_args = build_method_overrides(
             method_name=method_name,
@@ -163,6 +170,7 @@ def run_slurm_training(cfg, context):
             extra_args=sanitized_extra_args,
             cfg=cfg,
             study_name=study_name,
+            is_sweep=method_is_sweep,
         )
 
         script_content = generate_sbatch_header(
@@ -174,17 +182,19 @@ def run_slurm_training(cfg, context):
         script_content += "\n" + get_shell_env_block(site_cfg) + "\n"
         python_cmd = get_shell_python_cmd(site_cfg)
 
-        if is_sweep:
-            direction = get_sweep_direction(cfg, paradigm)
+        if method_is_sweep:
+            direction = (
+                cfg.get("tuning", {}).get("direction")
+                if hasattr(cfg, "get") and cfg.get("tuning")
+                else None
+            ) or get_sweep_direction(cfg, paradigm)
             create_optuna_study(storage_url, study_name, direction=direction)
-            if "--multirun" not in sanitized_extra_args and "-m" not in sanitized_extra_args:
-                cmd_args.append("--multirun")
 
         train_cmd = " ".join(shlex.quote(arg) for arg in cmd_args)
         script_content += f'echo "=== [Phase: Training] {method_name} ==="\n'
         script_content += f"{python_cmd} src/app/train.py {train_cmd}\n\n"
 
-        if is_sweep:
+        if method_is_sweep:
             storage_arg = storage_url if storage_url else ""
             script_content += f'echo "=== Promoting Winning Checkpoint for {method_name} ==="\n'
             script_content += f"{python_cmd} -c \"from src.app.pipeline.optuna_utils import promote_best_trial_checkpoint; promote_best_trial_checkpoint('{cfg.group}', '{cfg.experiment_id}', '{agent_name}', '{storage_arg}', '{study_name}')\"\n\n"

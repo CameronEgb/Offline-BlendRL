@@ -269,4 +269,113 @@ class TestBuildMethodOverrides:
         assert "++model.symbolic.ecm_dthr=0.03" in overrides
         assert "++model.symbolic.fyd=false" in overrides
 
+    def test_untuned_method_produces_no_multirun_or_sweeper(self):
+        """Untuned methods must NOT receive --multirun or hydra/sweeper overrides."""
+        cfg_dict = {
+            "experiment_name": "mimic/test_cql",
+            "paradigm": "offline_rl",
+            "methods": {
+                "cql_dnn": {
+                    "agent": "cql",
+                    "model": "dnn",
+                }
+            },
+        }
+        methods = parse_methods_dict(cfg_dict)
+        overrides = build_method_overrides(
+            method_name="cql_dnn",
+            method_cfg=methods["cql_dnn"],
+            cfg=cfg_dict,
+            is_sweep=False,
+            extra_args=["--multirun"],  # Even if outer CLI passed multirun, untuned method strips it
+        )
+        assert "--multirun" not in overrides
+        assert "-m" not in overrides
+        assert not any("hydra/sweeper" in o for o in overrides)
+        assert not any("hydra.sweeper" in o for o in overrides)
+        assert "agent=cql" in overrides
+        assert "model=dnn" in overrides
+
+    def test_tuned_method_produces_multirun_and_sweeper_params(self):
+        """Tuned methods must receive --multirun, sweeper group, and parameter intervals."""
+        cfg_dict = {
+            "experiment_name": "mimic/test_cql",
+            "paradigm": "offline_rl",
+            "tuning": {
+                "n_trials": 25,
+                "direction": "minimize",
+            },
+            "methods": {
+                "cql_dnn": {
+                    "agent": "cql",
+                    "model": "dnn",
+                    "tune": {
+                        "lr": "interval(1e-4, 1e-2)",
+                        "cql_alpha": "choice(0.1, 1.0, 5.0)",
+                    },
+                }
+            },
+        }
+        methods = parse_methods_dict(cfg_dict)
+        overrides = build_method_overrides(
+            method_name="cql_dnn",
+            method_cfg=methods["cql_dnn"],
+            cfg=cfg_dict,
+            study_name="study_cql_v1",
+            is_sweep=True,
+        )
+        assert "--multirun" in overrides
+        assert overrides[0] == "--multirun"
+        assert "hydra/sweeper=optuna_offline" in overrides
+        assert "++hydra.sweeper.study_name=study_cql_v1" in overrides
+        assert "++hydra.sweeper.n_trials=25" in overrides
+        assert "++hydra.sweeper.direction=minimize" in overrides
+        assert "agent.lr=interval(1e-4, 1e-2)" in overrides
+        assert "agent.cql_alpha=choice(0.1, 1.0, 5.0)" in overrides
+        # Ensure tune dict is not passed as a hyperparameter
+        assert not any("agent.tune" in o for o in overrides)
+
+    def test_mixed_experiment_single_and_sweep(self):
+        """Experiment with one untuned and one tuned method dispatches single vs sweep cleanly."""
+        cfg_dict = {
+            "experiment_name": "cartpole/mixed",
+            "paradigm": "online_rl",
+            "methods": {
+                "ppo_normal": {
+                    "agent": "ppo",
+                    "model": "dnn",
+                },
+                "ppo_tuned": {
+                    "agent": "ppo",
+                    "model": "dnn",
+                    "tune": {
+                        "lr": "interval(1e-4, 1e-2)",
+                    },
+                },
+            },
+        }
+        methods = parse_methods_dict(cfg_dict)
+
+        # Method 1: untuned -> single normal training
+        m1_overrides = build_method_overrides(
+            method_name="ppo_normal",
+            method_cfg=methods["ppo_normal"],
+            cfg=cfg_dict,
+            is_sweep=False,
+        )
+        assert "--multirun" not in m1_overrides
+        assert not any("hydra/sweeper" in o for o in m1_overrides)
+
+        # Method 2: tuned -> Optuna sweep
+        m2_overrides = build_method_overrides(
+            method_name="ppo_tuned",
+            method_cfg=methods["ppo_tuned"],
+            cfg=cfg_dict,
+            study_name="cartpole_ppo_tuned_v1",
+            is_sweep=True,
+        )
+        assert "--multirun" in m2_overrides
+        assert "hydra/sweeper=optuna_online" in m2_overrides
+        assert "agent.lr=interval(1e-4, 1e-2)" in m2_overrides
+
 

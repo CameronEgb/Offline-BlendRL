@@ -109,35 +109,45 @@ To specify a new run (e.g., `in/config/experiment/mimic/mimic_cql.yaml`):
     ```
 
 ### Hyperparameter Tuning with Optuna Sweepers
-Sweeps inherit from group `_base` and `optuna_offline` / `optuna_online` so you only define search `params`:
+Tuning is an orchestration modifier defined declaratively inside any experiment under `methods:`. You can specify a shared search space under `methods.params.tune` and/or method-specific search spaces under `methods.<method_name>.tune`. 
+
+**Example Tuning Experiment (`in/config/experiment/mimic/cql_tune.yaml`):**
 ```yaml
 # @package _global_
 defaults:
   - mimic/_base
-  - override /hydra/sweeper: optuna_offline
 
-offline_methods: [cql/dnn]
+tuning:
+  n_trials: 40
 
-agent:
-  epochs_per_interval: 50
-  batch_size: 64
+methods:
+  params:
+    tune:
+      lr: interval(1e-4, 1e-2)
 
-hydra:
-  sweeper:
-    n_trials: 40
-    params:
-      agent.lr: interval(1e-4, 1e-3)
-      agent.cql_alpha: interval(0.1, 5.0)
+  cql_dnn:
+    agent: cql
+    model: dnn
+    tune:
+      cql_alpha: choice(0.1, 1.0, 5.0)
 ```
-Upon sweep completion, `run_pipeline.py` automatically identifies the winning trial, copies its checkpoint to `results/checkpoints/[group]/[exp_id]/[agent]/best_model.ckpt`, saves `best_params.yaml`, and executes downstream evaluation and plotting with the winning model.
-      epochs: 20
-    ```
-2. Run via `run_pipeline.py` (or cluster alias `run`):
-    ```bash
-    run my_early_pred
-    # Or locally:
-    python run_pipeline.py my_early_pred local=true
-    ```
+When `tune:` is present (or `--multirun` is passed), the pipeline automatically activates Optuna, runs the trials, promotes the winning trial's checkpoint to `best_model.ckpt`, and saves `best_params.yaml`.
+
+**Zero-Overhead Default**: If no `tune:` block is defined, the pipeline trains a single normal model directly without any sweeper or multirun overhead.
+
+**Downstream Evaluation with `from_study`**:
+Subsequent benchmark or evaluation experiments can load winning hyperparameters automatically:
+```yaml
+# @package _global_
+defaults:
+  - mimic/_base
+
+methods:
+  cql_dnn:
+    agent: cql
+    model: dnn
+    from_study: mimic/cql_tune  # Automatically loads best_params.yaml into agent/model parameters
+```
 
 ---
 

@@ -1,0 +1,14 @@
+# @package _global_
+defaults:
+  - cartpole/_base
+
+total_timesteps: 640
+intervals_count: 1
+eval_episodes: 2
+no_plot: true
+
+methods:
+  ppo_tuned:
+    agent: ppo
+    model: blendrl
+    from_study: tests/cartpole_tune

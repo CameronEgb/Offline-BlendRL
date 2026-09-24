@@ -1,18 +1,10 @@
 # @package _global_
 defaults:
 - mimic/_base
-- override /site: ncshare
-
-# Default partition: common (standard compute nodes)
-# Dispatches parallel jobs across compute nodes
-partition: common
-consolidate: false
+- override /site: ncshare_common
 
 # Discrete CQL Comparison Benchmark: Pure Neural vs. Value-Based BlendRL
 # All models train under identical discrete CQL Bellman + LogSumExp loss on Q-values.
-
-env:
-  gamma: 0.95
 
 resources:
   time: "01:00:00"
@@ -22,7 +14,6 @@ methods:
   params:
     epochs_per_interval: 25
     eval_interval_epochs: 2
-    gamma: 0.95
 
     agent:
       cql:
@@ -39,34 +30,8 @@ methods:
         blend_q_values: true
 
   cql_dnn:
-    agent: cql
-    model: dnn
-
   cql_dueling_resnet:
-    agent: cql
-    model: dueling_resnet
-
   cql_blendrl_human_rigid:
-    agent: cql
-    model:
-      blendrl:
-        symbolic:
-          rules: rigid
-
   cql_blendrl_human_dueling_resnet_rigid:
-    agent: cql
-    model:
-      blendrl:
-        neural: dueling_resnet
-        symbolic:
-          rules: rigid
-
   cql_blendrl_cew_dueling_resnet:
-    agent: cql
-    model:
-      blendrl:
-        neural: dueling_resnet
-        symbolic:
-          cew:
-            ecm_dthr: 0.03
 

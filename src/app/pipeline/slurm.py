@@ -81,12 +81,12 @@ def generate_sbatch_header(job_name, log_dir, cfg, dependency=None, dependency_t
     cfg_consolidate = cfg.get("consolidate", None)
     site_consolidate = getattr(site_cfg, "consolidate", False) if site_cfg else False
     effective_consolidate = is_consolidated or (cfg_consolidate if cfg_consolidate is not None else site_consolidate)
-    if effective_consolidate:
-        cores = res.get("consolidated_cores", res.get("cores", 16))
-        memory = res.get("consolidated_memory", res.get("memory", "32G"))
-    else:
-        cores = res.get("standalone_cores", res.get("cores", 4))
-        memory = res.get("standalone_memory", res.get("memory", "8G"))
+    cores = res.get("cores")
+    if cores is None:
+        cores = 16 if effective_consolidate else 4
+    memory = res.get("memory")
+    if memory is None:
+        memory = "32G" if effective_consolidate else "8G"
     time = res.get("time")
     nodes = res.get("nodes", 1)
 

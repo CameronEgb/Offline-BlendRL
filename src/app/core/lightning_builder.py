@@ -4,6 +4,7 @@ import os
 import signal
 import sys
 import time
+from pathlib import Path
 
 import lightning as L
 import torch
@@ -405,6 +406,18 @@ def finalize_training(trainer, cfg, ckpt_dir, training_time, start_time, end_tim
     if not os.path.exists(final_ckpt_target):
         print(f"Saving final trained model checkpoint to: {final_ckpt_target}")
         trainer.save_checkpoint(final_ckpt_target)
+
+    parent_ckpt_dir = str(Path(ckpt_dir).parent) if Path(ckpt_dir).name.isdigit() else str(Path(ckpt_dir))
+    parent_ckpt_target = os.path.join(parent_ckpt_dir, "best_model.ckpt")
+    if os.path.abspath(final_ckpt_target) != os.path.abspath(parent_ckpt_target) and os.path.exists(final_ckpt_target):
+        try:
+            import shutil
+            os.makedirs(parent_ckpt_dir, exist_ok=True)
+            shutil.copy2(final_ckpt_target, parent_ckpt_target)
+            named_ckpt = os.path.join(parent_ckpt_dir, f"{cfg.agent.name}.ckpt")
+            shutil.copy2(final_ckpt_target, named_ckpt)
+        except Exception as e:
+            logger.debug("Could not copy single-trial checkpoint to agent root: %s", e)
 
     is_offline_only = cfg.env.get("offline_only", False)
     metric_name = cfg.env.get("monitor_metric", "eval/reward")

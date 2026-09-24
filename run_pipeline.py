@@ -25,6 +25,7 @@ for p in [
 
 import hydra
 from hydra import compose, initialize
+from omegaconf import OmegaConf
 
 from src.app.pipeline.config import normalize_agent_name, parse_methods_dict, resolve_experiment_config_name
 from src.app.pipeline.datasets import run_plotting
@@ -41,7 +42,9 @@ def main():
         print(
             "  site=local            Interactive CLI execution (default, for local machine or cluster interactive node)"
         )
-        print("  site=ncshare          Slurm cluster execution on NCShare")
+        print("  site=ncshare          Slurm cluster execution on NCShare (GPU consolidated, default)")
+        print("  site=ncshare_gpu      Slurm cluster on NCShare GPU partition (consolidated)")
+        print("  site=ncshare_common   Slurm cluster on NCShare CPU common partition (one job per method)")
         print("  site=arc              Slurm cluster execution on ARC")
         print("  plot_only=true        Run plotting phase only (no training, no Slurm submission)")
         print("  no_plot=true          Skip automatic plotting")
@@ -99,8 +102,7 @@ def main():
         sys.exit(1)
 
     is_sweep = cfg.get("sweep", False) or "--multirun" in sanitized_extra_args or "-m" in sanitized_extra_args
-    if is_sweep and "--multirun" not in sanitized_extra_args and "-m" not in sanitized_extra_args:
-        sanitized_extra_args.append("--multirun")
+    sanitized_extra_args = [a for a in sanitized_extra_args if a not in ("--multirun", "-m")]
 
     # Pre-flight validation
     try:
@@ -137,18 +139,34 @@ def main():
         print(f"[Notice] Could not load paradigm definition: {e}")
 
     # Execution mode is determined solely by the site profile: site=local -> interactive CLI, any other site -> Slurm cluster
-    site_name = getattr(cfg.site, "name", "local") if hasattr(cfg, "site") else "local"
+    site_name = None
+    if hasattr(cfg, "hydra") and hasattr(cfg.hydra, "runtime") and hasattr(cfg.hydra.runtime, "choices"):
+        site_name = cfg.hydra.runtime.choices.get("site")
+    if not site_name and hasattr(cfg, "site"):
+        site_name = getattr(cfg.site, "name", None)
+    if not site_name:
+        site_name = "local"
+
+    if hasattr(cfg, "site") and OmegaConf.is_config(cfg.site) and "name" not in cfg.site:
+        import omegaconf
+        with omegaconf.open_dict(cfg.site):
+            cfg.site.name = site_name
+
     is_interactive = site_name == "local"
     print(f"Execution Mode: {'Interactive (Local CLI)' if is_interactive else f'Slurm Cluster ({site_name})'}")
 
     storage_url = None
     if "hydra" in cfg and "sweeper" in cfg.hydra and "storage" in cfg.hydra.sweeper:
         storage_url = cfg.hydra.sweeper.storage
-        if storage_url:
-            storage_url = str(storage_url).replace("${experiment_id}", cfg.experiment_id)
-        import os
-
-        os.makedirs("results/optuna", exist_ok=True)
+    if not storage_url and hasattr(cfg, "tuning") and cfg.tuning and hasattr(cfg.tuning, "get") and cfg.tuning.get("storage"):
+        storage_url = cfg.tuning.storage
+    if not storage_url:
+        from src.app.pipeline.optuna_utils import DEFAULT_OPTUNA_DB_URL
+        storage_url = DEFAULT_OPTUNA_DB_URL
+    if storage_url:
+        storage_url = str(storage_url).replace("${experiment_id}", cfg.experiment_id)
+    import os
+    os.makedirs("results/optuna", exist_ok=True)
 
     if is_interactive and storage_url and (cfg.get("dash") or cfg.get("dash_only")):
         launch_optuna_dashboard(storage_url)
@@ -183,9 +201,13 @@ def main():
             )
 
     print(f"Declared Methods:")
+    has_any_tune = is_sweep
     for name, mcfg in methods_dict.items():
         agent_str = f"agent={mcfg.get('agent')}, " if mcfg.get('agent') else ""
-        print(f"  {name}: {agent_str}model={mcfg.get('model')}")
+        tune_str = " [Optuna Sweep]" if (is_sweep or mcfg.get("tune")) else ""
+        if mcfg.get("tune"):
+            has_any_tune = True
+        print(f"  {name}: {agent_str}model={mcfg.get('model')}{tune_str}")
 
     # Build context for tasks
     context = {
@@ -193,7 +215,7 @@ def main():
         "site_name": site_name,
         "sanitized_extra_args": sanitized_extra_args,
         "storage_url": storage_url,
-        "is_sweep": is_sweep,
+        "is_sweep": is_sweep or has_any_tune,
         "methods": methods_dict,
         "paradigm_def": paradigm_def,
     }

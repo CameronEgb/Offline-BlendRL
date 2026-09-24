@@ -47,8 +47,8 @@ class PPOAgent(BaseAgent):
         if self.num_minibatches is not None:
             self.batch_size = (self.num_envs * self.num_steps) // self.num_minibatches
 
-        self.gamma = self.get_cfg("gamma", 0.99)
-        self.gae_lambda = self.get_cfg("gae_lambda", 0.95)
+        self.gamma = float(self.get_cfg("gamma", getattr(self.cfg.env, "gamma", 0.99)))
+        self.gae_lambda = float(self.get_cfg("gae_lambda", getattr(self.cfg.env, "gae_lambda", 0.95)))
         self.clip_coef = self.get_cfg("clip_coef", 0.2)
         self.ent_coef = self.get_cfg("ent_coef", 0.01)
         self.blend_ent_coef = self.get_cfg("blend_ent_coef", 0.01)

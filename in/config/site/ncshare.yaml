@@ -1,42 +1,21 @@
-# Site profile: NCSU HPC (ncshare) cluster
-name: ncshare
+# Site profile: Base NCShare cluster configuration
 python_executable: auto
 venv_dir: venv
 mail_user: egbertcm23@gmail.com
 mail_type: "END,FAIL"
-consolidate: true
-gres_format: "gpu:{gpu_type}:{gpus}"   # e.g. gpu:a100:1
-# Default resources for GPU nodes
-resources:
-  partition: gpu
-  gpus: 1
-  cores: 16
-  time: "01:00:00"
-  memory: "32G"
-  nodes: 1
-  gpu_type: null
-  gres: null
-  no_gres: false
+consolidate: false
 
-# Default resources for compute nodes (partition: common)
-compute_resources:
-  partition: common
-  cores: 4
-  standalone_cores: 4
-  memory: "8G"
-  standalone_memory: "8G"
+# Shared default hardware resources across NCShare partitions
+resources:
   time: "01:00:00"
-  gpus: 0
   nodes: 1
   gpu_type: null
   gres: null
-  no_gres: true
-module_loads:
-  - "cuda"
-extra_pythonpath: []                    # fyd_repo added dynamically only when needed
+
+module_loads: []
+extra_pythonpath: []
 extra_env_vars:
   PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
-  PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
   OMP_NUM_THREADS: "1"
   MKL_NUM_THREADS: "1"
 extra_sbatch_flags: []

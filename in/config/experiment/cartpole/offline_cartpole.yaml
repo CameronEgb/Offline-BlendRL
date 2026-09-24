@@ -1,0 +1,26 @@
+# @package _global_
+defaults:
+- override /env: cartpole
+
+paradigm: offline_rl
+
+env:
+  offline_only: true
+
+# Offline CartPole Experiment on static transitions
+total_timesteps: 100000
+intervals_count: 1
+eval_episodes: 0
+
+plots:
+  losses:
+    metrics: ["losses/total_loss", "losses/bellman_loss", "losses/value_loss"]
+  convergence: {}
+
+methods:
+  iql_cp_tuned:
+    agent: iql
+    model: dnn
+  iql_blendrl_cp_tuned:
+    agent: iql
+    model: blendrl

@@ -4,9 +4,8 @@ Validates experiment configs against their declared paradigm before any
 training begins. Raises ConfigurationError on fatal mismatches so the
 pipeline aborts cleanly at startup.
 
-Paradigm definitions live in in/config/paradigms/base/ and
-in/config/paradigms/meta/. Adding a new paradigm requires only a new YAML
-file — no changes to this module.
+Paradigm definitions live in in/config/paradigms/. Adding a new paradigm
+requires only a new YAML file — no changes to this module.
 """
 
 from __future__ import annotations
@@ -33,7 +32,6 @@ def _load_all_paradigms() -> dict[str, dict]:
     """Load all paradigm YAML files from in/config/paradigms/.
 
     Returns a dict mapping paradigm name → paradigm definition dict.
-    Scans both base/ and meta/ subdirectories.
     """
     paradigms: dict[str, dict] = {}
     for yaml_path in sorted(_PARADIGMS_DIR.glob("**/*.yaml")):
@@ -59,7 +57,7 @@ def load_paradigm(paradigm_name: str) -> dict:
         raise ConfigurationError(
             f"[ConfigurationError] Unknown paradigm '{paradigm_name}'. "
             f"Available paradigms: {sorted(paradigms.keys())}. "
-            f"To add a new paradigm create in/config/paradigms/base/<name>.yaml."
+            f"To add a new paradigm create in/config/paradigms/<name>.yaml."
         )
     return paradigms[paradigm_name]
 
@@ -174,8 +172,8 @@ def validate_experiment_config(cfg: Any, experiment_name: str, is_sweep: bool = 
     
     # --- intervals_count: check raw YAML for explicit override ---
     # Only enforce if the paradigm does not allow intervals > 1.
-    # Currently only base paradigms with offline data disallow intervals.
-    # Meta-paradigms and paradigms with allows_intervals: true skip this.
+    # Currently only paradigms with offline data disallow intervals.
+    # Paradigms with allows_intervals: true skip this.
     allows_intervals = paradigm_def.get("allows_intervals", False)
     if not allows_intervals:
         explicit_intervals = raw_exp.get("intervals_count", None)
@@ -313,9 +311,11 @@ def _validate_method_registrations(cfg: Any, notices: list[str]) -> None:
     methods = parse_methods_dict(cfg)
 
     for method_name, method_cfg in methods.items():
+        if "style" in method_cfg and isinstance(method_cfg["style"], dict) and method_cfg["style"].get("label"):
+            continue
         ag = method_cfg.get("agent")
         base_algo = ag.get("name") if isinstance(ag, dict) else (ag or "")
-        if base_algo and base_algo not in registered:
+        if base_algo and base_algo not in registered and method_name not in registered:
             notices.append(f"Notice: Method '{method_name}' uses agent '{base_algo}' which might not match a registered agent style.")
 
 

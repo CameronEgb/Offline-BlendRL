@@ -12,38 +12,7 @@ from src.usr.methods.base_agent import OfflineAgentBase
 from src.usr.methods.registry import register_agent
 
 
-@register_agent(
-    "cql",
-    "cql_dnn",
-    "cql_dueling_resnet",
-    "cql_transformer",
-    "cql_sepsis_transformer",
-    "blendrl_cql",
-    "cql_blendrl_human_neural",
-    "cql_blendrl_human_rigid",
-    "cql_blendrl_human_continuous",
-    "cql_blendrl_human_dueling_resnet",
-    "cql_blendrl_human_dueling_resnet_rigid",
-    "cql_blendrl_human_dueling_resnet_continuous",
-    "cql_blendrl_human_transformer",
-    "cql_blendrl_cross_attention",
-    "cql_blendrl_human_cew",
-    "cql_blendrl_cew_only",
-    "cql_blendrl_cew_dueling_resnet",
-    "cql_blendrl_cew_fyd_dueling_resnet",
-    "blendrl_cql_human_neural",
-    "blendrl_cql_human_rigid",
-    "blendrl_cql_human_continuous",
-    "blendrl_cql_human_dueling_resnet",
-    "blendrl_cql_human_dueling_resnet_rigid",
-    "blendrl_cql_human_dueling_resnet_continuous",
-    "blendrl_cql_human_transformer",
-    "blendrl_cql_cross_attention",
-    "blendrl_cql_human_cew",
-    "blendrl_cql_cew_only",
-    "blendrl_cql_cew_dueling_resnet",
-    "blendrl_cql_cew_fyd_dueling_resnet",
-)
+@register_agent("cql", "blendrl_cql")
 class CQLAgent(OfflineAgentBase):
     """Unified Conservative Q-Learning (CQL) Offline RL Agent.
 
@@ -55,6 +24,7 @@ class CQLAgent(OfflineAgentBase):
         super().__init__(cfg)
         self.save_hyperparameters()
         self.lr = self.get_cfg("lr", 3e-4)
+        self.gamma = float(self.get_cfg("gamma", getattr(self.cfg.env, "gamma", 0.99)))
 
         self._init_env(n_envs=1)
         algorithm = self.get_cfg("algorithm", self.get_cfg("name", cfg.env.name))

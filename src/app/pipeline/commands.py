@@ -24,6 +24,7 @@ def build_method_overrides(
     extra_args: list | None = None,
     cfg=None,
     study_name: str | None = None,
+    is_sweep: bool = False,
 ) -> list[str]:
     """Build Hydra override list from a structured methods: dict entry.
 
@@ -34,6 +35,7 @@ def build_method_overrides(
         extra_args:   Additional Hydra overrides forwarded from the CLI.
         cfg:          Full Hydra config (used for experiment_name, paradigm).
         study_name:   Optuna study name (optional, for sweep runs).
+        is_sweep:     Whether this specific method should run as an Optuna sweep.
 
     Returns:
         list[str]: Hydra override arguments ready to pass to train.py.
@@ -111,7 +113,18 @@ def build_method_overrides(
         overrides.append(f"++dataset_path={safe_ds_path}")
 
     # Process remaining method-level or global hyperparameter overrides
-    _INTERNAL_KEYS = {"agent", "model", "name", "agent_params", "model_params", "explicit_modules"}
+    _INTERNAL_KEYS = {
+        "agent",
+        "model",
+        "name",
+        "agent_params",
+        "model_params",
+        "explicit_modules",
+        "style",
+        "tune",
+        "search_space",
+        "from_study",
+    }
     if model_arch == "blendrl" and not method_cfg.get("explicit_modules", False) and not merged_model_params.get("explicit_modules", False):
         _INTERNAL_KEYS.add("modules")
     _MODEL_KEYS = {
@@ -152,11 +165,52 @@ def build_method_overrides(
                 if k in ("epochs_per_interval", "eval_interval_epochs", "gamma", "reward_scale", "pos_action_weight", "bellman_loss", "weight_decay"):
                     overrides.append(f"++{k}={_format_hydra_val(v)}")
 
-    if study_name:
-        overrides.append(f"++hydra.sweeper.study_name={study_name}")
+    # Optuna Sweeper overrides (active ONLY if is_sweep is True or study_name is provided)
+    if is_sweep or study_name:
+        has_sweeper_override = extra_args and any("hydra/sweeper" in a or "hydra.sweeper" in a for a in extra_args)
+        if not has_sweeper_override:
+            sweeper_group = "hydra/sweeper=optuna_online" if paradigm == "online_rl" else "hydra/sweeper=optuna_offline"
+            overrides.append(sweeper_group)
+
+        if study_name:
+            overrides.append(f"++hydra.sweeper.study_name={study_name}")
+
+        tuning_cfg = cfg.get("tuning", {}) if cfg is not None and hasattr(cfg, "get") else {}
+        if tuning_cfg:
+            if tuning_cfg.get("n_trials"):
+                overrides.append(f"++hydra.sweeper.n_trials={tuning_cfg['n_trials']}")
+            if tuning_cfg.get("n_jobs"):
+                overrides.append(f"++hydra.sweeper.n_jobs={tuning_cfg['n_jobs']}")
+            if tuning_cfg.get("storage"):
+                overrides.append(f"++hydra.sweeper.storage={tuning_cfg['storage']}")
+            direction = tuning_cfg.get("direction") or get_sweep_direction(cfg, paradigm)
+            overrides.append(f"++hydra.sweeper.direction={direction}")
+            if tuning_cfg.get("monitor_metric"):
+                overrides.append(f"++env.monitor_metric={tuning_cfg['monitor_metric']}")
+
+        # Method-specific search space parameters
+        tune_dict = method_cfg.get("tune") or method_cfg.get("search_space") or {}
+        for k, v in tune_dict.items():
+            if "." in k:
+                full_k = k
+            elif paradigm == "supervised":
+                full_k = f"model.{k}"
+            elif k in _MODEL_KEYS:
+                full_k = f"model.{k}"
+            else:
+                full_k = f"agent.{k}"
+            overrides.append(f"{full_k}={str(v).strip()}")
+
+        if "--multirun" not in overrides and "-m" not in overrides:
+            overrides.insert(0, "--multirun")
 
     if extra_args:
-        overrides.extend(extra_args)
+        if not is_sweep and not study_name:
+            # Filter out multirun flags if this method is running as a single normal model
+            clean_extra = [a for a in extra_args if a not in ("--multirun", "-m")]
+            overrides.extend(clean_extra)
+        else:
+            overrides.extend(extra_args)
 
     return overrides
 
