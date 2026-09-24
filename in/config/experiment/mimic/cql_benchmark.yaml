@@ -13,9 +13,9 @@ consolidate: false
 
 resources:
   partition: common
-  cores: 16
+  cores: 4
   time: "08:00:00"
-  memory: "32G"
+  memory: "8G"
 methods:
   cql_dnn:
     agent: cql

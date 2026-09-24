@@ -58,9 +58,24 @@ def generate_sbatch_header(job_name, log_dir, cfg, dependency=None, dependency_t
         if OmegaConf.is_config(exp_res_raw)
         else (dict(exp_res_raw) if isinstance(exp_res_raw, dict) else {})
     )
+    site_dict = {k: v for k, v in site_dict.items() if v is not None}
+    exp_dict = {k: v for k, v in exp_dict.items() if v is not None}
     res = {**site_dict, **exp_dict}
     if cfg.get("partition", None) is not None:
         res["partition"] = cfg.get("partition")
+
+    partition = res.get("partition")
+    is_cpu_partition = str(partition).lower() in ("common", "serial", "cpu", "standard", "debug_cpu")
+    if is_cpu_partition and site_cfg and hasattr(site_cfg, "compute_resources") and site_cfg.compute_resources:
+        compute_dict = (
+            OmegaConf.to_container(site_cfg.compute_resources, resolve=True)
+            if OmegaConf.is_config(site_cfg.compute_resources)
+            else (dict(site_cfg.compute_resources) if isinstance(site_cfg.compute_resources, dict) else {})
+        )
+        compute_dict = {k: v for k, v in compute_dict.items() if v is not None}
+        res = {**site_dict, **compute_dict, **exp_dict}
+        if cfg.get("partition", None) is not None:
+            res["partition"] = cfg.get("partition")
 
     partition = res.get("partition")
     cfg_consolidate = cfg.get("consolidate", None)
@@ -70,7 +85,7 @@ def generate_sbatch_header(job_name, log_dir, cfg, dependency=None, dependency_t
         cores = res.get("consolidated_cores", res.get("cores", 16))
         memory = res.get("consolidated_memory", res.get("memory", "32G"))
     else:
-        cores = res.get("standalone_cores", res.get("cores", 1))
+        cores = res.get("standalone_cores", res.get("cores", 4))
         memory = res.get("standalone_memory", res.get("memory", "8G"))
     time = res.get("time")
     nodes = res.get("nodes", 1)
