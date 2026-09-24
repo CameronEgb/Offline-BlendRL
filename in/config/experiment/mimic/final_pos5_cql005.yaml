@@ -16,11 +16,6 @@ env:
   gamma: 0.95
 
 resources:
-  partition: common
-  cores: 4
-  standalone_cores: 4
-  memory: "8G"
-  standalone_memory: "8G"
   time: "01:00:00"
 
 methods:

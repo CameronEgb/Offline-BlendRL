@@ -12,10 +12,7 @@ consolidate: false
 # All models train under identical discrete CQL Bellman + LogSumExp loss on Q-values.
 
 resources:
-  partition: common
-  cores: 4
   time: "08:00:00"
-  memory: "8G"
 methods:
   cql_dnn:
     agent: cql
