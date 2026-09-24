@@ -77,7 +77,8 @@ class CQLAgent(OfflineAgentBase):
                 self.get_cfg("reasoner", cfg.env.reasoner),
                 self.device,
                 architecture=self.get_cfg("architecture", cfg.env.architecture),
-                cfg=cfg.agent,
+                modules=self.get_cfg("modules", None),
+                cfg=self.cfg,
             )
             self.target_model = BlenderActorCritic(
                 self.env,
@@ -88,7 +89,8 @@ class CQLAgent(OfflineAgentBase):
                 self.get_cfg("reasoner", cfg.env.reasoner),
                 self.device,
                 architecture=self.get_cfg("architecture", cfg.env.architecture),
-                cfg=cfg.agent,
+                modules=self.get_cfg("modules", None),
+                cfg=self.cfg,
             )
             self.target_model.load_state_dict(self.model.state_dict())
         else:

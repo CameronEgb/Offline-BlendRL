@@ -18,7 +18,15 @@ from captum.attr import (
 )
 
 # from nudge.env import NudgeBaseEnv
-from torch.distributions.categorical import Categorical
+import sys
+
+PROJECT_ROOT = str(Path(__file__).resolve().parents[5])
+for _p in [
+    os.path.join(PROJECT_ROOT, "src", "usr", "models"),
+    os.path.join(PROJECT_ROOT, "src", "usr", "environments"),
+]:
+    if _p not in sys.path and os.path.exists(_p):
+        sys.path.insert(0, _p)
 
 from nsfr.common import get_nsfr_model
 from nsfr.utils.common import load_module
@@ -370,19 +378,16 @@ class BlenderActorCritic(nn.Module):
         self.rng = random.Random() if rng is None else rng
         self.env = env
         self.cfg = cfg
-        hidden_sizes = [64, 64]
-        if cfg:
-            if "hidden_sizes" in cfg:
-                hidden_sizes = list(cfg["hidden_sizes"])
-            elif "agent" in cfg and "hidden_sizes" in cfg["agent"]:
-                hidden_sizes = list(cfg["agent"]["hidden_sizes"])
-
         self.actor_mode = actor_mode
         self.blender_mode = blender_mode
         self.blend_function = blend_function
         self.reasoner = reasoner
         self.architecture = architecture
         self.explain = explain
+
+        hidden_sizes = self.get_cfg("hidden_sizes", [64, 64])
+        if hidden_sizes is not None:
+            hidden_sizes = list(hidden_sizes)
 
         self.policy_modules = nn.ModuleList()
         self.module_types = []
@@ -393,7 +398,7 @@ class BlenderActorCritic(nn.Module):
         neural_in_features = obs.shape[-1]
 
         # 1. Parse modules from argument or config
-        modules_list = modules if modules is not None else (cfg.get("modules") if cfg and "modules" in cfg else None)
+        modules_list = modules if modules is not None else self.get_cfg("modules", None)
         self.module_cfgs = list(modules_list) if modules_list else []
 
         if modules_list:
@@ -509,13 +514,22 @@ class BlenderActorCritic(nn.Module):
         )
 
     def get_cfg(self, key, default=None):
-        """Helper to get a config value from either cfg or cfg.agent."""
+        """Helper to get a config value from cfg.model, cfg.agent, or cfg."""
         if self.cfg is None:
             return default
-        if key in self.cfg:
-            return self.cfg[key]
-        if "agent" in self.cfg and key in self.cfg["agent"]:
-            return self.cfg["agent"][key]
+        if hasattr(self.cfg, "model") and hasattr(self.cfg.model, key) and getattr(self.cfg.model, key) is not None:
+            return getattr(self.cfg.model, key)
+        if hasattr(self.cfg, "agent") and hasattr(self.cfg.agent, key) and getattr(self.cfg.agent, key) is not None:
+            return getattr(self.cfg.agent, key)
+        if hasattr(self.cfg, key) and getattr(self.cfg, key) is not None:
+            return getattr(self.cfg, key)
+        if isinstance(self.cfg, dict):
+            if "model" in self.cfg and isinstance(self.cfg["model"], dict) and key in self.cfg["model"]:
+                return self.cfg["model"][key]
+            if "agent" in self.cfg and isinstance(self.cfg["agent"], dict) and key in self.cfg["agent"]:
+                return self.cfg["agent"][key]
+            if key in self.cfg:
+                return self.cfg[key]
         return default
 
     def self_organize_cew_modules(self, dataset_sample_obs):
