@@ -262,7 +262,15 @@ class BasePlotter:
         if cli_overrides:
             merged = deep_update(merged, cli_overrides)
 
-        output_dir = Path("results/plots") / group / clean_exp
+        # Allow output_dir to be explicitly overridden in plotter config, experiment config, or CLI
+        if "output_dir" in merged and merged["output_dir"]:
+            custom_dir = str(merged["output_dir"]).format(group=group, exp_id=exp_id, clean_exp=clean_exp)
+            output_dir = Path(custom_dir)
+        elif "output_dir" in exp_cfg and exp_cfg["output_dir"]:
+            custom_dir = str(exp_cfg["output_dir"]).format(group=group, exp_id=exp_id, clean_exp=clean_exp)
+            output_dir = Path(custom_dir)
+        else:
+            output_dir = Path("results/plots") / group / clean_exp
         output_dir.mkdir(parents=True, exist_ok=True)
         return merged, group, output_dir
 
@@ -350,7 +358,7 @@ class BasePlotter:
         subdir = cfg.get("output_subdir", self.name)
         filename_prefix = cfg.get("filename_prefix", "")
 
-        out_dir = output_dir / subdir
+        out_dir = (output_dir / subdir) if subdir else output_dir
         any_saved = False
 
         print(f"=== Generating {self.name.title()} Plots for '{exp_id}' ===")
@@ -418,9 +426,36 @@ class BasePlotter:
 
             if has_data:
                 out_dir.mkdir(parents=True, exist_ok=True)
-                plt.xlabel(used_xlabel or cfg.get("xlabel", "Training Steps"))
-                plt.ylabel(cfg.get("ylabel", metric.replace("_", " ").title()))
-                plt.title(f"{exp_id.upper()}: {metric}")
+                
+                # Resolve xlabel: explicit config > detected used_xlabel > fallback
+                xlabel = cfg.get("xlabel") or used_xlabel or "Training Steps"
+                plt.xlabel(xlabel)
+
+                # Resolve ylabel (dictionary per metric or string or fallback)
+                if isinstance(cfg.get("ylabel"), dict):
+                    ylabel = cfg["ylabel"].get(metric, metric.replace("_", " ").title())
+                elif cfg.get("ylabel"):
+                    ylabel = str(cfg["ylabel"])
+                else:
+                    ylabel = metric.replace("_", " ").title()
+                plt.ylabel(ylabel)
+
+                # Resolve title (dictionary per metric, string template, or default)
+                clean_metric = metric.split("/")[-1].replace("_", " ").title()
+                if isinstance(cfg.get("title"), dict):
+                    title = cfg["title"].get(metric, f"{exp_id.upper()}: {metric}")
+                elif cfg.get("title"):
+                    try:
+                        title = str(cfg["title"]).format(
+                            exp_id=exp_id.upper(),
+                            metric=metric,
+                            clean_metric=clean_metric,
+                        )
+                    except Exception:
+                        title = str(cfg["title"])
+                else:
+                    title = f"{exp_id.upper()}: {metric}"
+                plt.title(title)
                 plt.grid(True, alpha=0.3)
                 plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
                 plt.tight_layout()

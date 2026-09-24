@@ -25,7 +25,6 @@ from nsfr.utils.common import load_module
 from nudge.agents.logic_agent import NsfrActorCritic
 from nudge.agents.neural_agent import ActorCritic, NeuralPPO
 from nudge.torch_utils import softor
-from nudge.utils import print_program
 from src.core.factories import get_blender, get_neural_agent
 from src.core.types import ActionResult
 from src.methods.cew_utils import MultiFLC, rule_creation, run_CLIP, run_ECM, run_FYD

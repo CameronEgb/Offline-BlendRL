@@ -182,7 +182,7 @@ def run_experiment(overrides, site_cfg=None):
     subprocess.run(cmd, check=True, env=env)
 
 
-def run_plotting(experiment, style=None, base_experiment=None, site_cfg=None, wipe=False):
+def run_plotting(experiment, style=None, base_experiment=None, site_cfg=None, wipe=False, use_cache=False):
     """Run plot/manager.py for the given experiment."""
     from src.pipeline.runtime import get_subprocess_env
 
@@ -196,6 +196,8 @@ def run_plotting(experiment, style=None, base_experiment=None, site_cfg=None, wi
         cmd.extend(["--style", str(style)])
     if wipe:
         cmd.append("--wipe")
+    if use_cache:
+        cmd.append("--use-cache")
 
     print(f"\n=== Auto-Generating Modular Plots for experiment: {experiment} ===")
     subprocess.run(cmd, check=True, env=env)

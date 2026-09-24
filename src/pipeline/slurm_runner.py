@@ -155,6 +155,8 @@ def run_slurm_training(cfg, context):
             plot_cmd = f"{python_cmd} plot/manager.py {cfg.group}/{cfg.experiment_id}"
             if cfg.get("plot_style", None):
                 plot_cmd += f" --style {cfg.get('plot_style', None)}"
+            if cfg.get("use_cache", False):
+                plot_cmd += " --use-cache"
             script_content += 'echo "=== [Generating Final Plots] ==="\n'
             script_content += f"{plot_cmd}\n\n"
 
@@ -320,6 +322,8 @@ def run_slurm_training(cfg, context):
         plot_cmd = f"{python_cmd} plot/manager.py {cfg.group}/{cfg.experiment_id}"
         if cfg.get("plot_style", None):
             plot_cmd += f" --style {cfg.get('plot_style', None)}"
+        if cfg.get("use_cache", False):
+            plot_cmd += " --use-cache"
         plot_content = (
             plot_header
             + "\n"

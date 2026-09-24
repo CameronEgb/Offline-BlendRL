@@ -31,13 +31,15 @@ class DataUtils:
         """Read lines and parse to Atom objects.
         """
         clauses = []
-        with open(path) as f:
-            for line in f:
-                print(line)
-                line = line.replace('\n', '')
-                tree = self.lp_clause.parse(line)
-                clause = ExpTree(lang).transform(tree)
-                clauses.append(clause)
+        if os.path.isfile(path):
+            with open(path) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                    tree = self.lp_clause.parse(line)
+                    clause = ExpTree(lang).transform(tree)
+                    clauses.append(clause)
         return clauses
 
     def load_atoms(self, path, lang):

@@ -114,6 +114,7 @@ def main():
             experiment=experiment_arg,
             style=cfg.get("plot_style", None),
             wipe=cfg.get("wipe", False),
+            use_cache=cfg.get("use_cache", False),
         )
         sys.exit(0)
 

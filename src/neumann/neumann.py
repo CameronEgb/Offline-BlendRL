@@ -33,15 +33,12 @@ class NEUMANN(nn.Module):
         self.rgm = reasoning_graph_module
         self.program_size = program_size
         self.softmax_temp = softmax_tmp
-        print(self.rgm)
         self.train = train
         if bk_clauses != None:
             self.clause_weights_bk = self.get_ones_weights(bk_clauses, device)
         if train:
             self.init_random_weights(
                 program_size, clauses, device)
-            print(self.clause_weights)
-            print(clauses)
         else:
             self.init_ones_weights(clauses, device)
         self.device = device

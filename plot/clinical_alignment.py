@@ -334,6 +334,7 @@ class ClinicalAlignmentPlotter(BasePlotter):
                 history_cache_path = legacy_hist
 
         remake = cfg.get("remake", False)
+        use_cache = cfg.get("use_cache", False) and not remake
         num_patients = X.shape[0]
         outcomes = data["y"].squeeze() if "y" in data else np.zeros(num_patients)
         patient_agreements = {}
@@ -343,7 +344,7 @@ class ClinicalAlignmentPlotter(BasePlotter):
         print(f"  Discovered {len(method_ckpts)} best checkpoints and {len(method_interval_ckpts)} interval checkpoint sets.", flush=True)
         interval_agreements = {}
 
-        if history_cache_path.exists() and not remake:
+        if use_cache and history_cache_path.exists():
             print(f"  Loading cached clinical alignment interval history from {history_cache_path}")
             try:
                 hist_data = np.load(history_cache_path, allow_pickle=True)
@@ -358,7 +359,7 @@ class ClinicalAlignmentPlotter(BasePlotter):
             except Exception as e:
                 print(f"  Notice: could not load interval history cache: {e}")
 
-        if cache_path.exists() and not remake:
+        if use_cache and cache_path.exists():
             print(f"  Loading cached clinical alignment data from {cache_path}")
             try:
                 cached_data = np.load(cache_path, allow_pickle=True)
@@ -376,7 +377,7 @@ class ClinicalAlignmentPlotter(BasePlotter):
 
         csv_path = output_dir / "method_comparison.csv"
         results = []
-        if csv_path.exists() and not remake:
+        if use_cache and csv_path.exists():
             try:
                 raw_records = pd.read_csv(csv_path).to_dict("records")
                 seen_methods = {}
@@ -423,12 +424,13 @@ class ClinicalAlignmentPlotter(BasePlotter):
                 cache_path.exists() and ckpt_p.exists() and (ckpt_p.stat().st_mtime > cache_path.stat().st_mtime)
             )
             if (
-                not ckpt_newer
+                use_cache
+                and not ckpt_newer
                 and method_name in patient_agreements
                 and any(r.get("Method") == clean_label(method_name) for r in results)
             ):
                 continue
-            if ckpt_newer:
+            if ckpt_newer or not use_cache:
                 results = [r for r in results if r.get("Method") != clean_label(method_name)]
             agent = self._load_agent(ckpt_path, device)
             if agent is None:
@@ -574,9 +576,14 @@ class ClinicalAlignmentPlotter(BasePlotter):
                     and ckpt_p.exists()
                     and (ckpt_p.stat().st_mtime > history_cache_path.stat().st_mtime)
                 )
-                if not hist_newer and method_name in interval_agreements and ep in interval_agreements[method_name]:
+                if (
+                    use_cache
+                    and not hist_newer
+                    and method_name in interval_agreements
+                    and ep in interval_agreements[method_name]
+                ):
                     continue
-                if hist_newer:
+                if hist_newer or not use_cache:
                     new_interval_data = True
                 agent = self._load_agent(ckpt_path, device)
                 if agent is None:

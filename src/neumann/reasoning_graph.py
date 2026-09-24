@@ -1,4 +1,5 @@
 import itertools
+import logging
 import multiprocessing
 
 import networkx as nx
@@ -10,6 +11,8 @@ from tqdm import tqdm
 from neumann.fol.logic import Clause, Conjunction
 from neumann.logic_utils import generate_substitutions
 from nsfr.fol.logic_ops import subs_list, unify
+
+logger = logging.getLogger(__name__)
 
 
 class ReasoningGraphModule:
@@ -47,7 +50,7 @@ class ReasoningGraphModule:
             #print('Building reasoning graph for {}'.format(str(clauses)))
             # build reasoning graph
             self.networkx_graph, self.node_labels, self.node_objects = self._build_rg()
-            print("Converting to PyG object ...")
+            logger.debug("Converting to PyG object ...")
             self.pyg_data = from_networkx(self.networkx_graph)
             self.edge_index = self.pyg_data.edge_index.to(device)
             self.edge_type = torch.tensor(self.pyg_data.etype).to(device)
@@ -143,8 +146,8 @@ class ReasoningGraphModule:
         G.add_edge(len(self.facts)+len(self.grounded_clauses),
                    0, etype=1, color='r', clause_index=0)
 
-        print("Adding edges to the graph...")
-        for i, gc in enumerate(tqdm(self.grounded_clauses)):
+        logger.debug("Adding edges to the graph...")
+        for i, gc in enumerate(tqdm(self.grounded_clauses, disable=True)):
             head_flag, head_fact_idx = self._get_fact_idx(gc.head)
             body_fact_idxs = []
             body_flag = True

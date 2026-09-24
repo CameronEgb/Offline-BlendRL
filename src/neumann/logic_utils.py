@@ -1,8 +1,11 @@
+import logging
 from tqdm import tqdm
 
 from neumann.fol.data_utils import DataUtils
 from neumann.fol.language import DataType
 from neumann.fol.logic import *
+
+logger = logging.getLogger(__name__)
 
 p_ = Predicate('.', 1, [DataType('spec')])
 false = Atom(p_, [Const('__F__', dtype=DataType('spec'))])
@@ -15,7 +18,7 @@ def get_lang(lark_path, lang_base_path, dataset_type, dataset, term_depth, use_l
     Read the language, clauses, background knowledge from files.
     Atoms are generated from the language.
     """
-    print("Loading FOL language.")
+    logger.debug("Loading FOL language.")
     du = DataUtils(lark_path=lark_path, lang_base_path=lang_base_path,
                    dataset_type=dataset_type, dataset=dataset)
     lang = du.load_language()
@@ -29,9 +32,9 @@ def get_lang(lark_path, lang_base_path, dataset_type, dataset, term_depth, use_l
         du.base_path + 'bk_clauses.txt', lang))
     bk = du.load_atoms(du.base_path + 'bk.txt', lang)
     terms = generate_terms(lang, max_depth=term_depth)
-    print(f"{len(terms)} terms are generated!")
+    logger.debug(f"{len(terms)} terms are generated!")
     atoms = generate_atoms(lang, terms, dataset_type)
-    print(f"{len(atoms)} ground atoms are generated!")
+    logger.debug(f"{len(atoms)} ground atoms are generated!")
     # atoms = du.get_facts(lang)
     return lang, clauses, bk, bk_clauses, terms, atoms
 
@@ -41,7 +44,7 @@ def get_lang_behind_the_scenes(lark_path, lang_base_path, term_depth):
     Read the language, clauses, background knowledge from files.
     Atoms are generated from the language.
     """
-    print("Loading FOL language.")
+    logger.debug("Loading FOL language.")
     du = DataUtils(lark_path=lark_path, lang_base_path=lang_base_path,
                    dataset_type='behind-the-scenes')
     lang = du.load_language()
@@ -50,9 +53,9 @@ def get_lang_behind_the_scenes(lark_path, lang_base_path, term_depth):
     bk_clauses = add_true_atoms(du.load_clauses(
         du.base_path + 'bk_clauses.txt', lang))
     bk = du.load_atoms(du.base_path + 'bk.txt', lang)
-    print("Generating Temrs ...")
+    logger.debug("Generating Temrs ...")
     terms = generate_terms(lang, max_depth=term_depth)
-    print("Generating Atoms ...")
+    logger.debug("Generating Atoms ...")
     atoms = generate_atoms(lang, terms, "")
     # atoms = du.get_facts(lang)
     return lang, clauses, bk, bk_clauses, terms, atoms
@@ -81,8 +84,8 @@ def generate_terms(lang, max_depth):
     consts = lang.consts
     funcs = lang.funcs
     terms = consts
-    print("Generating terms... ")
-    for i in tqdm(range(max_depth)):
+    logger.debug("Generating terms... ")
+    for i in tqdm(range(max_depth), disable=True):
         new_terms = []
         for f in funcs:
             terms_list = []
@@ -95,7 +98,6 @@ def generate_terms(lang, max_depth):
                 # generate list by removing duplications of elements
                 if len(args) == 2:
                     if args[0] not in to_list(args[1]):
-                        # print(args[1], to_list(args[1]))
                         # for list pruning adhoc
                         new_terms.append(FuncTerm(f, args))
                         new_terms = list(set(new_terms))
@@ -105,16 +107,13 @@ def generate_terms(lang, max_depth):
                     new_terms = list(set(new_terms))
                     terms.extend(new_terms)
 
-
-    for x in sorted(list(set(terms))):
-        print(x)
     return sorted(list(set(terms)))
 
 def __generate_terms(lang, max_depth):
     consts = lang.consts
     funcs = lang.funcs
     terms = consts
-    for i in tqdm(range(max_depth)):
+    for i in tqdm(range(max_depth), disable=True):
         new_terms = []
         for f in funcs:
             terms_list = []
@@ -139,8 +138,8 @@ def generate_atoms(lang, terms, dataset_type, max_term_depth=2):
                       for dtype in dtypes]
         # consts_list = [lang.get_by_dtype(dtype) for dtype in dtypes]
         args_list = []
-        print(f"Generating ground atoms for predicate: {pred.name}")
-        for terms_ in tqdm(set(itertools.product(*terms_list))):
+        logger.debug(f"Generating ground atoms for predicate: {pred.name}")
+        for terms_ in tqdm(set(itertools.product(*terms_list)), disable=True):
             if dataset_type in ['kandinsky', 'clevr-hans']:
                 if len(list(set(terms_))) == len(terms_):
                     args_list.append(terms_)
@@ -149,7 +148,7 @@ def generate_atoms(lang, terms, dataset_type, max_term_depth=2):
         for args in args_list:
             atoms.append(Atom(pred, args))
     atoms = set(atoms)
-    print(f"Sorting {len(list(atoms))} atoms...")
+    logger.debug(f"Sorting {len(list(atoms))} atoms...")
     return [true] + sorted(list(atoms))
 
 

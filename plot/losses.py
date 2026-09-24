@@ -41,7 +41,8 @@ class LossesPlotter(BasePlotter):
         figsize = tuple(cfg.get("figsize", [8, 5]))
         x_axis_col = cfg.get("x_axis", "transitions")
 
-        losses_base_dir = output_dir / "losses"
+        subdir = cfg.get("output_subdir", "losses")
+        losses_base_dir = (output_dir / subdir) if subdir else output_dir
         losses_base_dir.mkdir(parents=True, exist_ok=True)
 
         print(f"=== Generating Separate Loss Plots for '{exp_id}' ===")
@@ -105,10 +106,34 @@ class LossesPlotter(BasePlotter):
                         x_plot = all_x[0][: len(y_smoothed)]
                         plt.plot(x_plot, y_smoothed, label=display_name, color=color, linestyle=ls, linewidth=2.0)
 
-                    plt.xlabel(used_xlabel or cfg.get("xlabel", "Training Steps"))
+                    xlabel = cfg.get("xlabel") or used_xlabel or "Training Steps"
+                    plt.xlabel(xlabel)
+                    
                     metric_clean_name = metric.split("/")[-1].replace("_", " ").title()
-                    plt.ylabel(metric_clean_name)
-                    plt.title(f"{display_name}: {metric_clean_name}")
+                    if isinstance(cfg.get("ylabel"), dict):
+                        ylabel = cfg["ylabel"].get(metric, metric_clean_name)
+                    elif cfg.get("ylabel"):
+                        ylabel = str(cfg["ylabel"])
+                    else:
+                        ylabel = metric_clean_name
+                    plt.ylabel(ylabel)
+
+                    if isinstance(cfg.get("title"), dict):
+                        title = cfg["title"].get(metric, f"{display_name}: {metric_clean_name}")
+                    elif cfg.get("title"):
+                        try:
+                            title = str(cfg["title"]).format(
+                                exp_id=exp_id.upper(),
+                                display_name=display_name,
+                                method=method_name,
+                                metric=metric,
+                                clean_metric=metric_clean_name,
+                            )
+                        except Exception:
+                            title = str(cfg["title"])
+                    else:
+                        title = f"{display_name}: {metric_clean_name}"
+                    plt.title(title)
                     plt.grid(True, alpha=0.3)
                     plt.legend(loc="upper right")
                     plt.tight_layout()
@@ -128,6 +153,6 @@ class LossesPlotter(BasePlotter):
 
         # Also generate comparative plots across all methods in losses/
         loss_cfg = dict(cfg)
-        loss_cfg.setdefault("output_subdir", "losses")
+        loss_cfg.setdefault("output_subdir", subdir)
         loss_cfg.setdefault("filename_prefix", "comparison_")
         self.plot_metric_series(exp_id, group, output_dir, metrics, loss_cfg)

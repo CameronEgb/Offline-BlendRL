@@ -29,6 +29,7 @@ dash: false
 dash_only: false
 sweep: false
 remake: false
+use_cache: false
 
 # Default Slurm / Hardware Resources Schema
 resources:

@@ -8,4 +8,5 @@ plots:
 agreement_metric: "windowed_jaccard"
 window_hours: 3
 empty_union_score: 1.0
+use_cache: false
 
