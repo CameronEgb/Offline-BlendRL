@@ -1,11 +1,13 @@
-# BlendRL framework — composes sub-models with learned arbitration
+# BlendRL framework — composes symbolic and neural policy modules
 actor_mode: hybrid
-neural_actor: dnn
-symbolic_actor: nsfr
 blender:
   mode: neural
   blend_function: softmax
-modules:
-  - type: nsfr
-    rules: default
-  - type: neural
+
+neural:
+  type: dnn
+  hidden_sizes: [256, 256]
+
+symbolic:
+  type: nsfr
+  rules: default

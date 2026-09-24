@@ -26,7 +26,7 @@ for p in [
 import hydra
 from hydra import compose, initialize
 
-from src.app.pipeline.config import normalize_agent_name, resolve_experiment_config_name
+from src.app.pipeline.config import normalize_agent_name, parse_methods_dict, resolve_experiment_config_name
 from src.app.pipeline.datasets import run_plotting
 from src.app.pipeline.exceptions import ConfigurationError
 from src.app.pipeline.optuna_utils import launch_optuna_dashboard
@@ -166,11 +166,11 @@ def main():
         print("Error: Could not find Optuna storage URL in configuration.")
         sys.exit(1)
 
-    # Parse structured methods: dict
-    methods = cfg.get("methods", None)
-    if not methods:
+    # Parse structured methods: dict with shared params support
+    methods_dict = parse_methods_dict(cfg)
+    if not methods_dict:
         raise ConfigurationError(
-            f"[ConfigurationError] Experiment '{experiment_arg}' has no 'methods:' dict. "
+            f"[ConfigurationError] Experiment '{experiment_arg}' has no runnable methods declared under 'methods:'. "
             f"Declare methods as a dict with agent + model per entry."
         )
 
@@ -181,10 +181,6 @@ def main():
                 f"[ConfigurationError] Legacy key '{legacy_key}' found in config. "
                 f"Use the 'methods:' dict instead."
             )
-
-    # Convert OmegaConf to plain dict
-    from omegaconf import OmegaConf
-    methods_dict = OmegaConf.to_container(methods, resolve=True)
 
     print(f"Declared Methods:")
     for name, mcfg in methods_dict.items():

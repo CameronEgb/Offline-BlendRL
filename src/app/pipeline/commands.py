@@ -67,13 +67,16 @@ def build_method_overrides(
         f"model={model_arch}",
     ]
 
-    for k, v in model_subparams.items():
-        formatted_v = _format_hydra_val(v)
-        overrides.append(f"++model.{k}={formatted_v}")
+    def _flatten_overrides(prefix, d):
+        for k, v in d.items():
+            if isinstance(v, dict):
+                _flatten_overrides(f"{prefix}.{k}", v)
+            else:
+                formatted_v = _format_hydra_val(v)
+                overrides.append(f"++{prefix}.{k}={formatted_v}")
 
-    for k, v in agent_subparams.items():
-        formatted_v = _format_hydra_val(v)
-        overrides.append(f"++agent.{k}={formatted_v}")
+    _flatten_overrides("model", model_subparams)
+    _flatten_overrides("agent", agent_subparams)
 
     if paradigm == "supervised":
         overrides.append(f"++model.name={agent_name}")

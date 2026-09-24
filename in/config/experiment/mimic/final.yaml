@@ -55,12 +55,10 @@ methods:
     blend_q_values: true
   cql_blendrl_human_rigid:
     agent: cql
-    model: blendrl
-    rules: rigid
-    modules:
-      - type: nsfr
+    model:
+      name: blendrl
+      symbolic:
         rules: rigid
-      - type: neural
     epochs_per_interval: 25
     eval_interval_epochs: 2
     batch_size: 1024
@@ -75,15 +73,13 @@ methods:
     blend_q_values: true
   cql_blendrl_human_dueling_resnet_rigid:
     agent: cql
-    model: blendrl
-    neural_actor: dueling_resnet
-    architecture: dueling_resnet
-    hidden_sizes: [512, 512, 256, 128]
-    rules: rigid
-    modules:
-      - type: nsfr
+    model:
+      name: blendrl
+      neural:
+        type: dueling_resnet
+        hidden_sizes: [512, 512, 256, 128]
+      symbolic:
         rules: rigid
-      - type: neural
     epochs_per_interval: 25
     eval_interval_epochs: 2
     batch_size: 1024
@@ -98,18 +94,15 @@ methods:
     blend_q_values: true
   cql_blendrl_cew_dueling_resnet:
     agent: cql
-    model: blendrl
-    neural_actor: dueling_resnet
-    architecture: dueling_resnet
-    hidden_sizes: [512, 512, 256, 128]
-    symbolic_actor: cew
-    ecm_dthr: 0.03
-    fyd: false
-    modules:
-      - type: cew
-        fyd: false
+    model:
+      name: blendrl
+      neural:
+        type: dueling_resnet
+        hidden_sizes: [512, 512, 256, 128]
+      symbolic:
+        type: cew
         ecm_dthr: 0.03
-      - type: neural
+        fyd: false
     epochs_per_interval: 25
     eval_interval_epochs: 2
     batch_size: 1024

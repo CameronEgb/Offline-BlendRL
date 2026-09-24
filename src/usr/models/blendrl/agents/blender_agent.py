@@ -397,16 +397,48 @@ class BlenderActorCritic(nn.Module):
             obs = obs[0]
         neural_in_features = obs.shape[-1]
 
-        # 1. Parse modules from argument or config
+        def _get_val(obj, key, fallback=None):
+            if isinstance(obj, dict):
+                return obj.get(key, fallback)
+            return getattr(obj, key, fallback) if hasattr(obj, key) else fallback
+
+        # 1. Parse modules from argument, modules list, or hierarchical neural/symbolic blocks
         modules_list = modules if modules is not None else self.get_cfg("modules", None)
+        symbolic_cfg = self.get_cfg("symbolic", None)
+        neural_cfg = self.get_cfg("neural", None)
+
+        if modules_list is None and (symbolic_cfg is not None or neural_cfg is not None):
+            modules_list = []
+            if symbolic_cfg is not None:
+                if isinstance(symbolic_cfg, str):
+                    s_dict = {"type": self.reasoner or "nsfr", "rules": symbolic_cfg}
+                else:
+                    s_dict = dict(symbolic_cfg) if hasattr(symbolic_cfg, "items") else {}
+                    if "type" not in s_dict:
+                        s_dict["type"] = self.reasoner or "nsfr"
+                    if "rules" not in s_dict and s_dict["type"] in ("nsfr", "neumann"):
+                        s_dict["rules"] = self.get_cfg("rules", "default")
+                modules_list.append(s_dict)
+
+            if neural_cfg is not None:
+                if isinstance(neural_cfg, str):
+                    n_dict = {"module_type": "neural", "architecture": neural_cfg}
+                else:
+                    n_dict = dict(neural_cfg) if hasattr(neural_cfg, "items") else {}
+                    if "architecture" not in n_dict and "type" in n_dict:
+                        n_dict["architecture"] = n_dict["type"]
+                    n_dict["module_type"] = "neural"
+                modules_list.append(n_dict)
+
         self.module_cfgs = list(modules_list) if modules_list else []
 
+        blender_rules = None
         if modules_list:
             for m_cfg in modules_list:
-                m_type = m_cfg.type
+                m_type = _get_val(m_cfg, "module_type", _get_val(m_cfg, "type", "neural"))
                 if m_type == "nsfr" or m_type == "neumann":
-                    m_rules = m_cfg.rules
-                    if self.reasoner == "neumann":
+                    m_rules = _get_val(m_cfg, "rules", self.get_cfg("rules", "default"))
+                    if self.reasoner == "neumann" or m_type == "neumann":
                         from neumann.common import get_neumann_model
 
                         m = get_neumann_model(env.name, m_rules, device=device, train=True, explain=self.explain)
@@ -414,6 +446,8 @@ class BlenderActorCritic(nn.Module):
                         m = get_nsfr_model(env.name, m_rules, device=device, train=True, explain=self.explain)
                     self.policy_modules.append(m)
                     self.module_types.append("logic")
+                    if blender_rules is None:
+                        blender_rules = m_rules
                 elif m_type == "cew":
                     # Placeholder CEW module, will be self-organized later
                     # Determine input size from env
@@ -422,16 +456,21 @@ class BlenderActorCritic(nn.Module):
                     self.policy_modules.append(m)
                     self.module_types.append("cew")
                 elif m_type == "neural":
+                    arch = _get_val(m_cfg, "architecture", _get_val(m_cfg, "type", self.architecture))
+                    if arch == "neural" or not arch:
+                        arch = self.architecture or "dnn"
+                    m_hidden = _get_val(m_cfg, "hidden_sizes", hidden_sizes)
                     m = get_neural_agent(
                         env.name,
                         env.n_actions,
                         device,
-                        arch_name=self.architecture,
-                        hidden_sizes=hidden_sizes,
+                        arch_name=arch,
+                        hidden_sizes=m_hidden,
                         num_in_features=neural_in_features,
                     )
                     self.policy_modules.append(m)
                     self.module_types.append("neural")
+                    self.architecture = arch
         else:
             # Backward compatibility with 'rules' string
             if isinstance(rules, str) and "," in rules:
@@ -468,7 +507,8 @@ class BlenderActorCritic(nn.Module):
         out_size = len(self.policy_modules)
 
         # Use first logic module's rules for blender if logic-based
-        blender_rules = rulesets[0] if "rulesets" in locals() else (rules if isinstance(rules, str) else rules[0])
+        if blender_rules is None:
+            blender_rules = rulesets[0] if "rulesets" in locals() else (rules if isinstance(rules, str) else rules[0])
 
         self.blender = get_blender(
             env,
@@ -514,22 +554,47 @@ class BlenderActorCritic(nn.Module):
         )
 
     def get_cfg(self, key, default=None):
-        """Helper to get a config value from cfg.model, cfg.agent, or cfg."""
+        """Helper to get a config value from cfg.model, cfg.agent, or cfg (supports dot-paths)."""
         if self.cfg is None:
             return default
-        if hasattr(self.cfg, "model") and hasattr(self.cfg.model, key) and getattr(self.cfg.model, key) is not None:
-            return getattr(self.cfg.model, key)
-        if hasattr(self.cfg, "agent") and hasattr(self.cfg.agent, key) and getattr(self.cfg.agent, key) is not None:
-            return getattr(self.cfg.agent, key)
-        if hasattr(self.cfg, key) and getattr(self.cfg, key) is not None:
-            return getattr(self.cfg, key)
-        if isinstance(self.cfg, dict):
-            if "model" in self.cfg and isinstance(self.cfg["model"], dict) and key in self.cfg["model"]:
-                return self.cfg["model"][key]
-            if "agent" in self.cfg and isinstance(self.cfg["agent"], dict) and key in self.cfg["agent"]:
-                return self.cfg["agent"][key]
-            if key in self.cfg:
-                return self.cfg[key]
+
+        def _get_nested(root, k):
+            if root is None:
+                return None, False
+            if hasattr(root, k):
+                val = getattr(root, k)
+                if val is not None:
+                    return val, True
+            if isinstance(root, dict) and k in root:
+                return root[k], True
+            if "." in k:
+                parts = k.split(".")
+                curr = root
+                for p in parts:
+                    if curr is None:
+                        return None, False
+                    if hasattr(curr, p):
+                        curr = getattr(curr, p)
+                    elif isinstance(curr, dict) and p in curr:
+                        curr = curr[p]
+                    else:
+                        return None, False
+                return curr, True
+            return None, False
+
+        for ns in ["model", "agent"]:
+            if hasattr(self.cfg, ns):
+                val, found = _get_nested(getattr(self.cfg, ns), key)
+                if found:
+                    return val
+            elif isinstance(self.cfg, dict) and ns in self.cfg:
+                val, found = _get_nested(self.cfg[ns], key)
+                if found:
+                    return val
+
+        val, found = _get_nested(self.cfg, key)
+        if found:
+            return val
         return default
 
     def self_organize_cew_modules(self, dataset_sample_obs):
