@@ -6,14 +6,15 @@ import os
 from pathlib import Path
 import sys
 
-from PyQt6.QtCore import Qt, QTimer, QRegularExpression
-from PyQt6.QtGui import QAction, QFont, QRegularExpressionValidator
+from PyQt6.QtCore import Qt, QTimer, QRegularExpression, QUrl
+from PyQt6.QtGui import QAction, QFont, QRegularExpressionValidator, QDesktopServices
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QDockWidget, QTabWidget, QPlainTextEdit, QLineEdit, QComboBox, QSpinBox, QCheckBox,
     QDoubleSpinBox, QPushButton, QTreeWidget, QTreeWidgetItem, QToolBar,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
-    QProgressBar, QScrollArea, QFileDialog, QMessageBox, QDialog,
+    QProgressBar, QScrollArea, QFileDialog, QMessageBox, QDialog, QSplitter,
+    QFrame,
 )
 from .api import DEFAULT_URL, Backend
 from .model import (BASE_EXPERIMENT, FINAL_STATUSES, LIVE_STATUSES, Config, Store, available_metrics, example_runs,
@@ -21,7 +22,7 @@ from .model import (BASE_EXPERIMENT, FINAL_STATUSES, LIVE_STATUSES, Config, Stor
 from .theme import STYLE, ThemeManager, theme_color
 from .theme_builder import ThemeBuilder
 from .widgets import Chart, MetricCard, YamlHighlighter, label
-from .about import AboutDialog
+from .about import AboutDialog, AsciiTheta
 from .plots import PlotViewer
 from .queue_panel import QueuePanel
 from .sidetabs import SideTabs
@@ -75,11 +76,8 @@ class Window(QMainWindow):
         self.queue_busy = False
         self.issued_ids = set()
         self.queue_running = False
-        self.make_toolbar()
-        self.make_center()
-        self.make_explorer()
         self.make_inspector()
-        self.make_console()
+        self.make_center()
         self.make_menus()
         self.theme_status = label("", "muted")
         self.statusBar().addWidget(self.theme_status)
@@ -101,8 +99,6 @@ class Window(QMainWindow):
             self.log(error)
         if self.theme_manager.error:
             self.log(self.theme_manager.error)
-        self.resizeDocks([self.explorer_dock, self.inspector_dock], [230, 340], Qt.Orientation.Horizontal)
-        self.resizeDocks([self.console_dock], [170], Qt.Orientation.Vertical)
         self.default_layout = self.saveState()
 
     def button(self, text, callback, primary=False):
@@ -112,35 +108,9 @@ class Window(QMainWindow):
         button.clicked.connect(callback)
         return button
 
-    def make_toolbar(self):
-        toolbar = QToolBar("Workspace")
-        toolbar.setMovable(False)
-        self.addToolBar(toolbar)
-        toolbar.addWidget(label("θ  ThetaIDE", "brand"))
-        toolbar.addWidget(label("RESEARCH WORKSPACE", "muted"))
-        toolbar.addSeparator()
-        toolbar.addWidget(self.button("+  New experiment", self.new_experiment))
-        self.start_button = self.button("▶  Launch training", self.launch_training, True)
-        self.start_button.setToolTip("Train the builder's config on this machine through the backend (F5)")
-        self.start_button.setEnabled(False)
-        toolbar.addWidget(self.start_button)
-        self.queue_button = self.button("＋  Add to queue", self.add_to_queue)
-        self.queue_button.setToolTip("Queue the builder's config; queued jobs train one at a time, in order "
-                                     "(Ctrl+Shift+Q)")
-        self.queue_button.setEnabled(False)
-        toolbar.addWidget(self.queue_button)
-        self.stop_button = self.button("■  Stop", self.stop_run)
-        self.stop_button.setEnabled(False)
-        toolbar.addWidget(self.stop_button)
-        spacer = QWidget()
-        spacer.setObjectName("toolbarSpacer")
-        from PyQt6.QtWidgets import QSizePolicy
-        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        toolbar.addWidget(spacer)
-        toolbar.addWidget(label("FRONTEND PREVIEW", "badge"))
-
     def make_center(self):
         self.tabs = SideTabs()
+        self.tabs.logoClicked.connect(self.show_about)
         self.setCentralWidget(self.tabs)
         monitor = QWidget()
         layout = QVBoxLayout(monitor)
@@ -211,8 +181,50 @@ class Window(QMainWindow):
         results_layout.addLayout(actions)
         self.tabs.addTab(results, "Results browser", "results", "Results")
 
-        preview = QWidget()
-        preview_layout = QVBoxLayout(preview)
+        config_panel = QWidget()
+        config_layout = QVBoxLayout(config_panel)
+        config_layout.setContentsMargins(18, 14, 18, 14)
+        config_layout.setSpacing(10)
+
+        actions_bar = QHBoxLayout()
+        actions_bar.setSpacing(8)
+        actions_bar.addWidget(self.button("+  New experiment", self.new_experiment))
+        self.start_button = self.button("▶  Launch training", self.launch_training, True)
+        self.start_button.setToolTip("Train the builder's config on this machine through the backend (F5)")
+        self.start_button.setEnabled(False)
+        actions_bar.addWidget(self.start_button)
+        self.queue_button = self.button("＋  Add to queue", self.add_to_queue)
+        self.queue_button.setToolTip("Queue the builder's config; queued jobs train one at a time, in order "
+                                     "(Ctrl+Shift+Q)")
+        self.queue_button.setEnabled(False)
+        actions_bar.addWidget(self.queue_button)
+        self.stop_button = self.button("■  Stop", self.stop_run)
+        self.stop_button.setEnabled(False)
+        actions_bar.addWidget(self.stop_button)
+        actions_bar.addWidget(self.button("Export recipe YAML…", self.export_config))
+        actions_bar.addStretch()
+        config_layout.addLayout(actions_bar)
+
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+
+        tree_panel = QWidget()
+        tree_layout = QVBoxLayout(tree_panel)
+        tree_layout.setContentsMargins(0, 0, 0, 0)
+        tree_layout.setSpacing(6)
+        tree_layout.addWidget(label("THETA / WORKSPACE", "eyebrow"))
+        self.tree = QTreeWidget()
+        self.tree.setHeaderHidden(True)
+        self.tree.setIndentation(14)
+        self.tree.itemClicked.connect(self.tree_selected)
+        tree_layout.addWidget(self.tree, 1)
+        tree_layout.addWidget(label("●  Run records stay local", "muted"))
+        splitter.addWidget(tree_panel)
+        splitter.addWidget(self.inspector_tabs)
+
+        preview_panel = QWidget()
+        preview_layout = QVBoxLayout(preview_panel)
+        preview_layout.setContentsMargins(0, 0, 0, 0)
+        preview_layout.setSpacing(6)
         self.preview_status = label("Resolved config • waiting for backend", "muted")
         preview_layout.addWidget(self.preview_status)
         self.preview_errors = label("", "configError")
@@ -223,15 +235,22 @@ class Window(QMainWindow):
         self.preview = QPlainTextEdit()
         self.preview.setReadOnly(True)
         self.highlighter = YamlHighlighter(self.preview.document())
-        preview_layout.addWidget(self.preview)
-        preview_layout.addWidget(self.button("Export recipe YAML…", self.export_config))
-        self.tabs.addTab(preview, "config.yaml", "config", "Config")
+        preview_layout.addWidget(self.preview, 1)
+        splitter.addWidget(preview_panel)
+
+        splitter.setSizes([200, 360, 480])
+        config_layout.addWidget(splitter, 1)
+        self.tabs.addTab(config_panel, "Experiment", "config", "Experiment")
         self.plot_viewer = PlotViewer()
         self.tabs.addTab(self.plot_viewer, "Plot viewer", "plots", "Plots")
         self.tensorboard_panel = TensorBoardPanel(self.backend, self.log)
         self.tabs.addTab(self.tensorboard_panel, "TensorBoard", "tensorboard", "TensorBoard")
         self.queue_panel = QueuePanel(self.move_queued, self.remove_queued, self.open_job, self.set_queue_running)
         self.tabs.addTab(self.queue_panel, "Job queue", "queue", "Queue")
+        self.console_panel = self.make_console()
+        self.tabs.addTab(self.console_panel, "Console", "console", "Console")
+        self.settings_panel = self.make_settings()
+        self.tabs.set_settings_widget(self.settings_panel)
         self.tabs.currentChanged.connect(self.tab_changed)
 
     def dock(self, title, name, widget, area):
@@ -240,19 +259,6 @@ class Window(QMainWindow):
         dock.setWidget(widget)
         self.addDockWidget(area, dock)
         return dock
-
-    def make_explorer(self):
-        panel = QWidget()
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(10, 12, 10, 8)
-        layout.addWidget(label("THETA / LOCAL", "eyebrow"))
-        self.tree = QTreeWidget()
-        self.tree.setHeaderHidden(True)
-        self.tree.setIndentation(14)
-        self.tree.itemClicked.connect(self.tree_selected)
-        layout.addWidget(self.tree)
-        layout.addWidget(label("●  Run records stay local", "muted"))
-        self.explorer_dock = self.dock("Workspace", "explorer", panel, Qt.DockWidgetArea.LeftDockWidgetArea)
 
     def make_inspector(self):
         self.inspector_tabs = QTabWidget()
@@ -316,7 +322,6 @@ class Window(QMainWindow):
         self.builder_status.setWordWrap(True)
         layout.addWidget(self.builder_status)
         layout.addWidget(label("Trains locally  /  ≈ 30 s for 20k steps on CPU", "badge"))
-        layout.addWidget(self.button("Preview config  →", lambda: self.tabs.setCurrentIndex(2)))
         layout.addStretch()
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -335,9 +340,7 @@ class Window(QMainWindow):
         notes_layout.addWidget(self.note_status)
         notes_layout.addWidget(self.button("Save notes", self.save_notes))
         self.inspector_tabs.addTab(notes, "Notes")
-        self.inspector_dock = self.dock("Experiment", "inspector", self.inspector_tabs,
-                                        Qt.DockWidgetArea.RightDockWidgetArea)
-        self.inspector_dock.setMinimumWidth(300)
+        self.inspector_tabs.setMinimumWidth(320)
         self.name.textChanged.connect(self.update_config)
         self.batch.currentTextChanged.connect(self.update_config)
         for field in (self.seed, self.steps, self.lr, self.gamma):
@@ -348,16 +351,218 @@ class Window(QMainWindow):
     def make_console(self):
         panel = QWidget()
         layout = QVBoxLayout(panel)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(18, 16, 18, 14)
+        layout.setSpacing(10)
+
         self.console = QPlainTextEdit()
         self.console.setReadOnly(True)
-        self.console.setMaximumBlockCount(1000)
-        layout.addWidget(self.console)
+        self.console.setMaximumBlockCount(2000)
+
+        header = QHBoxLayout()
+        header.addWidget(label("CONSOLE / SYSTEM OUTPUT", "eyebrow"))
+        header.addStretch()
+        header.addWidget(self.button("Clear output", self.console.clear))
+        layout.addLayout(header)
+
+        layout.addWidget(self.console, 1)
+
         self.command = QLineEdit()
         self.command.setPlaceholderText("Console › help, status, config, clear (not a system shell)")
         self.command.returnPressed.connect(self.console_command)
         layout.addWidget(self.command)
-        self.console_dock = self.dock("Console", "console", panel, Qt.DockWidgetArea.BottomDockWidgetArea)
+        return panel
+
+    def make_settings(self):
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(20, 18, 20, 18)
+        layout.setSpacing(14)
+
+        layout.addWidget(label("WORKSPACE & PREFERENCES", "eyebrow"))
+        layout.addWidget(label("Settings & About", "heading"))
+        layout.addWidget(label("Configure visual themes, backend connectivity, workspace storage, and quick commands.", "muted"))
+
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.setChildrenCollapsible(False)
+
+        # Left Column: Settings Cards
+        left_container = QWidget()
+        left_layout = QVBoxLayout(left_container)
+        left_layout.setContentsMargins(0, 0, 10, 0)
+        left_layout.setSpacing(14)
+
+        # Card 1: Appearance & Theme
+        theme_card = QFrame()
+        theme_card.setObjectName("card")
+        tc_layout = QVBoxLayout(theme_card)
+        tc_layout.setContentsMargins(14, 12, 14, 12)
+        tc_layout.setSpacing(10)
+        tc_layout.addWidget(label("APPEARANCE", "eyebrow"))
+        tc_layout.addWidget(label("Theme & Palette", "heading"))
+        tc_layout.addWidget(label("Select a color palette or customize individual UI roles.", "muted"))
+        theme_row = QHBoxLayout()
+        theme_row.addWidget(label("Active theme:", "muted"))
+        self.settings_theme_select = QComboBox()
+        for name in self.theme_manager.themes():
+            self.settings_theme_select.addItem(name)
+        self.settings_theme_select.setCurrentText(self.theme_manager.active["name"])
+        self.settings_theme_select.currentTextChanged.connect(self.settings_theme_selected)
+        theme_row.addWidget(self.settings_theme_select, 1)
+        btn_builder = QPushButton("Customize palette…")
+        btn_builder.clicked.connect(self.show_theme_builder)
+        theme_row.addWidget(btn_builder)
+        tc_layout.addLayout(theme_row)
+        left_layout.addWidget(theme_card)
+
+        # Card 2: Backend API Connection
+        backend_card = QFrame()
+        backend_card.setObjectName("card")
+        bc_layout = QVBoxLayout(backend_card)
+        bc_layout.setContentsMargins(14, 12, 14, 12)
+        bc_layout.setSpacing(10)
+        bc_layout.addWidget(label("BACKEND SERVICES", "eyebrow"))
+        bc_layout.addWidget(label("NeSyRL API & Training Engine", "heading"))
+        bc_layout.addWidget(label("Connects to the FastAPI backend managing training runs and pipelines.", "muted"))
+        url_row = QHBoxLayout()
+        url_row.addWidget(label("API URL:", "muted"))
+        self.settings_backend_url = QLineEdit(self.backend.base_url)
+        self.settings_backend_url.setReadOnly(True)
+        url_row.addWidget(self.settings_backend_url, 1)
+        btn_test = QPushButton("Test connection")
+        btn_test.clicked.connect(self.test_backend_connection)
+        url_row.addWidget(btn_test)
+        btn_docs = QPushButton("Swagger docs ↗")
+        btn_docs.clicked.connect(self.open_swagger_docs)
+        url_row.addWidget(btn_docs)
+        bc_layout.addLayout(url_row)
+        self.settings_backend_status = label("Status: Checking connection…", "muted")
+        bc_layout.addWidget(self.settings_backend_status)
+        left_layout.addWidget(backend_card)
+
+        # Card 3: Storage & Workspace
+        storage_card = QFrame()
+        storage_card.setObjectName("card")
+        sc_layout = QVBoxLayout(storage_card)
+        sc_layout.setContentsMargins(14, 12, 14, 12)
+        sc_layout.setSpacing(10)
+        sc_layout.addWidget(label("LOCAL STORAGE", "eyebrow"))
+        sc_layout.addWidget(label("Workspace & Cache", "heading"))
+        sc_layout.addWidget(label(f"Data root:  {self.store.root}", "muted"))
+        self.settings_runs_count_label = label(f"Total run records:  {len(self.runs)} runs", "muted")
+        sc_layout.addWidget(self.settings_runs_count_label)
+        btn_row = QHBoxLayout()
+        btn_reset_layout = QPushButton("Reset UI layout")
+        btn_reset_layout.setToolTip("Restore default pane sizes and layout")
+        btn_reset_layout.clicked.connect(lambda: (self.restoreState(self.default_layout), self.statusBar().showMessage("Restored default UI layout.", 4000)))
+        btn_row.addWidget(btn_reset_layout)
+        btn_row.addStretch()
+        sc_layout.addLayout(btn_row)
+        left_layout.addWidget(storage_card)
+
+        # Card 4: Quick Console Commands (Boilerplate commands)
+        cmd_card = QFrame()
+        cmd_card.setObjectName("card")
+        cc_layout = QVBoxLayout(cmd_card)
+        cc_layout.setContentsMargins(14, 12, 14, 12)
+        cc_layout.setSpacing(10)
+        cc_layout.addWidget(label("QUICK ACTIONS", "eyebrow"))
+        cc_layout.addWidget(label("Console Commands", "heading"))
+        cc_layout.addWidget(label("Execute boilerplate commands in the Theta console:", "muted"))
+        cmd_row = QHBoxLayout()
+        for cmd_name, desc in (
+            ("status", "Show active training and run summary"),
+            ("config", "Show pipeline config command"),
+            ("help", "List available console commands"),
+            ("clear", "Clear console output buffer"),
+        ):
+            btn = QPushButton(f"› {cmd_name}")
+            btn.setToolTip(desc)
+            btn.clicked.connect(lambda _, c=cmd_name: self.run_quick_command(c))
+            cmd_row.addWidget(btn)
+        cc_layout.addLayout(cmd_row)
+        left_layout.addWidget(cmd_card)
+        left_layout.addStretch()
+
+        left_scroll = QScrollArea()
+        left_scroll.setWidgetResizable(True)
+        left_scroll.setWidget(left_container)
+        left_scroll.setFrameShape(QFrame.Shape.NoFrame)
+
+        # Right Column: About ThetaIDE & ASCII Sculpture
+        right_card = QFrame()
+        right_card.setObjectName("card")
+        rc_layout = QVBoxLayout(right_card)
+        rc_layout.setContentsMargins(16, 14, 16, 14)
+        rc_layout.setSpacing(10)
+        rc_layout.addWidget(label("ABOUT THETA-IDE", "eyebrow"))
+        title_row = QHBoxLayout()
+        title_row.addWidget(label("ThetaIDE", "heading"))
+        badge = label("v0.1.0-alpha", "badge")
+        title_row.addWidget(badge)
+        title_row.addStretch()
+        rc_layout.addLayout(title_row)
+        desc = label("Neuro-symbolic reinforcement learning research studio.\n"
+                     "Jointly configure, inspect, and evaluate hybrid logic-neural agents "
+                     "with live monitoring and experiment comparison.", "muted")
+        desc.setWordWrap(True)
+        rc_layout.addWidget(desc)
+
+        self.settings_ascii = AsciiTheta(right_card)
+        rc_layout.addWidget(self.settings_ascii, 1)
+
+        anim_row = QHBoxLayout()
+        self.anim_toggle_btn = QPushButton("Pause animation")
+        self.anim_toggle_btn.setCheckable(True)
+        self.anim_toggle_btn.toggled.connect(self.toggle_ascii_animation)
+        anim_row.addWidget(self.anim_toggle_btn)
+        anim_row.addStretch()
+        anim_row.addWidget(label("3D Software-Rendered ASCII Sculpture", "muted"))
+        rc_layout.addLayout(anim_row)
+
+        splitter.addWidget(left_scroll)
+        splitter.addWidget(right_card)
+        splitter.setSizes([520, 500])
+
+        layout.addWidget(splitter, 1)
+        return panel
+
+    def settings_theme_selected(self, theme_name):
+        if theme_name and theme_name != self.theme_manager.active["name"]:
+            theme = self.theme_manager.themes().get(theme_name)
+            if theme:
+                self.select_theme(theme)
+
+    def test_backend_connection(self):
+        if hasattr(self, "settings_backend_status"):
+            self.settings_backend_status.setText("Status: Testing connection…")
+            self.settings_backend_status.setStyleSheet("")
+            self.backend.get("/api/health", self.backend_health_callback)
+
+    def backend_health_callback(self, data, error):
+        if not hasattr(self, "settings_backend_status"):
+            return
+        if error:
+            self.settings_backend_status.setText(f"Status: Disconnected ({error})")
+            self.settings_backend_status.setStyleSheet("color: #fb4934;")
+        else:
+            status_text = data.get("status", "ok") if isinstance(data, dict) else "ok"
+            self.settings_backend_status.setText(f"Status: Connected (Server status: {status_text})")
+            self.settings_backend_status.setStyleSheet(f"color: {theme_color('primary')};")
+
+    def open_swagger_docs(self):
+        docs_url = f"{self.backend.base_url.rstrip('/')}/docs"
+        QDesktopServices.openUrl(QUrl(docs_url))
+
+    def run_quick_command(self, command):
+        self.command.setText(command)
+        self.console_command()
+        self.tabs.setCurrentWidget(self.console_panel)
+
+    def toggle_ascii_animation(self, paused):
+        if hasattr(self, "settings_ascii"):
+            self.settings_ascii.set_paused(paused)
+        if hasattr(self, "anim_toggle_btn"):
+            self.anim_toggle_btn.setText("Resume animation" if paused else "Pause animation")
 
     def make_menus(self):
         file_menu = self.menuBar().addMenu("File")
@@ -384,13 +589,14 @@ class Window(QMainWindow):
         self.themes_menu = view_menu.addMenu("Themes")
         self.themes_menu.aboutToShow.connect(self.populate_themes_menu)
         view_menu.addAction("Theme builder…", self.show_theme_builder)
+        view_menu.addAction("Experiment builder", lambda: self.tabs.setCurrentIndex(2))
         view_menu.addAction("Plot viewer", lambda: self.tabs.setCurrentWidget(self.plot_viewer))
         view_menu.addAction("TensorBoard", self.show_tensorboard)
-        for dock in (self.explorer_dock, self.inspector_dock, self.console_dock):
-            view_menu.addAction(dock.toggleViewAction())
+        view_menu.addAction("Console", lambda: self.tabs.setCurrentWidget(self.console_panel))
+        view_menu.addAction("Settings & About", lambda: self.tabs.setCurrentWidget(self.settings_panel))
         view_menu.addAction("Restore default layout", lambda: self.restoreState(self.default_layout))
         help_menu = self.menuBar().addMenu("Help")
-        help_menu.addAction("About this prototype", self.show_about)
+        help_menu.addAction("Settings & About", self.show_about)
 
     def show_tensorboard(self):
         self.tabs.setCurrentWidget(self.tensorboard_panel)
@@ -401,16 +607,31 @@ class Window(QMainWindow):
         if self.tabs.widget(index) is self.queue_panel:
             self.poll_queue()
             self.queue_timer.start()
+        if hasattr(self, "console_panel") and self.tabs.widget(index) is self.console_panel:
+            self.command.setFocus()
+        if hasattr(self, "settings_panel") and self.tabs.widget(index) is self.settings_panel:
+            self.test_backend_connection()
 
     def show_about(self):
-        dialog = AboutDialog(self)
-        dialog.exec()
-        dialog.deleteLater()
+        if hasattr(self, "settings_panel"):
+            self.tabs.setCurrentWidget(self.settings_panel)
+        else:
+            dialog = AboutDialog(self)
+            dialog.exec()
+            dialog.deleteLater()
 
     def theme_changed(self):
         self.theme_status.setText(f"  ●  Local workspace    /    {self.theme_manager.active['name']}")
         self.highlighter.rehighlight()
         self.tabs.refresh_icons()
+        if hasattr(self, "settings_theme_select"):
+            self.settings_theme_select.blockSignals(True)
+            self.settings_theme_select.setCurrentText(self.theme_manager.active["name"])
+            self.settings_theme_select.blockSignals(False)
+        if hasattr(self, "settings_ascii"):
+            self.settings_ascii.update()
+        if hasattr(self, "settings_backend_status"):
+            self.test_backend_connection()
 
     def populate_themes_menu(self):
         self.themes_menu.clear()
@@ -561,7 +782,7 @@ class Window(QMainWindow):
     def new_experiment(self):
         self.set_config(Config(name="cartpole_ppo_experiment"))
         self.inspector_tabs.setCurrentIndex(0)
-        self.inspector_dock.show()
+        self.tabs.setCurrentIndex(2)
         self.name.setFocus()
         self.name.selectAll()
 
@@ -1023,6 +1244,8 @@ class Window(QMainWindow):
 
     def refresh_runs(self, *_):
         self.plot_viewer.update_runs(self.runs)
+        if hasattr(self, "settings_runs_count_label"):
+            self.settings_runs_count_label.setText(f"Total run records:  {len(self.runs)} runs")
         query = self.search.text().lower()
         self.table.blockSignals(True)
         self.table.setRowCount(0)
@@ -1094,7 +1317,6 @@ class Window(QMainWindow):
         run = self.by_id(self.table.item(rows[0].row(), 0).data(Qt.ItemDataRole.UserRole))
         self.set_config(Config(**run["config"]))
         self.inspector_tabs.setCurrentIndex(0)
-        self.inspector_dock.show()
         self.tabs.setCurrentIndex(2)
         self.log(f"Loaded exact configuration from {run['id']}. Launch to create a new run.")
 

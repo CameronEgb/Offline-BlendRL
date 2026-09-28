@@ -130,6 +130,9 @@ QWidget#sideTabs { background: #282828; border-right: 1px solid #504945; min-wid
 QToolButton#sideTab { background: transparent; border: 0; border-radius: 6px; padding: 7px 0 5px 0; color: #a89984; font-size: 10px; }
 QToolButton#sideTab:hover { background: #32302f; color: #ebdbb2; }
 QToolButton#sideTab:checked { background: #3c3836; color: #fabd2f; }
+QToolButton#sideTabLogo { background: transparent; border: 0; border-radius: 6px; padding: 6px 0; margin-bottom: 2px; }
+QToolButton#sideTabLogo:hover { background: #32302f; }
+QToolButton#sideTabLogo:checked { background: #3c3836; border: 1px solid #504945; }
 QLabel#configOk { color: #b8bb26; }
 QLabel#configError { color: #d79921; }
 """
