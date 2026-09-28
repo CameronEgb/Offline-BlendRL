@@ -44,11 +44,11 @@ Because `results/` and `in/datasets/` are `.gitignore`d to prevent committing la
 
 ## 2. Launching the Backend API Server
 
-The backend exposes a lightweight FastAPI service located in `src/api/app.py`.
+The backend exposes a lightweight FastAPI service located in `src/app/api/app.py`.
 
 ```bash
 # Start API server on localhost:8000 with hot-reloading
-uvicorn src.api.app:app --reload --host 127.0.0.1 --port 8000
+uvicorn src.app.api.app:app --reload --host 127.0.0.1 --port 8000
 ```
 
 Once running:
@@ -113,39 +113,110 @@ Once running:
     }
     ```
 
+* **`GET /api/config/schema`**
+  * **Description:** Describes the fields of the ThetaIDE experiment builder (currently CartPole/PPO). Defaults come from composing the builder's base recipe `thetaide/_base`, so the GUI never keeps its own copy of backend defaults. Each field's `key` is the Hydra override path it sets.
+  * **Response:**
+    ```json
+    {
+      "base_experiment": "thetaide/_base",
+      "paradigm": "online_rl",
+      "environment": {"name": "cartpole", "env_id": "CartPole-v1"},
+      "method": {"name": "ppo", "agent": "ppo", "model": "dnn"},
+      "fixed_overrides": ["++methods.ppo.agent=ppo", "++methods.ppo.model=dnn"],
+      "fields": [
+        {"key": "methods.ppo.lr", "label": "Learning rate", "type": "float", "default": 0.0003,
+         "min": 1e-06, "max": 1.0, "step": 0.0001, "help": "Adam learning rate for the PPO policy."}
+      ]
+    }
+    ```
+
+* **`POST /api/config/compose`**
+  * **Description:** Composes and validates an experiment exactly as `run_pipeline.py` would (both use `src/app/pipeline/compose.py`), without running it. Invalid configs still return HTTP 200 with `valid: false`; each error's `stage` is `compose` (unknown recipe or bad override), `validation` (paradigm checks) or `methods` (method parsing).
+  * **Request Body:**
+    ```json
+    {"experiment": "thetaide/_base", "overrides": ["seed=7", "++methods.ppo.agent=ppo", "++methods.ppo.model=dnn", "++methods.ppo.lr=0.001"]}
+    ```
+  * **Response:**
+    ```json
+    {
+      "valid": true,
+      "experiment": "thetaide/_base",
+      "argv": ["python", "run_pipeline.py", "thetaide/_base", "seed=7", "..."],
+      "config": {"seed": 7, "agent": {"lr": 0.0003, "...": "..."}, "methods": {"ppo": {"lr": 0.001, "...": "..."}}},
+      "config_yaml": "...",
+      "methods": {"ppo": {"settings": {"agent": "ppo", "model": "dnn", "lr": 0.001}, "train_overrides": ["...", "++agent.lr=0.001"]}},
+      "methods_yaml": "...",
+      "notices": [],
+      "errors": []
+    }
+    ```
+    `config` is the composed config; per-method values only reach `agent.*` in each method's `train_overrides`, which are the exact arguments its training subprocess receives.
+
 ---
 
 ### 3.3 Execution & Job Control (Training Monitor Panel)
 
 * **`POST /api/experiments/launch`**
-  * **Description:** Asynchronously spawns an experiment in a background worker thread using `run_pipeline.py`.
+  * **Description:** Composes and validates the experiment exactly as `run_pipeline.py` will, then runs `run_pipeline.py` in the background. Output is unbuffered, so logs stream live. The job records where its metrics will appear.
   * **Request Body:**
     ```json
-    {
-      "experiment": "cartpole/cp_final",
-      "overrides": ["total_timesteps=2000", "intervals_count=2", "site=local"]
-    }
+    {"experiment": "thetaide/_base", "overrides": ["++experiment_id='my_run'", "total_timesteps=20000", "++methods.ppo.agent=ppo", "++methods.ppo.model=dnn"], "overwrite": false}
     ```
+  * **Errors:**
+    * `422`: the config does not compose or validate. `detail` holds the message.
+    * `409`: `results/logs/<group>/<experiment_id>/` already has results, and the pipeline would purge them. Choose another `experiment_id` or pass `"overwrite": true`.
   * **Response:**
     ```json
-    {
-      "job_id": "4b68e7b9-1f48-43d7-832f-488cb8e02d31",
-      "status": "pending"
-    }
+    {"job_id": "cc912a03-…", "status": "pending", "experiment": "thetaide/_base", "group": "thetaide",
+     "experiment_id": "my_run", "agents": ["ppo"], "total_timesteps": 20000, "created": 1790000000.0, "request": {"…": "…"}}
     ```
 
-* **`GET /api/experiments/{job_id}/status`**
-  * **Description:** Queries the status of an active or finished job, including the tail of standard output.
+* **`GET /api/experiments/{job_id}/status?since=N`**
+  * **Description:** Job state plus the pipeline's output lines after line `N` (0-based, counted from job start). Pass the previous `log_total` as `since` to receive only new lines. The full log is also written to `results/jobs/<job_id>.log`.
   * **Response:**
     ```json
-    {
-      "status": "running",
-      "pid": 48210,
-      "stdout": "... [Epoch 1/5] eval/reward = 195.4 ...",
-      "returncode": null
-    }
+    {"status": "running", "pid": 48210, "returncode": null, "log": ["Evaluation at 5000 transitions: Avg Reward = 30.49 (+/- 14.79)"],
+     "log_total": 131, "stdout": "…last lines…", "group": "thetaide", "experiment_id": "my_run", "agents": ["ppo"]}
     ```
-  * *Possible Status Values:* `"pending"`, `"running"`, `"completed"`, `"failed"`, `"error"`.
+  * *Status values:* `"pending"`, `"running"`, `"completed"`, `"failed"`, `"cancelled"`, `"error"`.
+
+* **`GET /api/experiments/{job_id}/metrics?since=N`**
+  * **Description:** Numeric rows from each agent's newest `results/logs/<group>/<experiment_id>/<agent>/version_N/metrics.csv`, read live while training. It returns rows after index `N`. A line still being written is skipped. If Lightning rewrote the file with fewer rows, `reset` is `true` and all rows are returned. Evaluation rows carry `eval/reward` and training rows carry `losses/*`, both keyed by `transitions`.
+  * **Response:**
+    ```json
+    {"job_id": "…", "status": "running", "agents": {"ppo": {"source": "results/logs/thetaide/my_run/ppo/version_0/metrics.csv",
+      "total": 42, "reset": false, "rows": [{"eval/reward": 30.49, "transitions": 5000.0, "step": 16.0}]}}}
+    ```
+
+* **`GET /api/experiments/jobs`**
+  * **Description:** Lists the jobs this server process knows about. Jobs are held in memory, so restarting the API forgets them. Their logs and metrics stay on disk.
+
+* **`POST /api/experiments/{job_id}/cancel`**
+  * **Description:** Stops a pending or running job. A job that has not started never spawns. A running job has its whole process tree terminated: the pipeline plus the `train.py` and plotting subprocesses it started (`taskkill /T` on Windows, process-group `SIGTERM` elsewhere).
+  * **Response:** `{"job_id": "…", "status": "cancelled"}`, or `{"status": "completed", "message": "Job is already completed"}` for a finished job.
+
+---
+
+### 3.3b Job queue (Queue tab)
+
+Launching with `"queue": true` adds a job to a first-in, first-out queue instead of starting it immediately. It is validated exactly as a direct launch is (422 and 409 as described above). Queued jobs do not start until the queue is started with `POST /api/queue/start`. While started, a background worker starts the next queued job only when no job is pending or running, including jobs launched directly, so queued jobs train one at a time, in order. Once the queue has drained and its last job has finished, it pauses itself, so jobs added later wait for the next start. The queue lives in the API process: it keeps running when GUI clients close, and it is lost if the API restarts. A launch or enqueue whose `group/experiment_id` is already used by a queued, pending or running job returns `409`.
+
+* **`POST /api/experiments/launch`** with `{"experiment": "...", "overrides": [...], "queue": true}` returns the job with `"status": "queued"`, its 0-based `position` and `queue_running`.
+* **`POST /api/queue/start`** starts the queue and returns `{"running": true, "queued": N}`. Starting an empty queue leaves it paused (`"running": false`).
+* **`POST /api/queue/pause`** stops new jobs from starting. A job that is already training keeps running.
+* **`GET /api/queue`** returns `{"running": false, "active": [...], "queued": [...], "finished": [...]}`. `queued` is in run order, and each entry has a `position`; `finished` holds the ten most recent finished jobs. Jobs carry `created`, `started` and `finished` timestamps.
+* **`POST /api/queue/{job_id}/move`** with `{"position": 0}` moves a queued job. The position is clamped to the queue's length. Returns `409` if the job is not queued.
+* **`POST /api/experiments/{job_id}/cancel`** on a queued job removes it from the queue. It never starts, and its status becomes `cancelled`.
+
+---
+
+### 3.3a TensorBoard (TensorBoard tab)
+
+The API manages a single local TensorBoard server over `results/tensorboard/`. Runs write there when launched with `tensorboard=true`, which `thetaide/_base` sets by default. The server binds to 127.0.0.1 on a free port. Its output goes to `results/jobs/tensorboard.log`, and it is stopped when the API exits normally.
+
+* **`GET /api/tensorboard`**: `{"available": true, "running": true, "ready": true, "url": "http://127.0.0.1:55860/", "logdir": "results/tensorboard", "pid": 1234}`. `ready` becomes true when the server answers, about a second after start. After an unexpected exit, `exit_code` and `error` (the tail of its output) are included.
+* **`POST /api/tensorboard/start`**: starts the server if it isn't running and returns immediately with the same shape. Poll `GET` until `ready`. Returns `503` if TensorBoard isn't installed in the backend environment.
+* **`POST /api/tensorboard/stop`**: stops the server and its child processes.
 
 ---
 

@@ -78,13 +78,29 @@ class EnvironmentEvaluatorCallback(L.Callback):
         if pl_module.cfg.paradigm == "offline_rl":
             metrics["epoch"] = float(pl_module.current_epoch)
 
-        log_step = trainer.global_step if hasattr(trainer, "global_step") else int(transitions)
-        trainer.logger.log_metrics(metrics, step=log_step)
+        log_step = self._lightning_log_step(trainer, transitions)
+        # trainer.logger is only the first logger when several are configured (CSV, then TensorBoard)
+        for logger in trainer.loggers:
+            logger.log_metrics(metrics, step=log_step)
 
         pl_module.log("eval/reward", avg_reward, prog_bar=True, on_step=False, on_epoch=True)
         pl_module.log("transitions", float(transitions), logger=False, prog_bar=True)
 
         print(f"Evaluation at {transitions} transitions: Avg Reward = {avg_reward} (+/- {std_reward})")
+
+    @staticmethod
+    def _lightning_log_step(trainer, transitions):
+        """The step Lightning itself uses for this epoch's logs, so evaluation lines up with losses.
+
+        Lightning logs against fit_loop.epoch_loop._batches_that_stepped (one per training batch)
+        and writes end-of-epoch metrics one below it; global_step counts optimizer steps instead,
+        which PPO takes several of per batch. The attribute is private, hence the fallbacks.
+        """
+        epoch_loop = getattr(getattr(trainer, "fit_loop", None), "epoch_loop", None)
+        batches = getattr(epoch_loop, "_batches_that_stepped", None)
+        if isinstance(batches, int):
+            return max(0, batches - 1)
+        return trainer.global_step if hasattr(trainer, "global_step") else int(transitions)
 
     def evaluate(self, trainer, pl_module):
         cfg = self.cfg

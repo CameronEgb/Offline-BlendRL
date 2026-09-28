@@ -1,0 +1,294 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>ThetaIDE</title>
+  <desc>A forward-leaning, extruded gold theta with binary digits engraved into its face.</desc>
+  <defs>
+    <g id="theta">
+      <path fill-rule="evenodd" d="M 108 250 A 148 188 0 1 0 404 250 A 148 188 0 1 0 108 250 Z M 160 250 A 96 146 0 1 1 352 250 A 96 146 0 1 1 160 250 Z"/>
+      <rect x="134" y="231.0" width="244" height="38" rx="5"/>
+    </g>
+    <linearGradient id="face" gradientUnits="userSpaceOnUse" x1="108" y1="62" x2="307.8" y2="438">
+      <stop offset="0" stop-color="#ffe08a"/>
+      <stop offset="0.45" stop-color="#fabd2f"/>
+      <stop offset="1" stop-color="#e8871a"/>
+    </linearGradient>
+    <linearGradient id="gloss" gradientUnits="userSpaceOnUse" x1="0" y1="62" x2="0" y2="438">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.55"/>
+      <stop offset="0.42" stop-color="#ffffff" stop-opacity="0.08"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#32302f"/>
+      <stop offset="1" stop-color="#1d2021"/>
+    </linearGradient>
+    <linearGradient id="tileSheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.06"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="8" y="8" width="496" height="496" rx="108" fill="url(#tile)"/>
+  <rect x="8.75" y="8.75" width="494.5" height="494.5" rx="107.25" fill="none" stroke="#3c3836" stroke-width="1.5"/>
+  <rect x="8" y="8" width="496" height="248" rx="108" fill="url(#tileSheen)"/>
+  <g transform="translate(256 262) scale(0.8) translate(-256 -262)">
+    <g transform="translate(256 250) skewX(-11) translate(-256 -250)">
+      <!-- Extrusion, back to front -->
+      <use href="#theta" transform="translate(18.40 23.20)" fill="#7a4a0c"/>
+      <use href="#theta" transform="translate(17.25 21.75)" fill="#7e4d0d"/>
+      <use href="#theta" transform="translate(16.10 20.30)" fill="#82500e"/>
+      <use href="#theta" transform="translate(14.95 18.85)" fill="#86530f"/>
+      <use href="#theta" transform="translate(13.80 17.40)" fill="#8a5610"/>
+      <use href="#theta" transform="translate(12.65 15.95)" fill="#8d5910"/>
+      <use href="#theta" transform="translate(11.50 14.50)" fill="#915c11"/>
+      <use href="#theta" transform="translate(10.35 13.05)" fill="#955f12"/>
+      <use href="#theta" transform="translate(9.20 11.60)" fill="#996213"/>
+      <use href="#theta" transform="translate(8.05 10.15)" fill="#9d6414"/>
+      <use href="#theta" transform="translate(6.90 8.70)" fill="#a16715"/>
+      <use href="#theta" transform="translate(5.75 7.25)" fill="#a56a16"/>
+      <use href="#theta" transform="translate(4.60 5.80)" fill="#a86d16"/>
+      <use href="#theta" transform="translate(3.45 4.35)" fill="#ac7017"/>
+      <use href="#theta" transform="translate(2.30 2.90)" fill="#b07318"/>
+      <use href="#theta" transform="translate(1.15 1.45)" fill="#b47619"/>
+      <!-- Front face -->
+      <use href="#theta" fill="url(#face)"/>
+      <!-- Binary engraved into the face: light catch below, dark cut on top -->
+      <g font-family="Consolas, 'Cascadia Code', 'DejaVu Sans Mono', monospace" font-size="15" font-weight="700">
+        <g fill="#fff3c4">
+          <text x="199" y="95" fill-opacity="0.19">1</text>
+          <text x="213" y="95" fill-opacity="0.19">0</text>
+          <text x="227" y="95" fill-opacity="0.16">0</text>
+          <text x="241" y="95" fill-opacity="0.26">1</text>
+          <text x="255" y="95" fill-opacity="0.16">0</text>
+          <text x="269" y="95" fill-opacity="0.22">0</text>
+          <text x="283" y="95" fill-opacity="0.15">1</text>
+          <text x="297" y="95" fill-opacity="0.28">0</text>
+          <text x="178" y="111" fill-opacity="0.29">0</text>
+          <text x="192" y="111" fill-opacity="0.18">0</text>
+          <text x="206" y="111" fill-opacity="0.24">1</text>
+          <text x="304" y="111" fill-opacity="0.29">0</text>
+          <text x="318" y="111" fill-opacity="0.23">0</text>
+          <text x="171" y="127" fill-opacity="0.27">0</text>
+          <text x="185" y="127" fill-opacity="0.16">1</text>
+          <text x="325" y="127" fill-opacity="0.15">0</text>
+          <text x="339" y="127" fill-opacity="0.17">0</text>
+          <text x="150" y="143" fill-opacity="0.28">1</text>
+          <text x="164" y="143" fill-opacity="0.27">1</text>
+          <text x="332" y="143" fill-opacity="0.19">1</text>
+          <text x="346" y="143" fill-opacity="0.25">1</text>
+          <text x="143" y="159" fill-opacity="0.24">1</text>
+          <text x="157" y="159" fill-opacity="0.15">0</text>
+          <text x="339" y="159" fill-opacity="0.19">1</text>
+          <text x="353" y="159" fill-opacity="0.21">1</text>
+          <text x="136" y="175" fill-opacity="0.18">0</text>
+          <text x="150" y="175" fill-opacity="0.14">1</text>
+          <text x="346" y="175" fill-opacity="0.17">0</text>
+          <text x="360" y="175" fill-opacity="0.16">1</text>
+          <text x="129" y="191" fill-opacity="0.26">1</text>
+          <text x="143" y="191" fill-opacity="0.25">1</text>
+          <text x="353" y="191" fill-opacity="0.18">1</text>
+          <text x="367" y="191" fill-opacity="0.24">1</text>
+          <text x="122" y="207" fill-opacity="0.25">0</text>
+          <text x="136" y="207" fill-opacity="0.26">0</text>
+          <text x="150" y="207" fill-opacity="0.22">1</text>
+          <text x="360" y="207" fill-opacity="0.22">0</text>
+          <text x="374" y="207" fill-opacity="0.18">1</text>
+          <text x="129" y="223" fill-opacity="0.17">0</text>
+          <text x="143" y="223" fill-opacity="0.29">1</text>
+          <text x="367" y="223" fill-opacity="0.14">1</text>
+          <text x="381" y="223" fill-opacity="0.19">0</text>
+          <text x="122" y="239" fill-opacity="0.29">0</text>
+          <text x="136" y="239" fill-opacity="0.16">1</text>
+          <text x="360" y="239" fill-opacity="0.28">0</text>
+          <text x="374" y="239" fill-opacity="0.14">0</text>
+          <text x="388" y="239" fill-opacity="0.28">1</text>
+          <text x="115" y="255" fill-opacity="0.19">1</text>
+          <text x="129" y="255" fill-opacity="0.3">1</text>
+          <text x="143" y="255" fill-opacity="0.14">1</text>
+          <text x="157" y="255" fill-opacity="0.2">0</text>
+          <text x="171" y="255" fill-opacity="0.16">1</text>
+          <text x="185" y="255" fill-opacity="0.15">0</text>
+          <text x="199" y="255" fill-opacity="0.28">1</text>
+          <text x="213" y="255" fill-opacity="0.26">0</text>
+          <text x="227" y="255" fill-opacity="0.23">0</text>
+          <text x="241" y="255" fill-opacity="0.29">0</text>
+          <text x="255" y="255" fill-opacity="0.28">0</text>
+          <text x="269" y="255" fill-opacity="0.23">0</text>
+          <text x="283" y="255" fill-opacity="0.13">0</text>
+          <text x="297" y="255" fill-opacity="0.19">1</text>
+          <text x="311" y="255" fill-opacity="0.17">0</text>
+          <text x="325" y="255" fill-opacity="0.14">1</text>
+          <text x="339" y="255" fill-opacity="0.2">1</text>
+          <text x="353" y="255" fill-opacity="0.26">1</text>
+          <text x="367" y="255" fill-opacity="0.14">0</text>
+          <text x="381" y="255" fill-opacity="0.28">1</text>
+          <text x="122" y="271" fill-opacity="0.26">0</text>
+          <text x="136" y="271" fill-opacity="0.22">1</text>
+          <text x="360" y="271" fill-opacity="0.15">0</text>
+          <text x="374" y="271" fill-opacity="0.22">0</text>
+          <text x="388" y="271" fill-opacity="0.17">0</text>
+          <text x="129" y="287" fill-opacity="0.14">1</text>
+          <text x="143" y="287" fill-opacity="0.28">1</text>
+          <text x="367" y="287" fill-opacity="0.21">1</text>
+          <text x="381" y="287" fill-opacity="0.14">1</text>
+          <text x="122" y="303" fill-opacity="0.17">0</text>
+          <text x="136" y="303" fill-opacity="0.29">0</text>
+          <text x="360" y="303" fill-opacity="0.28">1</text>
+          <text x="374" y="303" fill-opacity="0.22">1</text>
+          <text x="129" y="319" fill-opacity="0.24">0</text>
+          <text x="143" y="319" fill-opacity="0.2">0</text>
+          <text x="353" y="319" fill-opacity="0.19">1</text>
+          <text x="367" y="319" fill-opacity="0.29">0</text>
+          <text x="136" y="335" fill-opacity="0.2">1</text>
+          <text x="150" y="335" fill-opacity="0.17">1</text>
+          <text x="346" y="335" fill-opacity="0.17">1</text>
+          <text x="360" y="335" fill-opacity="0.19">1</text>
+          <text x="143" y="351" fill-opacity="0.2">1</text>
+          <text x="157" y="351" fill-opacity="0.14">0</text>
+          <text x="339" y="351" fill-opacity="0.15">1</text>
+          <text x="353" y="351" fill-opacity="0.25">1</text>
+          <text x="150" y="367" fill-opacity="0.16">0</text>
+          <text x="164" y="367" fill-opacity="0.19">0</text>
+          <text x="332" y="367" fill-opacity="0.21">0</text>
+          <text x="346" y="367" fill-opacity="0.16">1</text>
+          <text x="171" y="383" fill-opacity="0.21">1</text>
+          <text x="185" y="383" fill-opacity="0.25">1</text>
+          <text x="325" y="383" fill-opacity="0.16">0</text>
+          <text x="339" y="383" fill-opacity="0.18">0</text>
+          <text x="178" y="399" fill-opacity="0.13">1</text>
+          <text x="192" y="399" fill-opacity="0.29">0</text>
+          <text x="304" y="399" fill-opacity="0.24">0</text>
+          <text x="318" y="399" fill-opacity="0.19">1</text>
+          <text x="199" y="415" fill-opacity="0.23">1</text>
+          <text x="213" y="415" fill-opacity="0.19">0</text>
+          <text x="227" y="415" fill-opacity="0.17">1</text>
+          <text x="241" y="415" fill-opacity="0.22">1</text>
+          <text x="255" y="415" fill-opacity="0.17">1</text>
+          <text x="269" y="415" fill-opacity="0.26">0</text>
+          <text x="283" y="415" fill-opacity="0.23">0</text>
+          <text x="297" y="415" fill-opacity="0.19">0</text>
+          <text x="248" y="431" fill-opacity="0.29">1</text>
+          <text x="262" y="431" fill-opacity="0.16">0</text>
+        </g>
+        <g fill="#7a4a0c">
+          <text x="199" y="94" fill-opacity="0.31">1</text>
+          <text x="213" y="94" fill-opacity="0.32">0</text>
+          <text x="227" y="94" fill-opacity="0.27">0</text>
+          <text x="241" y="94" fill-opacity="0.44">1</text>
+          <text x="255" y="94" fill-opacity="0.26">0</text>
+          <text x="269" y="94" fill-opacity="0.36">0</text>
+          <text x="283" y="94" fill-opacity="0.25">1</text>
+          <text x="297" y="94" fill-opacity="0.46">0</text>
+          <text x="178" y="110" fill-opacity="0.48">0</text>
+          <text x="192" y="110" fill-opacity="0.3">0</text>
+          <text x="206" y="110" fill-opacity="0.4">1</text>
+          <text x="304" y="110" fill-opacity="0.49">0</text>
+          <text x="318" y="110" fill-opacity="0.38">0</text>
+          <text x="171" y="126" fill-opacity="0.45">0</text>
+          <text x="185" y="126" fill-opacity="0.27">1</text>
+          <text x="325" y="126" fill-opacity="0.25">0</text>
+          <text x="339" y="126" fill-opacity="0.29">0</text>
+          <text x="150" y="142" fill-opacity="0.46">1</text>
+          <text x="164" y="142" fill-opacity="0.45">1</text>
+          <text x="332" y="142" fill-opacity="0.31">1</text>
+          <text x="346" y="142" fill-opacity="0.41">1</text>
+          <text x="143" y="158" fill-opacity="0.4">1</text>
+          <text x="157" y="158" fill-opacity="0.25">0</text>
+          <text x="339" y="158" fill-opacity="0.31">1</text>
+          <text x="353" y="158" fill-opacity="0.35">1</text>
+          <text x="136" y="174" fill-opacity="0.3">0</text>
+          <text x="150" y="174" fill-opacity="0.24">1</text>
+          <text x="346" y="174" fill-opacity="0.28">0</text>
+          <text x="360" y="174" fill-opacity="0.26">1</text>
+          <text x="129" y="190" fill-opacity="0.44">1</text>
+          <text x="143" y="190" fill-opacity="0.41">1</text>
+          <text x="353" y="190" fill-opacity="0.3">1</text>
+          <text x="367" y="190" fill-opacity="0.4">1</text>
+          <text x="122" y="206" fill-opacity="0.41">0</text>
+          <text x="136" y="206" fill-opacity="0.43">0</text>
+          <text x="150" y="206" fill-opacity="0.36">1</text>
+          <text x="360" y="206" fill-opacity="0.36">0</text>
+          <text x="374" y="206" fill-opacity="0.3">1</text>
+          <text x="129" y="222" fill-opacity="0.28">0</text>
+          <text x="143" y="222" fill-opacity="0.48">1</text>
+          <text x="367" y="222" fill-opacity="0.24">1</text>
+          <text x="381" y="222" fill-opacity="0.32">0</text>
+          <text x="122" y="238" fill-opacity="0.49">0</text>
+          <text x="136" y="238" fill-opacity="0.27">1</text>
+          <text x="360" y="238" fill-opacity="0.47">0</text>
+          <text x="374" y="238" fill-opacity="0.24">0</text>
+          <text x="388" y="238" fill-opacity="0.46">1</text>
+          <text x="115" y="254" fill-opacity="0.31">1</text>
+          <text x="129" y="254" fill-opacity="0.5">1</text>
+          <text x="143" y="254" fill-opacity="0.24">1</text>
+          <text x="157" y="254" fill-opacity="0.33">0</text>
+          <text x="171" y="254" fill-opacity="0.26">1</text>
+          <text x="185" y="254" fill-opacity="0.25">0</text>
+          <text x="199" y="254" fill-opacity="0.47">1</text>
+          <text x="213" y="254" fill-opacity="0.44">0</text>
+          <text x="227" y="254" fill-opacity="0.39">0</text>
+          <text x="241" y="254" fill-opacity="0.49">0</text>
+          <text x="255" y="254" fill-opacity="0.46">0</text>
+          <text x="269" y="254" fill-opacity="0.39">0</text>
+          <text x="283" y="254" fill-opacity="0.22">0</text>
+          <text x="297" y="254" fill-opacity="0.31">1</text>
+          <text x="311" y="254" fill-opacity="0.29">0</text>
+          <text x="325" y="254" fill-opacity="0.24">1</text>
+          <text x="339" y="254" fill-opacity="0.34">1</text>
+          <text x="353" y="254" fill-opacity="0.43">1</text>
+          <text x="367" y="254" fill-opacity="0.23">0</text>
+          <text x="381" y="254" fill-opacity="0.47">1</text>
+          <text x="122" y="270" fill-opacity="0.44">0</text>
+          <text x="136" y="270" fill-opacity="0.37">1</text>
+          <text x="360" y="270" fill-opacity="0.25">0</text>
+          <text x="374" y="270" fill-opacity="0.37">0</text>
+          <text x="388" y="270" fill-opacity="0.28">0</text>
+          <text x="129" y="286" fill-opacity="0.23">1</text>
+          <text x="143" y="286" fill-opacity="0.46">1</text>
+          <text x="367" y="286" fill-opacity="0.35">1</text>
+          <text x="381" y="286" fill-opacity="0.24">1</text>
+          <text x="122" y="302" fill-opacity="0.29">0</text>
+          <text x="136" y="302" fill-opacity="0.48">0</text>
+          <text x="360" y="302" fill-opacity="0.46">1</text>
+          <text x="374" y="302" fill-opacity="0.36">1</text>
+          <text x="129" y="318" fill-opacity="0.4">0</text>
+          <text x="143" y="318" fill-opacity="0.33">0</text>
+          <text x="353" y="318" fill-opacity="0.31">1</text>
+          <text x="367" y="318" fill-opacity="0.49">0</text>
+          <text x="136" y="334" fill-opacity="0.34">1</text>
+          <text x="150" y="334" fill-opacity="0.29">1</text>
+          <text x="346" y="334" fill-opacity="0.29">1</text>
+          <text x="360" y="334" fill-opacity="0.32">1</text>
+          <text x="143" y="350" fill-opacity="0.33">1</text>
+          <text x="157" y="350" fill-opacity="0.23">0</text>
+          <text x="339" y="350" fill-opacity="0.25">1</text>
+          <text x="353" y="350" fill-opacity="0.41">1</text>
+          <text x="150" y="366" fill-opacity="0.26">0</text>
+          <text x="164" y="366" fill-opacity="0.32">0</text>
+          <text x="332" y="366" fill-opacity="0.35">0</text>
+          <text x="346" y="366" fill-opacity="0.26">1</text>
+          <text x="171" y="382" fill-opacity="0.35">1</text>
+          <text x="185" y="382" fill-opacity="0.41">1</text>
+          <text x="325" y="382" fill-opacity="0.27">0</text>
+          <text x="339" y="382" fill-opacity="0.3">0</text>
+          <text x="178" y="398" fill-opacity="0.22">1</text>
+          <text x="192" y="398" fill-opacity="0.49">0</text>
+          <text x="304" y="398" fill-opacity="0.4">0</text>
+          <text x="318" y="398" fill-opacity="0.32">1</text>
+          <text x="199" y="414" fill-opacity="0.38">1</text>
+          <text x="213" y="414" fill-opacity="0.32">0</text>
+          <text x="227" y="414" fill-opacity="0.28">1</text>
+          <text x="241" y="414" fill-opacity="0.37">1</text>
+          <text x="255" y="414" fill-opacity="0.28">1</text>
+          <text x="269" y="414" fill-opacity="0.43">0</text>
+          <text x="283" y="414" fill-opacity="0.38">0</text>
+          <text x="297" y="414" fill-opacity="0.31">0</text>
+          <text x="248" y="430" fill-opacity="0.48">1</text>
+          <text x="262" y="430" fill-opacity="0.26">0</text>
+        </g>
+      </g>
+      <!-- Gloss over everything, then the rim light -->
+      <use href="#theta" fill="url(#gloss)"/>
+      <path fill="none" stroke="#fff3c4" stroke-opacity="0.55" stroke-width="2"
+            d="M 109 250 A 147 187 0 1 0 403 250 A 147 187 0 1 0 109 250 Z"/>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,214 @@
+"""Theme palettes, application-wide preview, and portable local preferences."""
+import copy
+import json
+from pathlib import Path
+import re
+
+from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtGui import QColor, QPalette
+from PyQt6.QtWidgets import QApplication
+
+
+ROLES = {
+    "base": ("Window / editor background", "#1d2021"),
+    "panel": ("Panel background", "#282828"),
+    "surface": ("Cards / dock headers", "#32302f"),
+    "raised": ("Buttons / plot grid", "#3c3836"),
+    "border": ("Borders / selection", "#504945"),
+    "disabled": ("Disabled text", "#665c54"),
+    "text": ("Main text", "#ebdbb2"),
+    "muted": ("Secondary text", "#a89984"),
+    "comment": ("Code comments", "#928374"),
+    "accent": ("Accent / logo", "#fabd2f"),
+    "secondary": ("Secondary curve / code keys", "#83a598"),
+    "primary": ("Primary action / reward curve", "#b8bb26"),
+    "primary_hover": ("Primary action hover", "#c7c94b"),
+    "focus": ("Focus / logo shading", "#d79921"),
+    "number": ("Code numbers", "#d3869b"),
+}
+
+
+def preset(name, values):
+    return {"name": name, "colors": dict(zip(ROLES, values.split()))}
+
+
+BUILTINS = {
+    "Gruvbox Dark": {"name": "Gruvbox Dark", "colors": {key: value for key, (_, value) in ROLES.items()}},
+    "Gruvbox Light": preset("Gruvbox Light", "#fbf1c7 #f9f5d7 #f2e5bc #ebdbb2 #d5c4a1 #a89984 #3c3836 #665c54 #7c6f64 #9d6000 #076678 #79740e #8b8610 #af3a03 #8f3f71"),
+    "Nord": preset("Nord", "#242933 #2e3440 #343c4b #3b4252 #4c566a #69768c #eceff4 #b4bfd1 #8996ad #88c0d0 #81a1c1 #a3be8c #b5cf9f #8fbcbb #b48ead"),
+    "Dracula": preset("Dracula", "#21222c #282a36 #303341 #383b4b #44475a #6272a4 #f8f8f2 #bcc2dc #929dc4 #bd93f9 #8be9fd #50fa7b #80ff9f #ffb86c #ff79c6"),
+    "Paper": preset("Paper", "#ffffff #f5f7fa #edf0f5 #e2e7ef #c1cad8 #8794a6 #202b3b #526176 #65748a #6246b5 #176b91 #287448 #328a57 #8851c5 #a03876"),
+}
+DEFAULT = BUILTINS["Gruvbox Dark"]
+_LEGACY_ROLES = {value: key for key, (_, value) in ROLES.items()}
+
+
+def current_theme():
+    app = QApplication.instance()
+    return getattr(app, "theta_theme", DEFAULT)
+
+
+def theme_color(value):
+    """Resolve semantic roles or legacy Gruvbox swatches for painted widgets."""
+    colors = current_theme()["colors"]
+    return colors.get(_LEGACY_ROLES.get(value, value), value)
+
+
+def validate_theme(value):
+    if not isinstance(value, dict) or not isinstance(value.get("name"), str):
+        raise ValueError("A theme needs a name and a colors object.")
+    name = value["name"].strip()
+    if not name or len(name) > 60 or any(ord(c) < 32 for c in name):
+        raise ValueError("Theme names must contain 1–60 printable characters.")
+    colors = value.get("colors")
+    if not isinstance(colors, dict) or set(colors) != set(ROLES):
+        raise ValueError("Theme colors must include exactly the supported color roles.")
+    if any(not isinstance(c, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", c) for c in colors.values()):
+        raise ValueError("Use six-digit hex colors, for example #fabd2f.")
+    return {"name": name, "colors": {key: colors[key].lower() for key in ROLES}}
+
+
+def write_json(path, value):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(path)
+
+
+_BASE_STYLE = """
+* { color: #ebdbb2; font-family: 'Segoe UI'; font-size: 12px; }
+QMainWindow, QDialog { background: #1d2021; }
+QWidget { background: #282828; }
+QMenuBar, QMenu, QToolBar, QStatusBar { background: #1d2021; }
+QMenuBar::item { background: transparent; padding: 7px 12px; }
+QMenuBar::item:selected, QMenu::item:selected { background: #504945; }
+QToolBar { border: 0; spacing: 12px; padding: 8px; }
+QToolBar QLabel, QToolBar QLabel#badge, QToolBar QWidget#toolbarSpacer { background: transparent; }
+QToolBar::separator { background: #504945; width: 1px; margin: 5px; }
+QDockWidget { font-weight: 600; }
+QDockWidget::title { background: #32302f; padding: 9px; border-bottom: 1px solid #504945; }
+QTabWidget::pane { border: 1px solid #3c3836; }
+QTabBar::tab { background: #1d2021; color: #a89984; padding: 11px 18px; border-bottom: 2px solid transparent; }
+QTabBar::tab:selected { background: #282828; color: #fabd2f; border-bottom: 2px solid #fabd2f; }
+QTabBar::tab:hover { color: #ebdbb2; background: #32302f; }
+QLabel#brand { color: #fabd2f; font-size: 24px; font-weight: 700; padding-right: 12px; }
+QLabel#muted { color: #a89984; }
+QLabel#heading { font-size: 23px; font-weight: 600; }
+QLabel#eyebrow { color: #83a598; font-size: 10px; font-weight: 700; }
+QLabel#badge { background: #3c3836; color: #fabd2f; border-radius: 4px; padding: 5px 9px; }
+QLabel#value { color: #b8bb26; font-size: 25px; font-weight: 600; }
+QFrame#card { background: #32302f; border: 1px solid #504945; border-radius: 5px; }
+QFrame#card QLabel { background: transparent; }
+QPushButton, QToolButton { background: #3c3836; border: 1px solid #504945; border-radius: 4px; padding: 7px 12px; }
+QPushButton:hover, QToolButton:hover { background: #504945; border-color: #a89984; }
+QPushButton#primary { background: #b8bb26; color: #1d2021; border-color: #b8bb26; font-weight: 700; }
+QPushButton#primary:hover { background: #c7c94b; }
+QPushButton:disabled, QPushButton#primary:disabled { color: #665c54; background: #32302f; border-color: #3c3836; }
+QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox { background: #1d2021; border: 1px solid #504945; border-radius: 3px; padding: 6px; min-height: 18px; selection-background-color: #665c54; }
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus { border-color: #d79921; }
+QComboBox QAbstractItemView { background: #32302f; selection-background-color: #504945; }
+QPlainTextEdit, QTextEdit { background: #1d2021; border: 0; padding: 10px; selection-background-color: #504945; font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 12px; }
+QTreeWidget, QTableWidget { background: #282828; alternate-background-color: #32302f; border: 0; outline: 0; }
+QTreeWidget::item { padding: 6px 2px; }
+QTreeWidget::item:selected, QTableWidget::item:selected { background: #504945; color: #fabd2f; }
+QHeaderView::section { background: #32302f; color: #a89984; border: 0; border-bottom: 1px solid #504945; padding: 8px; }
+QTableWidget::item { padding: 7px; }
+QProgressBar { background: #3c3836; border: 0; height: 5px; border-radius: 2px; }
+QProgressBar::chunk { background: #b8bb26; border-radius: 2px; }
+QSplitter::handle { background: #1d2021; }
+QScrollArea { border: 0; }
+QScrollBar:vertical { background: #282828; width: 9px; }
+QScrollBar::handle:vertical { background: #504945; min-height: 25px; border-radius: 4px; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+QStatusBar { color: #a89984; border-top: 1px solid #504945; }
+QToolTip { background: #3c3836; color: #ebdbb2; border: 1px solid #665c54; padding: 5px; }
+QStatusBar QLabel { background: transparent; }
+QLabel#swatch { border: 1px solid #504945; border-radius: 4px; min-width: 28px; min-height: 24px; }
+QLabel#themeError { color: #d79921; }
+QWidget#sideTabs { background: #282828; border-right: 1px solid #504945; min-width: 70px; max-width: 70px; }
+QToolButton#sideTab { background: transparent; border: 0; border-radius: 6px; padding: 7px 0 5px 0; color: #a89984; font-size: 10px; }
+QToolButton#sideTab:hover { background: #32302f; color: #ebdbb2; }
+QToolButton#sideTab:checked { background: #3c3836; color: #fabd2f; }
+QLabel#configOk { color: #b8bb26; }
+QLabel#configError { color: #d79921; }
+"""
+
+
+def stylesheet(theme):
+    colors = theme["colors"]
+    return re.sub(r"#[0-9a-fA-F]{6}", lambda m: colors[_LEGACY_ROLES[m[0]]], _BASE_STYLE)
+
+
+STYLE = stylesheet(DEFAULT)  # Backward-compatible default for tests and previews.
+
+
+class ThemeManager(QObject):
+    changed = pyqtSignal()
+
+    def __init__(self, path, parent=None):
+        super().__init__(parent)
+        self.path = Path(path)
+        self.custom = {}
+        self.active = copy.deepcopy(DEFAULT)
+        self.error = None
+        if self.path.exists():
+            try:
+                data = json.loads(self.path.read_text(encoding="utf-8"))
+                if not isinstance(data, dict) or data.get("version") != 1 or not isinstance(data.get("themes"), list):
+                    raise ValueError("Unsupported appearance settings format.")
+                custom = {}
+                for item in data["themes"]:
+                    theme = validate_theme(item)
+                    if theme["name"].casefold() in {n.casefold() for n in BUILTINS}:
+                        raise ValueError("A custom theme cannot replace a built-in theme.")
+                    custom[theme["name"]] = theme
+                selected = data.get("selected")
+                if not isinstance(selected, str) or selected not in {**BUILTINS, **custom}:
+                    raise ValueError("Selected theme was not found.")
+                self.custom = custom
+                self.active = copy.deepcopy(self.themes()[selected])
+            except (OSError, ValueError, TypeError) as exc:
+                self.error = f"Appearance settings could not be loaded; using Gruvbox Dark. {exc}"
+        self.apply(self.active)
+
+    def themes(self):
+        return {**BUILTINS, **self.custom}
+
+    def apply(self, theme):
+        theme = validate_theme(theme)
+        app = QApplication.instance()
+        app.theta_theme = copy.deepcopy(theme)
+        self.active = copy.deepcopy(theme)
+        colors = theme["colors"]
+        palette = QPalette()
+        for role, key in ((QPalette.ColorRole.Window, "panel"), (QPalette.ColorRole.Base, "base"),
+                          (QPalette.ColorRole.AlternateBase, "surface"), (QPalette.ColorRole.Text, "text"),
+                          (QPalette.ColorRole.WindowText, "text"), (QPalette.ColorRole.Button, "raised"),
+                          (QPalette.ColorRole.ButtonText, "text"), (QPalette.ColorRole.Highlight, "border"),
+                          (QPalette.ColorRole.HighlightedText, "text"), (QPalette.ColorRole.PlaceholderText, "muted"),
+                          (QPalette.ColorRole.ToolTipBase, "raised"), (QPalette.ColorRole.ToolTipText, "text"),
+                          (QPalette.ColorRole.Link, "secondary")):
+            palette.setColor(role, QColor(colors[key]))
+        for role in (QPalette.ColorRole.Text, QPalette.ColorRole.WindowText, QPalette.ColorRole.ButtonText):
+            palette.setColor(QPalette.ColorGroup.Disabled, role, QColor(colors["disabled"]))
+        app.setPalette(palette)
+        app.setStyleSheet(stylesheet(theme))
+        self.changed.emit()
+        for widget in app.allWidgets():
+            widget.update()
+
+    def commit(self, theme):
+        theme = validate_theme(theme)
+        custom = copy.deepcopy(self.custom)
+        if theme["name"] in BUILTINS:
+            if theme != BUILTINS[theme["name"]]:
+                raise ValueError("Give your edited theme a new name to preserve the built-in preset.")
+        else:
+            if theme["name"].casefold() in {n.casefold() for n in BUILTINS}:
+                raise ValueError("Choose a name different from the built-in themes.")
+            custom[theme["name"]] = theme
+        # Write first: a failed save must not change the committed preferences.
+        write_json(self.path, {"version": 1, "selected": theme["name"], "themes": list(custom.values())})
+        self.custom = custom
+        self.apply(theme)

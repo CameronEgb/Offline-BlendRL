@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <!-- TensorBoard: stacked dashboard layers (generic, not the TensorFlow mark) -->
+  <polygon points="12 3 21 7.5 12 12 3 7.5 12 3"/>
+  <polyline points="3 12 12 16.5 21 12"/>
+  <polyline points="3 16.5 12 21 21 16.5"/>
+</svg>

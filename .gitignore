@@ -6,7 +6,16 @@ __pycache__/
 
 # Environment
 venv/
+.venv/
 .env
+
+# ThetaIDE desktop app: local run records, notes and appearance settings (per user)
+.thetaide/
+
+# Private planning notes (kept locally, not shared)
+/BACKEND_ASSESSMENT.md
+/missionstatement.md
+/prompt_notes_sonnet5.md
 
 # Large Data & Logs
 results/
@@ -19,8 +28,18 @@ offline_dataset/
 *.pth
 *.npz
 
+# Training output written outside results/ (ad-hoc scripts, notebooks, other loggers)
+lightning_logs/
+wandb/
+mlruns/
+events.out.tfevents.*
+*.ckpt
+.ipynb_checkpoints/
+
 # OS Specific
 .DS_Store
+Thumbs.db
+desktop.ini
 assets/
 outputs/
 multirun/
@@ -48,14 +67,17 @@ dist/
 htmlcov/
 coverage.xml
 
-# Type checking
+# Type checking & linting
 .mypy_cache/
+.dmypy.json
+.ruff_cache/
 
-# IDE
+# IDE & personal agent settings
 .vscode/
 .idea/
 *.swp
 *.swo
+.claude/settings.local.json
 
 # Leftover artifacts
 temp/

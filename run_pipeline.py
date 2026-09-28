@@ -23,16 +23,14 @@ for p in [
     if p not in sys.path:
         sys.path.insert(0, p)
 
-import hydra
-from hydra import compose, initialize
 from omegaconf import OmegaConf
 
+from src.app.pipeline.compose import compose_experiment, validate_composed
 from src.app.pipeline.config import normalize_agent_name, parse_methods_dict, resolve_experiment_config_name
 from src.app.pipeline.datasets import run_plotting
 from src.app.pipeline.exceptions import ConfigurationError
 from src.app.pipeline.optuna_utils import launch_optuna_dashboard
 from src.app.pipeline.slurm import generate_sbatch_header, submit_sbatch
-from src.app.pipeline.validation import validate_experiment_config
 
 
 def main():
@@ -65,48 +63,21 @@ def main():
     # Resolve experiment config path
     experiment_arg = resolve_experiment_config_name(raw_experiment)
 
-    # Prepare pure Hydra compose overrides (filtering out sweep logic that crashes compose API)
-    overrides_for_compose = [f"+experiment={experiment_arg}", f"++experiment_name={experiment_arg}"]
-    for arg in extra_args:
-        # The compose API cannot parse Optuna sweep operators or hydra internal configs
-        if any(sw in arg for sw in ["interval(", "choice(", "range(", "hydra.", "hydra/"]):
-            continue
-        if "=" in arg:
-            overrides_for_compose.append(arg)
-
-    # Subprocesses need everything PLUS the internal experiment tracking
-    sanitized_extra_args = list(extra_args)
-    sanitized_extra_args.append(f"++experiment_name={experiment_arg}")
-
-    # Load configuration
+    # Load configuration (shared with the HTTP API so GUI and CLI configs compose identically)
     try:
         print(f"Loading Hydra configuration for '{experiment_arg}'...", flush=True)
-        hydra.core.global_hydra.GlobalHydra.instance().clear()
-        initialize(version_base=None, config_path="in/config")
-        cfg = compose(config_name="config", overrides=overrides_for_compose, return_hydra_config=True)
-        exp_stem = Path(experiment_arg).stem
-        if not cfg.get("experiment_id") or cfg.experiment_id == "default_exp":
-            cfg.experiment_id = exp_stem
-
-        exp_group = Path(experiment_arg).parent.name if "/" in experiment_arg else "ungrouped"
-        if not cfg.get("group") or cfg.group == "ungrouped":
-            cfg.group = exp_group
-
-        # Ensure it's in extra args so it passes to children
-        if not any("experiment_id=" in arg for arg in sanitized_extra_args):
-            sanitized_extra_args.append(f"++experiment_id={cfg.experiment_id}")
-        if not any("group=" in arg for arg in sanitized_extra_args):
-            sanitized_extra_args.append(f"++group={cfg.group}")
+        composed = compose_experiment(experiment_arg, extra_args)
     except Exception as e:
         print(f"Error loading configuration: {e}")
         sys.exit(1)
 
-    is_sweep = cfg.get("sweep", False) or "--multirun" in sanitized_extra_args or "-m" in sanitized_extra_args
-    sanitized_extra_args = [a for a in sanitized_extra_args if a not in ("--multirun", "-m")]
+    cfg = composed.cfg
+    sanitized_extra_args = composed.launch_args
+    is_sweep = composed.is_sweep
 
     # Pre-flight validation
     try:
-        notices = validate_experiment_config(cfg, experiment_arg, is_sweep=is_sweep)
+        notices = validate_composed(composed)
         for n in notices:
             print(f"[Config Notice] {n}")
     except ConfigurationError as e:
