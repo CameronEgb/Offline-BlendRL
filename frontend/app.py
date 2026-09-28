@@ -2,6 +2,7 @@
 import argparse
 from dataclasses import asdict, replace
 from datetime import datetime
+import json
 import os
 from pathlib import Path
 import sys
@@ -21,7 +22,7 @@ from .model import (BASE_EXPERIMENT, FINAL_STATUSES, LIVE_STATUSES, Config, Stor
                     latest, metric_points, new_run, sample)
 from .theme import STYLE, ThemeManager, theme_color
 from .theme_builder import ThemeBuilder
-from .widgets import Chart, MetricCard, YamlHighlighter, label
+from .widgets import Chart, MetricCard, ToggleSlider, YamlHighlighter, label
 from .about import AboutDialog, AsciiTheta
 from .plots import PlotViewer
 from .queue_panel import QueuePanel
@@ -51,6 +52,8 @@ class Window(QMainWindow):
         self.setDockNestingEnabled(True)
         self.store = Store(data_dir)
         self.theme_manager = ThemeManager(Path(data_dir) / ".appearance.json", self)
+        self.layout_file = Path(data_dir) / ".layout.json"
+        self.pane_sliders = {}
         saved, errors = self.store.load()
         self.runs = saved or example_runs()
         self.active = None
@@ -79,6 +82,8 @@ class Window(QMainWindow):
         self.queue_running = False
         self.make_inspector()
         self.make_center()
+        self.tabs.tabOrderChanged.connect(lambda _: self.save_layout())
+        self.load_layout()
         self.make_menus()
         self.theme_status = label("", "muted")
         self.statusBar().addWidget(self.theme_status)
@@ -149,7 +154,8 @@ class Window(QMainWindow):
         monitor_footer.addWidget(self.monitor_note, 1)
         monitor_footer.addWidget(self.button("Open TensorBoard  →", self.show_tensorboard))
         layout.addLayout(monitor_footer)
-        self.tabs.addTab(monitor, "Training monitor", "monitor", "Monitor")
+        self.monitor_panel = monitor
+        self.tabs.addTab(self.monitor_panel, "Training monitor", "monitor", "Monitor", tab_id="monitor")
 
         results = QWidget()
         results_layout = QVBoxLayout(results)
@@ -172,7 +178,7 @@ class Window(QMainWindow):
         self.table.setAlternatingRowColors(True)
         self.table.setShowGrid(False)
         self.table.itemSelectionChanged.connect(self.table_selected)
-        self.table.itemDoubleClicked.connect(lambda _: self.tabs.setCurrentIndex(0))
+        self.table.itemDoubleClicked.connect(lambda _: self.tabs.setCurrentWidget(self.monitor_panel))
         results_layout.addWidget(self.table, 1)
         actions = QHBoxLayout()
         actions.addWidget(self.button("Load saved config", self.load_selected_config))
@@ -180,7 +186,8 @@ class Window(QMainWindow):
         actions.addWidget(self.button("View plot", self.view_selected_plot))
         actions.addStretch()
         results_layout.addLayout(actions)
-        self.tabs.addTab(results, "Results browser", "results", "Results")
+        self.results_panel = results
+        self.tabs.addTab(self.results_panel, "Results browser", "results", "Results", tab_id="results")
 
         config_panel = QWidget()
         config_layout = QVBoxLayout(config_panel)
@@ -241,17 +248,18 @@ class Window(QMainWindow):
 
         splitter.setSizes([200, 360, 480])
         config_layout.addWidget(splitter, 1)
-        self.tabs.addTab(config_panel, "Experiment", "config", "Experiment")
+        self.config_panel = config_panel
+        self.tabs.addTab(self.config_panel, "Experiment", "config", "Experiment", tab_id="config")
         self.plot_viewer = PlotViewer()
-        self.tabs.addTab(self.plot_viewer, "Plot viewer", "plots", "Plots")
+        self.tabs.addTab(self.plot_viewer, "Plot viewer", "plots", "Plots", tab_id="plots")
         self.tensorboard_panel = TensorBoardPanel(self.backend, self.log)
-        self.tabs.addTab(self.tensorboard_panel, "TensorBoard", "tensorboard", "TensorBoard")
+        self.tabs.addTab(self.tensorboard_panel, "TensorBoard", "tensorboard", "TensorBoard", tab_id="tensorboard")
         self.queue_panel = QueuePanel(self.move_queued, self.remove_queued, self.open_job, self.set_queue_running)
-        self.tabs.addTab(self.queue_panel, "Job queue", "queue", "Queue")
+        self.tabs.addTab(self.queue_panel, "Job queue", "queue", "Queue", tab_id="queue")
         self.terminal_panel = TerminalPanel(cwd=str(Path.cwd()), parent=self)
-        self.tabs.addTab(self.terminal_panel, "Terminal", "terminal", "Terminal")
+        self.tabs.addTab(self.terminal_panel, "Terminal", "terminal", "Terminal", tab_id="terminal")
         self.console_panel = self.make_console()
-        self.tabs.addTab(self.console_panel, "Console", "console", "Console")
+        self.tabs.addTab(self.console_panel, "Console", "console", "Console", tab_id="console")
         self.settings_panel = self.make_settings()
         self.tabs.set_settings_widget(self.settings_panel)
         self.tabs.currentChanged.connect(self.tab_changed)
@@ -430,6 +438,62 @@ class Window(QMainWindow):
         tc_layout.addLayout(theme_row)
         left_layout.addWidget(theme_card)
 
+        # Card 1.5: Sidebar Navigation & Panes
+        sidebar_card = QFrame()
+        sidebar_card.setObjectName("card")
+        sb_layout = QVBoxLayout(sidebar_card)
+        sb_layout.setContentsMargins(14, 12, 14, 12)
+        sb_layout.setSpacing(10)
+        sb_layout.addWidget(label("SIDEBAR & NAVIGATION", "eyebrow"))
+        sb_layout.addWidget(label("Panels & Visibility", "heading"))
+        sb_layout.addWidget(label("Toggle which panels appear in the sidebar. Drag icons on the left activity bar to reorder.", "muted"))
+
+        panes_grid = QVBoxLayout()
+        panes_grid.setSpacing(8)
+
+        pane_metadata = [
+            ("monitor", "Training monitor", "Overview charts & live training curves"),
+            ("results", "Results browser", "Experiment runs, comparison, & metrics"),
+            ("config", "Experiment builder", "Hydra configurations & hyperparameter tuner"),
+            ("plots", "Plot viewer", "Saved figure plots & multi-seed comparisons"),
+            ("tensorboard", "TensorBoard", "Interactive TensorBoard event visualizer"),
+            ("queue", "Job queue", "Local sequential run scheduler & manager"),
+            ("terminal", "Terminal", "Embedded terminal shell"),
+            ("console", "Console", "Live Theta IDE system log & command line"),
+        ]
+
+        self.pane_sliders = {}
+        for pid, name, desc in pane_metadata:
+            row = QHBoxLayout()
+            info_layout = QVBoxLayout()
+            info_layout.setSpacing(1)
+            title_lbl = label(name)
+            title_lbl.setStyleSheet("font-weight: 600;")
+            desc_lbl = label(desc, "muted")
+            info_layout.addWidget(title_lbl)
+            info_layout.addWidget(desc_lbl)
+            row.addLayout(info_layout, 1)
+
+            slider = ToggleSlider(checked=self.tabs.is_tab_visible(pid))
+            slider.setToolTip(f"Show or hide {name} in the sidebar")
+            slider.setAccessibleName(f"Toggle {name} visibility in sidebar")
+            slider.toggled.connect(lambda chk, p=pid: self.on_pane_slider_toggled(p, chk))
+            self.pane_sliders[pid] = slider
+            row.addWidget(slider)
+            panes_grid.addLayout(row)
+
+        sb_layout.addLayout(panes_grid)
+
+        sb_btn_row = QHBoxLayout()
+        btn_reset_sidebar = QPushButton("Restore default sidebar")
+        btn_reset_sidebar.setToolTip("Show all panels and restore original sidebar order")
+        btn_reset_sidebar.clicked.connect(self.reset_sidebar_layout)
+        sb_btn_row.addWidget(btn_reset_sidebar)
+        sb_btn_row.addStretch()
+        sb_layout.addLayout(sb_btn_row)
+
+        left_layout.addWidget(sidebar_card)
+
         # Card 2: Backend API Connection
         backend_card = QFrame()
         backend_card.setObjectName("card")
@@ -548,6 +612,77 @@ class Window(QMainWindow):
             if theme:
                 self.select_theme(theme)
 
+    def on_pane_slider_toggled(self, pane_id, checked):
+        visible_count = sum(1 for s in self.pane_sliders.values() if s.isChecked())
+        if not checked and visible_count == 0:
+            slider = self.pane_sliders.get(pane_id)
+            if slider:
+                slider.blockSignals(True)
+                slider.setChecked(True)
+                slider.blockSignals(False)
+            self.statusBar().showMessage("At least one panel must remain visible in the sidebar.", 3000)
+            return
+
+        self.tabs.set_tab_visible(pane_id, checked)
+        self.update_pane_sliders_state()
+        self.save_layout()
+
+    def update_pane_sliders_state(self):
+        visible_sliders = [s for s in self.pane_sliders.values() if s.isChecked()]
+        if len(visible_sliders) == 1:
+            visible_sliders[0].setEnabled(False)
+            visible_sliders[0].setToolTip("At least one panel must remain visible in the sidebar")
+        else:
+            for s in self.pane_sliders.values():
+                s.setEnabled(True)
+                s.setToolTip("Show or hide this panel in the sidebar")
+
+    def reset_sidebar_layout(self):
+        default_order = ["monitor", "results", "config", "plots", "tensorboard", "queue", "terminal", "console"]
+        self.tabs.apply_tab_order(default_order)
+        for pid, slider in self.pane_sliders.items():
+            slider.blockSignals(True)
+            slider.setChecked(True)
+            slider.setEnabled(True)
+            slider.blockSignals(False)
+            self.tabs.set_tab_visible(pid, True)
+        self.save_layout()
+        self.statusBar().showMessage("Restored default sidebar panels and order.", 4000)
+
+    def save_layout(self):
+        if not hasattr(self, "layout_file"):
+            return
+        data = {
+            "tab_order": list(self.tabs.tab_order),
+            "visible_tabs": {pid: self.tabs.is_tab_visible(pid) for pid in self.tabs.tab_order}
+        }
+        try:
+            self.layout_file.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        except OSError as exc:
+            self.log(f"Failed to save sidebar layout: {exc}")
+
+    def load_layout(self):
+        if not hasattr(self, "layout_file") or not self.layout_file.exists():
+            return
+        try:
+            data = json.loads(self.layout_file.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                order = data.get("tab_order")
+                if isinstance(order, list):
+                    self.tabs.apply_tab_order(order)
+                vis = data.get("visible_tabs")
+                if isinstance(vis, dict):
+                    for pid, val in vis.items():
+                        self.tabs.set_tab_visible(pid, bool(val))
+                        if hasattr(self, "pane_sliders") and pid in self.pane_sliders:
+                            slider = self.pane_sliders[pid]
+                            slider.blockSignals(True)
+                            slider.setChecked(bool(val))
+                            slider.blockSignals(False)
+                    self.update_pane_sliders_state()
+        except (OSError, ValueError, TypeError) as exc:
+            self.log(f"Could not load sidebar layout preferences: {exc}")
+
     def test_backend_connection(self):
         if hasattr(self, "settings_backend_status"):
             self.settings_backend_status.setText("Status: Testing connection…")
@@ -606,7 +741,7 @@ class Window(QMainWindow):
         self.themes_menu = view_menu.addMenu("Themes")
         self.themes_menu.aboutToShow.connect(self.populate_themes_menu)
         view_menu.addAction("Theme builder…", self.show_theme_builder)
-        view_menu.addAction("Experiment builder", lambda: self.tabs.setCurrentIndex(2))
+        view_menu.addAction("Experiment builder", lambda: self.tabs.setCurrentWidget(self.config_panel))
         view_menu.addAction("Plot viewer", lambda: self.tabs.setCurrentWidget(self.plot_viewer))
         view_menu.addAction("TensorBoard", self.show_tensorboard)
         view_menu.addAction("Terminal", lambda: self.tabs.setCurrentWidget(self.terminal_panel))
@@ -805,7 +940,7 @@ class Window(QMainWindow):
     def new_experiment(self):
         self.set_config(Config(name="cartpole_ppo_experiment"))
         self.inspector_tabs.setCurrentIndex(0)
-        self.tabs.setCurrentIndex(2)
+        self.tabs.setCurrentWidget(self.config_panel)
         self.name.setFocus()
         self.name.selectAll()
 
@@ -845,7 +980,7 @@ class Window(QMainWindow):
             self.runs.insert(0, run)
         self.select_run(run)
         self.refresh_runs()
-        self.tabs.setCurrentIndex(0)
+        self.tabs.setCurrentWidget(self.monitor_panel)
         self.update_launch_state()
 
     # ── Live training through the backend ────────────────────────────────────
@@ -1082,7 +1217,7 @@ class Window(QMainWindow):
             self.statusBar().showMessage("That job was queued from another client; it has no record here.", 5000)
             return
         self.select_run(run)
-        self.tabs.setCurrentIndex(0)
+        self.tabs.setCurrentWidget(self.monitor_panel)
 
     # ── Simulated demo (no backend needed) ───────────────────────────────────
 
@@ -1312,10 +1447,10 @@ class Window(QMainWindow):
     def tree_selected(self, item, _):
         run_id = item.data(0, Qt.ItemDataRole.UserRole)
         if run_id == "draft":
-            self.tabs.setCurrentIndex(2)
+            self.tabs.setCurrentWidget(self.config_panel)
         elif run := self.by_id(run_id):
             self.select_run(run)
-            self.tabs.setCurrentIndex(0)
+            self.tabs.setCurrentWidget(self.monitor_panel)
 
     def table_selected(self):
         rows = self.table.selectionModel().selectedRows()
@@ -1340,7 +1475,7 @@ class Window(QMainWindow):
         run = self.by_id(self.table.item(rows[0].row(), 0).data(Qt.ItemDataRole.UserRole))
         self.set_config(Config(**run["config"]))
         self.inspector_tabs.setCurrentIndex(0)
-        self.tabs.setCurrentIndex(2)
+        self.tabs.setCurrentWidget(self.config_panel)
         self.log(f"Loaded exact configuration from {run['id']}. Launch to create a new run.")
 
     def compare(self):

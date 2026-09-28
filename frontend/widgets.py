@@ -1,8 +1,8 @@
 import math
 import re
-from PyQt6.QtCore import Qt, QRectF
+from PyQt6.QtCore import Qt, QRectF, QSize
 from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPen, QFont, QSyntaxHighlighter, QTextCharFormat
-from PyQt6.QtWidgets import QWidget, QLabel, QVBoxLayout, QFrame
+from PyQt6.QtWidgets import QWidget, QLabel, QVBoxLayout, QFrame, QAbstractButton
 from .theme import theme_color
 
 
@@ -195,3 +195,45 @@ def format_tick(value, step):
     mantissa = round(step / 10 ** exponent, 6)
     decimals = max(0, -exponent + (1 if mantissa == 2.5 else 0))
     return f"{value:.{decimals}f}"
+
+
+class ToggleSlider(QAbstractButton):
+    """Instant toggle slider switch with theme-aware pill track and knob."""
+
+    def __init__(self, checked=True, parent=None):
+        super().__init__(parent)
+        self.setCheckable(True)
+        self.setChecked(checked)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFixedSize(40, 22)
+
+    def sizeHint(self):
+        return QSize(40, 22)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = QRectF(0.5, 0.5, self.width() - 1, self.height() - 1)
+        radius = rect.height() / 2
+        is_on = self.isChecked()
+
+        track_color = QColor(theme_color("primary" if is_on else "raised"))
+        border_color = QColor(theme_color("primary" if is_on else "border"))
+        if not self.isEnabled():
+            track_color.setAlpha(120)
+            border_color.setAlpha(120)
+        painter.setPen(QPen(border_color, 1))
+        painter.setBrush(track_color)
+        painter.drawRoundedRect(rect, radius, radius)
+
+        thumb_diameter = rect.height() - 6
+        thumb_y = 3.0
+        thumb_x = (rect.width() - thumb_diameter - 3.0) if is_on else 3.0
+        knob_color = QColor(theme_color("base" if is_on else "muted"))
+        if not self.isEnabled():
+            knob_color.setAlpha(150)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(knob_color)
+        painter.drawEllipse(QRectF(thumb_x, thumb_y, thumb_diameter, thumb_diameter))
+        painter.end()
+
