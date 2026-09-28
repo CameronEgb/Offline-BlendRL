@@ -27,6 +27,7 @@ from .plots import PlotViewer
 from .queue_panel import QueuePanel
 from .sidetabs import SideTabs
 from .tensorboard import TensorBoardPanel
+from .terminal import TerminalPanel
 
 
 # Metrics the monitor's second chart can show: key -> (card title, chart title, subtitle, value format)
@@ -247,6 +248,8 @@ class Window(QMainWindow):
         self.tabs.addTab(self.tensorboard_panel, "TensorBoard", "tensorboard", "TensorBoard")
         self.queue_panel = QueuePanel(self.move_queued, self.remove_queued, self.open_job, self.set_queue_running)
         self.tabs.addTab(self.queue_panel, "Job queue", "queue", "Queue")
+        self.terminal_panel = TerminalPanel(cwd=str(Path.cwd()), parent=self)
+        self.tabs.addTab(self.terminal_panel, "Terminal", "terminal", "Terminal")
         self.console_panel = self.make_console()
         self.tabs.addTab(self.console_panel, "Console", "console", "Console")
         self.settings_panel = self.make_settings()
@@ -354,23 +357,36 @@ class Window(QMainWindow):
         layout.setContentsMargins(18, 16, 18, 14)
         layout.setSpacing(10)
 
-        self.console = QPlainTextEdit()
-        self.console.setReadOnly(True)
-        self.console.setMaximumBlockCount(2000)
-
         header = QHBoxLayout()
+        header.setSpacing(8)
         header.addWidget(label("CONSOLE / SYSTEM OUTPUT", "eyebrow"))
         header.addStretch()
-        header.addWidget(self.button("Clear output", self.console.clear))
+        for cmd_name, desc in (
+            ("status", "Show active training and run summary"),
+            ("config", "Show pipeline config command"),
+            ("help", "List available console commands"),
+        ):
+            btn = QPushButton(f"› {cmd_name}")
+            btn.setToolTip(desc)
+            btn.clicked.connect(lambda _, c=cmd_name: self.run_quick_command(c))
+            header.addWidget(btn)
+        header.addWidget(self.button("Clear output", self.console_clear))
         layout.addLayout(header)
 
+        self.console = QPlainTextEdit()
+        self.console.setReadOnly(True)
+        self.console.setMaximumBlockCount(3000)
         layout.addWidget(self.console, 1)
 
         self.command = QLineEdit()
-        self.command.setPlaceholderText("Console › help, status, config, clear (not a system shell)")
+        self.command.setPlaceholderText("Console › help, status, config, clear (see Terminal tab for system shell)")
         self.command.returnPressed.connect(self.console_command)
         layout.addWidget(self.command)
         return panel
+
+    def console_clear(self):
+        if hasattr(self, "console"):
+            self.console.clear()
 
     def make_settings(self):
         panel = QWidget()
@@ -554,9 +570,10 @@ class Window(QMainWindow):
         QDesktopServices.openUrl(QUrl(docs_url))
 
     def run_quick_command(self, command):
-        self.command.setText(command)
-        self.console_command()
         self.tabs.setCurrentWidget(self.console_panel)
+        if hasattr(self, "command"):
+            self.command.setText(command)
+        self.console_command(command)
 
     def toggle_ascii_animation(self, paused):
         if hasattr(self, "settings_ascii"):
@@ -592,6 +609,7 @@ class Window(QMainWindow):
         view_menu.addAction("Experiment builder", lambda: self.tabs.setCurrentIndex(2))
         view_menu.addAction("Plot viewer", lambda: self.tabs.setCurrentWidget(self.plot_viewer))
         view_menu.addAction("TensorBoard", self.show_tensorboard)
+        view_menu.addAction("Terminal", lambda: self.tabs.setCurrentWidget(self.terminal_panel))
         view_menu.addAction("Console", lambda: self.tabs.setCurrentWidget(self.console_panel))
         view_menu.addAction("Settings & About", lambda: self.tabs.setCurrentWidget(self.settings_panel))
         view_menu.addAction("Restore default layout", lambda: self.restoreState(self.default_layout))
@@ -607,6 +625,9 @@ class Window(QMainWindow):
         if self.tabs.widget(index) is self.queue_panel:
             self.poll_queue()
             self.queue_timer.start()
+        if hasattr(self, "terminal_panel") and self.tabs.widget(index) is self.terminal_panel:
+            self.terminal_panel.terminal.focus_terminal()
+            self.terminal_panel.terminal.fit_terminal()
         if hasattr(self, "console_panel") and self.tabs.widget(index) is self.console_panel:
             self.command.setFocus()
         if hasattr(self, "settings_panel") and self.tabs.widget(index) is self.settings_panel:
@@ -632,6 +653,8 @@ class Window(QMainWindow):
             self.settings_ascii.update()
         if hasattr(self, "settings_backend_status"):
             self.test_backend_connection()
+        if hasattr(self, "terminal_panel"):
+            self.terminal_panel.apply_theme(self.theme_manager.active)
 
     def populate_themes_menu(self):
         self.themes_menu.clear()
@@ -1371,16 +1394,22 @@ class Window(QMainWindow):
                 QMessageBox.warning(self, "Export failed", str(exc))
 
     def log(self, message):
-        self.console.appendPlainText(message)
+        if hasattr(self, "console"):
+            self.console.appendPlainText(message)
 
-    def console_command(self):
-        command = self.command.text().strip()
-        self.command.clear()
+    def console_command(self, cmd_override=None):
+        if cmd_override is not None:
+            command = cmd_override.strip()
+        elif hasattr(self, "command"):
+            command = self.command.text().strip()
+            self.command.clear()
+        else:
+            command = ""
         self.log(f"theta › {command}")
         if command == "clear":
             self.console.clear()
         elif command == "help":
-            self.log("help    Show commands\nstatus  Show the active run\nconfig  Show the equivalent run_pipeline command\nclear   Clear output\nThis console does not execute Python or shell commands.")
+            self.log("help    Show commands\nstatus  Show the active run\nconfig  Show the equivalent run_pipeline command\nclear   Clear output\n(Use the Terminal tab for an interactive shell with tmux support.)")
         elif command == "status":
             run = self.active
             if run is None:
@@ -1393,13 +1422,15 @@ class Window(QMainWindow):
         elif command == "config":
             self.log(self.config().command())
         elif command:
-            self.log("Unknown demo command. Type help for available commands.")
+            self.log(f"Unknown command '{command}'. Type help or switch to the Terminal tab.")
 
     def closeEvent(self, event):
         if self.active and self.active["simulated"]:
             self.stop_run()
         elif self.active:
             self.persist(self.active)  # training keeps running in the backend; reopening reconnects
+        if hasattr(self, "terminal_panel"):
+            self.terminal_panel.terminal.close()
         self.save_notes()
         event.accept()
 

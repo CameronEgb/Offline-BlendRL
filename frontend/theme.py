@@ -37,6 +37,8 @@ BUILTINS = {
     "Gruvbox Light": preset("Gruvbox Light", "#fbf1c7 #f9f5d7 #f2e5bc #ebdbb2 #d5c4a1 #a89984 #3c3836 #665c54 #7c6f64 #9d6000 #076678 #79740e #8b8610 #af3a03 #8f3f71"),
     "Nord": preset("Nord", "#242933 #2e3440 #343c4b #3b4252 #4c566a #69768c #eceff4 #b4bfd1 #8996ad #88c0d0 #81a1c1 #a3be8c #b5cf9f #8fbcbb #b48ead"),
     "Dracula": preset("Dracula", "#21222c #282a36 #303341 #383b4b #44475a #6272a4 #f8f8f2 #bcc2dc #929dc4 #bd93f9 #8be9fd #50fa7b #80ff9f #ffb86c #ff79c6"),
+    "Catppuccin": preset("Catppuccin", "#1e1e2e #181825 #313244 #45475a #585b70 #6c7086 #cdd6f4 #a6adc8 #7f849c #cba6f7 #89b4fa #a6e3a1 #94e2d5 #fab387 #f5c2e7"),
+    "Catppuccin Latte": preset("Catppuccin Latte", "#eff1f5 #e6e9ef #ccd0da #bcc0cc #acb0be #9ca0b0 #4c4f69 #6c6f85 #8c8fa1 #8839ef #1e66f5 #40a02b #179299 #fe640b #ea76cb"),
     "Paper": preset("Paper", "#ffffff #f5f7fa #edf0f5 #e2e7ef #c1cad8 #8794a6 #202b3b #526176 #65748a #6246b5 #176b91 #287448 #328a57 #8851c5 #a03876"),
 }
 DEFAULT = BUILTINS["Gruvbox Dark"]
@@ -102,6 +104,7 @@ QFrame#card { background: #32302f; border: 1px solid #504945; border-radius: 5px
 QFrame#card QLabel { background: transparent; }
 QPushButton, QToolButton { background: #3c3836; border: 1px solid #504945; border-radius: 4px; padding: 7px 12px; }
 QPushButton:hover, QToolButton:hover { background: #504945; border-color: #a89984; }
+QPushButton:checked { background: #504945; color: #fabd2f; border-color: #fabd2f; font-weight: 600; }
 QPushButton#primary { background: #b8bb26; color: #1d2021; border-color: #b8bb26; font-weight: 700; }
 QPushButton#primary:hover { background: #c7c94b; }
 QPushButton:disabled, QPushButton#primary:disabled { color: #665c54; background: #32302f; border-color: #3c3836; }

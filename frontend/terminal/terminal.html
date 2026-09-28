@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Theta Terminal</title>
+  <link rel="stylesheet" href="vendor/xterm.css" />
+  <script src="vendor/xterm.js"></script>
+  <script src="vendor/xterm-addon-fit.js"></script>
+  <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #1d2021;
+    }
+    #terminal-container {
+      width: 100%;
+      height: 100%;
+      box-sizing: border-box;
+      padding: 4px 6px;
+    }
+    .xterm {
+      height: 100%;
+    }
+    .xterm .xterm-viewport::-webkit-scrollbar {
+      width: 8px;
+    }
+    .xterm .xterm-viewport::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .xterm .xterm-viewport::-webkit-scrollbar-thumb {
+      background: rgba(168, 153, 132, 0.3);
+      border-radius: 4px;
+    }
+    .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
+      background: rgba(168, 153, 132, 0.6);
+    }
+  </style>
+</head>
+<body>
+  <div id="terminal-container"></div>
+  <script>
+    const term = new Terminal({
+      cursorBlink: true,
+      cursorStyle: 'block',
+      fontFamily: "'JetBrains Mono', 'SF Mono', 'Fira Code', 'Menlo', 'Monaco', 'Cascadia Code', monospace",
+      fontSize: 13,
+      lineHeight: 1.22,
+      macOptionIsMeta: true,
+      allowProposedApi: true,
+      theme: {
+        background: '#1d2021',
+        foreground: '#ebdbb2',
+        cursor: '#fabd2f',
+        cursorAccent: '#1d2021',
+        selectionBackground: 'rgba(250, 189, 47, 0.35)',
+        black: '#1d2021',
+        red: '#ea6962',
+        green: '#b8bb26',
+        yellow: '#fabd2f',
+        blue: '#83a598',
+        magenta: '#d3869b',
+        cyan: '#8ec07c',
+        white: '#ebdbb2',
+        brightBlack: '#928374',
+        brightRed: '#fb4934',
+        brightGreen: '#b8bb26',
+        brightYellow: '#fabd2f',
+        brightBlue: '#83a598',
+        brightMagenta: '#d3869b',
+        brightCyan: '#8ec07c',
+        brightWhite: '#fbf1c7'
+      }
+    });
+
+    const fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+
+    const container = document.getElementById('terminal-container');
+    term.open(container);
+
+    function fitTerminal() {
+      try {
+        if (container.clientWidth > 0 && container.clientHeight > 0) {
+          fitAddon.fit();
+          if (window.bridge) {
+            window.bridge.resize_pty(term.cols, term.rows);
+          }
+        }
+      } catch (e) {
+        console.error("Fit error:", e);
+      }
+    }
+
+    let resizeTimer = null;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(fitTerminal, 40);
+    });
+
+    // Custom key handler for clipboard copy/paste on macOS
+    term.attachCustomKeyEventHandler((event) => {
+      if (event.metaKey && (event.key === 'c' || event.key === 'C') && term.hasSelection()) {
+        return false; // let browser / OS handle copy
+      }
+      return true;
+    });
+
+    if (typeof QWebChannel !== "undefined") {
+      new QWebChannel(qt.webChannelTransport, function(channel) {
+        window.bridge = channel.objects.bridge;
+
+        // Incoming terminal bytes from Python PTY
+        window.bridge.data_received.connect(function(data) {
+          term.write(data);
+        });
+
+        // Theme updates from Python
+        window.bridge.theme_received.connect(function(themeJson) {
+          try {
+            const theme = JSON.parse(themeJson);
+            term.options.theme = theme;
+            document.body.style.backgroundColor = theme.background || '#1d2021';
+          } catch(e) {
+            console.error("Theme parse error:", e);
+          }
+        });
+
+        // Font size updates
+        window.bridge.font_size_received.connect(function(newSize) {
+          term.options.fontSize = newSize;
+          fitTerminal();
+        });
+
+        // Clear terminal
+        window.bridge.clear_requested.connect(function() {
+          term.clear();
+        });
+
+        // Outgoing keystrokes to Python PTY
+        term.onData(function(data) {
+          window.bridge.send_input(data);
+        });
+
+        // Notify Python that the terminal is mounted and ready
+        setTimeout(() => {
+          fitTerminal();
+          window.bridge.terminal_ready();
+          term.focus();
+        }, 50);
+      });
+    }
+
+    window.addEventListener('click', () => {
+      term.focus();
+    });
+  </script>
+</body>
+</html>
