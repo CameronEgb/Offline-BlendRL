@@ -188,11 +188,15 @@ class PluginManager(QObject):
                 init_file = plugin_dir / "__init__.py" if plugin_dir else None
                 if init_file and init_file.exists():
                     mod_name = f"theta_plugin_{plugin_id}"
-                    spec = importlib.util.spec_from_file_location(mod_name, init_file)
+                    spec = importlib.util.spec_from_file_location(
+                        mod_name, init_file, submodule_search_locations=[str(plugin_dir)]
+                    )
                     if spec is None or spec.loader is None:
                         raise ImportError(f"Cannot load spec from {init_file}")
                     module = importlib.util.module_from_spec(spec)
+                    module.__path__ = [str(plugin_dir)]
                     sys.modules[mod_name] = module
+                    sys.modules[f"frontend.plugins.{plugin_id}"] = module
                     spec.loader.exec_module(module)
                 else:
                     raise
