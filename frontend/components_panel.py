@@ -64,6 +64,11 @@ class ComponentsPanel(QWidget):
         self.btn_toggle_raw.clicked.connect(lambda: self.toggle_raw_preview())
         actions_bar.addWidget(self.btn_toggle_raw)
 
+        self.btn_hub = QPushButton("🌐 Component Hub…")
+        self.btn_hub.setToolTip("Browse and install new RL methods, models, and environments from the Community Hub")
+        self.btn_hub.clicked.connect(self._open_hub)
+        actions_bar.addWidget(self.btn_hub)
+
         root_layout.addLayout(actions_bar)
 
         # ── Horizontal Splitter ───────────────────────────────────────────────
@@ -203,3 +208,10 @@ class ComponentsPanel(QWidget):
             self._update_raw_yaml_view()
         else:
             self.splitter.setSizes([240, 1000, 0])
+
+    def _open_hub(self):
+        """Open the Community Hub filtered to RL methods and models."""
+        w = self.window()
+        if hasattr(w, "open_hub"):
+            w.open_hub(initial_kind="method")
+

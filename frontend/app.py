@@ -6,16 +6,17 @@ import json
 import os
 from pathlib import Path
 import sys
+from typing import Optional
 
 from PyQt6.QtCore import Qt, QTimer, QRegularExpression, QUrl
-from PyQt6.QtGui import QAction, QFont, QRegularExpressionValidator, QDesktopServices
+from PyQt6.QtGui import QAction, QFont, QRegularExpressionValidator, QDesktopServices, QIcon
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QDockWidget, QTabWidget, QPlainTextEdit, QLineEdit, QComboBox, QSpinBox, QCheckBox,
     QDoubleSpinBox, QPushButton, QTreeWidget, QTreeWidgetItem, QToolBar,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
     QProgressBar, QScrollArea, QFileDialog, QMessageBox, QDialog, QSplitter,
-    QFrame, QToolButton, QSlider,
+    QFrame, QToolButton, QSlider, QStyle,
 )
 from .api import DEFAULT_URL, Backend
 from .model import (BASE_EXPERIMENT, FINAL_STATUSES, LIVE_STATUSES, Config, Store, available_metrics, example_runs,
@@ -32,6 +33,8 @@ from .queue_panel import QueuePanel
 from .sidetabs import SideTabs
 from .tensorboard import TensorBoardPanel
 from .terminal import TerminalPanel
+from .plugins import PluginManager
+from .hub import HubClient, HubDialog
 
 
 # Metrics the monitor's second chart can show: key -> (card title, chart title, subtitle, value format)
@@ -57,6 +60,17 @@ class Window(QMainWindow):
         self.theme_manager = ThemeManager(Path(data_dir) / ".appearance.json", self)
         self.layout_file = Path(data_dir) / ".layout.json"
         self.pane_sliders = {}
+        self.plugin_sliders = {}
+        self.plugin_manager = PluginManager(
+            self,
+            [Path(__file__).parent / "plugins", Path(data_dir) / "plugins"],
+        )
+        self.plugin_manager.discover()
+        self.hub_client = HubClient(
+            workspace_dir=Path(data_dir).resolve().parent,
+            data_dir=Path(data_dir),
+            on_change_callback=self._on_hub_component_changed,
+        )
         saved, errors = self.store.load()
         self.runs = saved or example_runs()
         self.active = None
@@ -90,6 +104,7 @@ class Window(QMainWindow):
         self.fixed_fields = {}
         self.fields = {}
         self.make_center()
+        self.plugin_manager.initialize_plugins()
         self.init_default_experiment()
         self.tabs.tabOrderChanged.connect(lambda _: self.save_layout())
         self.load_layout()
@@ -417,6 +432,8 @@ class Window(QMainWindow):
             self.start_button.setToolTip("Select an experiment from experiment/ to launch training")
 
         self.request_compose()
+        if hasattr(self, "plugin_manager"):
+            self.plugin_manager.notify_experiment_changed(self.current_experiment, self.active_config_path)
 
     def duplicate_experiment(self):
         self.config_tree.prompt_duplicate()
@@ -567,6 +584,32 @@ class Window(QMainWindow):
 
         left_layout.addWidget(sidebar_card)
 
+        # Card 1.8: Plugins & Extensions
+        plugins_card = QFrame()
+        plugins_card.setObjectName("card")
+        pc_layout = QVBoxLayout(plugins_card)
+        pc_layout.setContentsMargins(14, 12, 14, 12)
+        pc_layout.setSpacing(10)
+        pc_layout.addWidget(label("EXTENSIONS & PLUGINS", "eyebrow"))
+        pc_layout.addWidget(label("Installed Plugins", "heading"))
+        pc_layout.addWidget(label("Enable or disable modular plugins. Extensions dynamically mount panels into the sidebar.", "muted"))
+
+        self.plugins_grid = QVBoxLayout()
+        self.plugins_grid.setSpacing(8)
+        self.plugin_sliders = {}
+        pc_layout.addLayout(self.plugins_grid)
+        self.refresh_plugins_ui()
+
+        hub_btn_row = QHBoxLayout()
+        btn_browse_hub = QPushButton("🌐 Browse Community Hub…")
+        btn_browse_hub.setToolTip("Explore and install community plugins, RL methods, and models")
+        btn_browse_hub.clicked.connect(lambda: self.open_hub("plugin"))
+        hub_btn_row.addWidget(btn_browse_hub)
+        hub_btn_row.addStretch()
+        pc_layout.addLayout(hub_btn_row)
+
+        left_layout.addWidget(plugins_card)
+
         # Card 2: Backend API Connection
         backend_card = QFrame()
         backend_card.setObjectName("card")
@@ -676,6 +719,151 @@ class Window(QMainWindow):
         self.tabs.set_tab_visible(pane_id, checked)
         self.update_pane_sliders_state()
         self.save_layout()
+
+    def on_plugin_slider_toggled(self, plugin_id, checked):
+        if not hasattr(self, "plugin_manager"):
+            return
+        if checked:
+            success = self.plugin_manager.enable_plugin(plugin_id)
+            if success:
+                name = self.plugin_manager.manifests[plugin_id].name
+                self.statusBar().showMessage(f"Activated plugin: {name}", 4000)
+            else:
+                slider = self.plugin_sliders.get(plugin_id)
+                if slider:
+                    slider.blockSignals(True)
+                    slider.setChecked(False)
+                    slider.blockSignals(False)
+                self.statusBar().showMessage(f"Failed to activate plugin: {plugin_id}", 4000)
+        else:
+            self.plugin_manager.disable_plugin(plugin_id)
+            manifest = self.plugin_manager.manifests.get(plugin_id)
+            name = manifest.name if manifest else plugin_id
+            self.statusBar().showMessage(f"Deactivated plugin: {name}", 4000)
+        self.save_layout()
+
+    def _clear_layout(self, layout):
+        if not layout:
+            return
+        while layout.count():
+            item = layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+            elif item.layout():
+                self._clear_layout(item.layout())
+
+    def refresh_plugins_ui(self):
+        if not hasattr(self, "plugins_grid"):
+            return
+
+        self._clear_layout(self.plugins_grid)
+        self.plugin_sliders = {}
+
+        plugin_manifests = {}
+        if hasattr(self, "plugin_manager") and self.plugin_manager.manifests:
+            for pid, manifest in self.plugin_manager.manifests.items():
+                kind = getattr(manifest, "kind", None)
+                if not kind and hasattr(manifest, "extra") and isinstance(manifest.extra, dict):
+                    kind = manifest.extra.get("kind", "plugin")
+                if kind is None or kind == "plugin":
+                    plugin_manifests[pid] = manifest
+
+        if plugin_manifests:
+            for pid, manifest in plugin_manifests.items():
+                row = QHBoxLayout()
+                row.setSpacing(10)
+
+                info_layout = QVBoxLayout()
+                info_layout.setSpacing(1)
+                title_lbl = label(f"{manifest.name}  ·  v{manifest.version}")
+                title_lbl.setStyleSheet("font-weight: 600;")
+                desc_lbl = label(manifest.description or f"Modular extension ({pid})", "muted")
+                info_layout.addWidget(title_lbl)
+                info_layout.addWidget(desc_lbl)
+                row.addLayout(info_layout, 1)
+
+                is_enabled = self.plugin_manager.is_plugin_enabled(pid)
+                slider = ToggleSlider(checked=is_enabled)
+                slider.setToolTip(f"Enable or disable {manifest.name}")
+                slider.setAccessibleName(f"Toggle {manifest.name} plugin")
+                slider.toggled.connect(lambda chk, p=pid: self.on_plugin_slider_toggled(p, chk))
+                self.plugin_sliders[pid] = slider
+                row.addWidget(slider)
+
+                btn_trash = QToolButton()
+                trash_icon_path = Path(__file__).parent / "icons" / "trash.svg"
+                if trash_icon_path.exists():
+                    btn_trash.setIcon(QIcon(str(trash_icon_path)))
+                else:
+                    btn_trash.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_TrashIcon))
+                btn_trash.setToolTip(f"Uninstall {manifest.name}")
+                btn_trash.setFixedSize(28, 28)
+                btn_trash.setCursor(Qt.CursorShape.PointingHandCursor)
+                btn_trash.setStyleSheet(
+                    "QToolButton { border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 4px; background: rgba(255, 255, 255, 0.04); } "
+                    "QToolButton:hover { background: rgba(251, 73, 52, 0.2); border-color: #fb4934; }"
+                )
+                btn_trash.clicked.connect(lambda _, p=pid: self.uninstall_plugin_from_settings(p))
+                row.addWidget(btn_trash)
+
+                self.plugins_grid.addLayout(row)
+        else:
+            self.plugins_grid.addWidget(label("No plugins discovered or installed.", "muted"))
+
+    def uninstall_plugin_from_settings(self, plugin_id: str):
+        manifest = self.plugin_manager.manifests.get(plugin_id) if hasattr(self, "plugin_manager") else None
+        name = manifest.name if manifest else plugin_id
+        reply = QMessageBox.question(
+            self,
+            "Uninstall Plugin",
+            f"Are you sure you want to uninstall '{name}'?\nThis will remove its files and disable the plugin.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        if hasattr(self, "hub_client"):
+            comp = self.hub_client.get_component(plugin_id)
+            if comp:
+                self.hub_client.installer.uninstall(comp)
+                self.hub_client.refresh_installed_status()
+
+        if hasattr(self, "plugin_manager"):
+            self.plugin_manager.mark_uninstalled(plugin_id)
+            self.plugin_manager.discover()
+
+        self.refresh_plugins_ui()
+        self.save_layout()
+        self.statusBar().showMessage(f"Uninstalled plugin: {name}", 4000)
+
+    def _on_hub_component_changed(self, component_id: str, action: str):
+        if hasattr(self, "plugin_manager"):
+            ids_to_process = {component_id, component_id.replace("-", "_"), component_id.replace("_", "-")}
+            if component_id.endswith("-notes"):
+                ids_to_process.add(component_id[:-6])
+            elif component_id.endswith("_notes"):
+                ids_to_process.add(component_id[:-6])
+
+            if hasattr(self, "hub_client"):
+                comp = self.hub_client.get_component(component_id)
+                if comp and comp.target_path:
+                    ids_to_process.add(Path(comp.target_path).name)
+
+            for pid in ids_to_process:
+                if action == "uninstall":
+                    self.plugin_manager.mark_uninstalled(pid)
+                elif action == "install":
+                    self.plugin_manager.unmark_uninstalled(pid)
+
+            self.plugin_manager.discover()
+            self.refresh_plugins_ui()
+            self.statusBar().showMessage(f"Hub {action} finished: {component_id}", 4000)
+
+    def open_hub(self, initial_kind: Optional[str] = None):
+        if hasattr(self, "hub_client"):
+            dialog = HubDialog(self.hub_client, initial_kind=initial_kind, parent=self)
+            dialog.exec()
 
     def update_pane_sliders_state(self):
         visible_sliders = [s for s in self.pane_sliders.values() if s.isChecked()]
@@ -896,10 +1084,10 @@ class Window(QMainWindow):
     def compose_finished(self, serial, config, data, error):
         if serial != self.compose_serial:
             return  # superseded by a newer edit
-        self.compose_valid = not error and data["valid"]
+        self.compose_valid = bool(not error and isinstance(data, dict) and data.get("valid", False))
         self.update_launch_state()
-        if error:
-            self.set_backend_state(False, error)
+        if error or not isinstance(data, dict):
+            self.set_backend_state(False, error or "Invalid backend response")
             self.preview_status.setText("Backend offline • local recipe draft, not validated")
             self.preview_errors.hide()
             self.builder_status.setObjectName("muted")
@@ -911,8 +1099,8 @@ class Window(QMainWindow):
         if self.schema is None and not self.schema_pending:
             self.request_schema(apply_defaults=False)
         header = ["# Resolved by the backend exactly as the command line would:",
-                  "#   " + " ".join(data["argv"])]
-        header += [f"# Notice: {notice}" for notice in data["notices"]]
+                  "#   " + " ".join(data.get("argv", []))]
+        header += [f"# Notice: {notice}" for notice in data.get("notices", [])]
         sections = ["\n".join(header)]
         if data.get("methods"):
             sections.append("# Methods — the settings each method actually trains with\nmethods:\n"
@@ -1808,10 +1996,20 @@ def main():
     parser.add_argument("--api-url", default=os.environ.get("THETAIDE_API_URL", DEFAULT_URL),
                         help="NeSyRL backend API (default: %(default)s)")
     args = parser.parse_args()
+    QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts, True)
     app = QApplication(sys.argv[:1])
     app.setStyle("Fusion")
     app.setFont(QFont("Segoe UI", 10))
     app.setStyleSheet(STYLE)
+
+    # Clean POSIX signal handling: allow Ctrl+C (SIGINT) and SIGTERM to quit QApplication cleanly
+    import signal
+    signal.signal(signal.SIGINT, lambda *_: app.quit())
+    signal.signal(signal.SIGTERM, lambda *_: app.quit())
+    sigint_timer = QTimer()
+    sigint_timer.start(250)
+    sigint_timer.timeout.connect(lambda: None)
+
     try:
         window = Window(args.data_dir, args.api_url)
     except OSError as exc:

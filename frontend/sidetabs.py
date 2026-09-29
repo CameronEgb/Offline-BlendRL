@@ -18,7 +18,16 @@ def svg_icon(name, colors):
 
     colors maps (QIcon.Mode, QIcon.State) to a theme role such as "muted" or "accent".
     """
-    source = (ICON_DIR / f"{name}.svg").read_text(encoding="utf-8")
+    p = Path(name)
+    if p.exists() and p.is_file():
+        source_path = p
+    elif (ICON_DIR / f"{name}.svg").exists():
+        source_path = ICON_DIR / f"{name}.svg"
+    elif (ICON_DIR / name).exists():
+        source_path = ICON_DIR / name
+    else:
+        return QIcon()
+    source = source_path.read_text(encoding="utf-8")
     ratio = QApplication.instance().devicePixelRatio() if QApplication.instance() else 1.0
     icon = QIcon()
     for (mode, state), role in colors.items():
@@ -271,6 +280,30 @@ class SideTabs(QWidget):
         if len(self.tab_order) == 1:
             button.setChecked(True)
         return index
+
+    def removeTab(self, tab_id):
+        """Remove a tab by tab_id and detach its button and widget."""
+        if tab_id not in self.tabs:
+            return
+        entry = self.tabs.pop(tab_id)
+        if tab_id in self.tab_order:
+            self.tab_order.remove(tab_id)
+
+        # If active widget is this one, switch to another visible tab
+        if self.currentWidget() is entry["widget"]:
+            switched = False
+            for tid in self.tab_order:
+                if self.tabs[tid]["visible"]:
+                    self.setCurrentWidget(self.tabs[tid]["widget"])
+                    switched = True
+                    break
+            if not switched and self.settings_widget:
+                self.setCurrentWidget(self.settings_widget)
+
+        self.bar_layout.removeWidget(entry["button"])
+        entry["button"].deleteLater()
+        self.stack.removeWidget(entry["widget"])
+        self.tabOrderChanged.emit(list(self.tab_order))
 
     def move_tab_to_visible_slot(self, tab_id, slot):
         if tab_id not in self.tabs:
