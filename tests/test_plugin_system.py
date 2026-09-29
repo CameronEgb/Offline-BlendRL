@@ -16,7 +16,6 @@ try:
     app = QApplication.instance() or QApplication(sys.argv[:1])
     from frontend.app import Window
     from frontend.plugins import Plugin, PluginContext, PluginManager, PluginManifest
-    from frontend.plugins.obsidian import ObsidianPlugin
     HAS_PYQT6 = True
 except ImportError:
     HAS_PYQT6 = False
@@ -26,59 +25,101 @@ except ImportError:
 class TestPluginSystem(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp(prefix="theta_test_plugins_")
+        
+        # Create a dynamic fixture plugin in the test data_dir to test plugin lifecycle
+        self.plugin_id = "sample_plugin"
+        self.plugin_dir = Path(self.temp_dir) / "plugins" / self.plugin_id
+        self.plugin_dir.mkdir(parents=True, exist_ok=True)
+        (self.plugin_dir / "plugin.json").write_text(json.dumps({
+            "id": self.plugin_id,
+            "name": "Sample Plugin",
+            "version": "0.1.0",
+            "description": "Dynamic fixture plugin for testing ThetaIDE plugin system.",
+            "author": "ThetaIDE Test",
+            "default_enabled": False,
+            "entry_point": "SamplePlugin",
+        }), encoding="utf-8")
+        
+        (self.plugin_dir / "__init__.py").write_text("""
+from PyQt6.QtWidgets import QLabel
+from frontend.plugins.base import Plugin
+
+class SamplePlugin(Plugin):
+    def activate(self, context):
+        self.context = context
+        self.label = QLabel("Sample Content")
+        context.add_sidebar_tab(
+            tab_id="sample_plugin",
+            widget=self.label,
+            title="Sample Tab",
+            short_label="Sample",
+        )
+
+    def deactivate(self):
+        if self.context:
+            self.context.remove_sidebar_tab("sample_plugin")
+            self.context = None
+""")
+
         self.window = Window(data_dir=self.temp_dir)
 
     def tearDown(self):
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    def test_obsidian_plugin_discovered(self):
-        """Obsidian plugin is discovered and parsed with correct metadata."""
+    def test_zero_bundled_plugins_shipped_with_theta(self):
+        """ThetaIDE source must not ship with any bundled plugins; all plugins come from the Hub."""
+        builtin_plugins_dir = Path(__file__).parent.parent / "frontend" / "plugins"
+        bundled_plugins = [
+            p.parent.name for p in builtin_plugins_dir.glob("*/plugin.json")
+        ]
+        self.assertEqual(bundled_plugins, [], "ThetaIDE source repository should ship with zero bundled plugins!")
+
+    def test_plugin_discovered(self):
+        """Plugin manifest is discovered and parsed with correct metadata."""
         manager = self.window.plugin_manager
-        self.assertIn("obsidian", manager.manifests)
-        manifest = manager.manifests["obsidian"]
-        self.assertEqual(manifest.id, "obsidian")
-        self.assertEqual(manifest.name, "Obsidian Notes")
+        self.assertIn("sample_plugin", manager.manifests)
+        manifest = manager.manifests["sample_plugin"]
+        self.assertEqual(manifest.id, "sample_plugin")
+        self.assertEqual(manifest.name, "Sample Plugin")
         self.assertFalse(manifest.default_enabled)
 
-    def test_obsidian_disabled_on_initialization(self):
+    def test_plugin_disabled_on_initialization(self):
         """Plugin must be disabled by default on clean initialization."""
         manager = self.window.plugin_manager
-        # Check manager state
-        self.assertFalse(manager.is_plugin_enabled("obsidian"))
-        self.assertNotIn("obsidian", manager.instances)
+        self.assertFalse(manager.is_plugin_enabled("sample_plugin"))
+        self.assertNotIn("sample_plugin", manager.instances)
 
-        # Check UI sidebar tabs: obsidian must NOT be in tabs
-        self.assertNotIn("obsidian", self.window.tabs.tabs)
-        self.assertNotIn("obsidian", self.window.tabs.tab_order)
+        # Check UI sidebar tabs: plugin must NOT be in tabs
+        self.assertNotIn("sample_plugin", self.window.tabs.tabs)
+        self.assertNotIn("sample_plugin", self.window.tabs.tab_order)
 
         # Check toggle slider in settings
-        if "obsidian" in self.window.plugin_sliders:
-            self.assertFalse(self.window.plugin_sliders["obsidian"].isChecked())
+        if "sample_plugin" in self.window.plugin_sliders:
+            self.assertFalse(self.window.plugin_sliders["sample_plugin"].isChecked())
 
     def test_enable_and_disable_plugin_lifecycle(self):
         """Enabling dynamically mounts the sidebar tab; disabling unmounts it cleanly."""
         manager = self.window.plugin_manager
 
         # 1. Enable plugin
-        success = manager.enable_plugin("obsidian")
+        success = manager.enable_plugin("sample_plugin")
         self.assertTrue(success)
-        self.assertTrue(manager.is_plugin_enabled("obsidian"))
-        self.assertIn("obsidian", manager.instances)
-        self.assertIsInstance(manager.instances["obsidian"], ObsidianPlugin)
+        self.assertTrue(manager.is_plugin_enabled("sample_plugin"))
+        self.assertIn("sample_plugin", manager.instances)
 
         # Tab should now be present in SideTabs
-        self.assertIn("obsidian", self.window.tabs.tabs)
-        self.assertIn("obsidian", self.window.tabs.tab_order)
+        self.assertIn("sample_plugin", self.window.tabs.tabs)
+        self.assertIn("sample_plugin", self.window.tabs.tab_order)
 
         # 2. Disable plugin
-        success = manager.disable_plugin("obsidian")
+        success = manager.disable_plugin("sample_plugin")
         self.assertTrue(success)
-        self.assertFalse(manager.is_plugin_enabled("obsidian"))
-        self.assertNotIn("obsidian", manager.instances)
+        self.assertFalse(manager.is_plugin_enabled("sample_plugin"))
+        self.assertNotIn("sample_plugin", manager.instances)
 
         # Tab should be cleanly removed from SideTabs
-        self.assertNotIn("obsidian", self.window.tabs.tabs)
-        self.assertNotIn("obsidian", self.window.tabs.tab_order)
+        self.assertNotIn("sample_plugin", self.window.tabs.tabs)
+        self.assertNotIn("sample_plugin", self.window.tabs.tab_order)
 
     def test_persistence_of_plugin_state(self):
         """State is persisted to .plugins.json and restored on reload."""
@@ -86,74 +127,77 @@ class TestPluginSystem(unittest.TestCase):
         state_file = Path(self.temp_dir) / ".plugins.json"
 
         # Initially saved as disabled
-        self.assertFalse(manager.is_plugin_enabled("obsidian"))
+        self.assertFalse(manager.is_plugin_enabled("sample_plugin"))
 
         # Enable and verify disk write
-        manager.enable_plugin("obsidian")
+        manager.enable_plugin("sample_plugin")
         self.assertTrue(state_file.exists())
         saved_data = json.loads(state_file.read_text(encoding="utf-8"))
-        self.assertTrue(saved_data.get("obsidian"))
+        self.assertTrue(saved_data.get("sample_plugin"))
 
         # Simulate new Window instance loading same data directory
         new_window = Window(data_dir=self.temp_dir)
-        self.assertTrue(new_window.plugin_manager.is_plugin_enabled("obsidian"))
-        self.assertIn("obsidian", new_window.tabs.tabs)
+        self.assertTrue(new_window.plugin_manager.is_plugin_enabled("sample_plugin"))
+        self.assertIn("sample_plugin", new_window.tabs.tabs)
 
         # Cleanup new_window
-        new_window.plugin_manager.disable_plugin("obsidian")
+        new_window.plugin_manager.disable_plugin("sample_plugin")
 
     def test_settings_toggle_slider_interaction(self):
         """Toggling the slider in the Settings card enables/disables the plugin."""
-        self.assertIn("obsidian", self.window.plugin_sliders)
-        slider = self.window.plugin_sliders["obsidian"]
+        self.assertIn("sample_plugin", self.window.plugin_sliders)
+        slider = self.window.plugin_sliders["sample_plugin"]
         self.assertFalse(slider.isChecked())
 
         # Toggle to True
         slider.click()
         self.assertTrue(slider.isChecked())
-        self.assertTrue(self.window.plugin_manager.is_plugin_enabled("obsidian"))
-        self.assertIn("obsidian", self.window.tabs.tabs)
+        self.assertTrue(self.window.plugin_manager.is_plugin_enabled("sample_plugin"))
+        self.assertIn("sample_plugin", self.window.tabs.tabs)
 
         # Toggle back to False
         slider.click()
         self.assertFalse(slider.isChecked())
-        self.assertFalse(self.window.plugin_manager.is_plugin_enabled("obsidian"))
-        self.assertNotIn("obsidian", self.window.tabs.tabs)
+        self.assertFalse(self.window.plugin_manager.is_plugin_enabled("sample_plugin"))
+        self.assertNotIn("sample_plugin", self.window.tabs.tabs)
 
     def test_uninstalled_plugin_lifecycle_and_disappearance(self):
         """Uninstalling a plugin marks it uninstalled and removes it from the Settings menu."""
         manager = self.window.plugin_manager
-        self.assertIn("obsidian", manager.manifests)
-        self.assertIn("obsidian", self.window.plugin_sliders)
+        self.assertIn("sample_plugin", manager.manifests)
+        self.assertIn("sample_plugin", self.window.plugin_sliders)
 
         # Mark uninstalled
-        manager.mark_uninstalled("obsidian")
-        self.assertNotIn("obsidian", manager.manifests)
-        self.assertIn("obsidian", manager.uninstalled_ids)
+        manager.mark_uninstalled("sample_plugin")
+        self.assertNotIn("sample_plugin", manager.manifests)
+        self.assertIn("sample_plugin", manager.uninstalled_ids)
 
         # UI refresh removes it from settings menu
         self.window.refresh_plugins_ui()
-        self.assertNotIn("obsidian", self.window.plugin_sliders)
+        self.assertNotIn("sample_plugin", self.window.plugin_sliders)
 
         # Rescanning discovery does not resurrect it
         manager.discover()
-        self.assertNotIn("obsidian", manager.manifests)
+        self.assertNotIn("sample_plugin", manager.manifests)
+
+        # Simulate re-installing plugin archive into data_dir
+        self.plugin_dir.mkdir(parents=True, exist_ok=True)
+        (self.plugin_dir / "plugin.json").write_text(json.dumps({
+            "id": self.plugin_id,
+            "name": "Sample Plugin",
+            "version": "0.1.0",
+            "description": "Dynamic fixture plugin for testing ThetaIDE plugin system.",
+            "author": "ThetaIDE Test",
+            "default_enabled": False,
+            "entry_point": "SamplePlugin",
+        }), encoding="utf-8")
 
         # Re-marking as installed restores it
-        manager.unmark_uninstalled("obsidian")
+        manager.unmark_uninstalled("sample_plugin")
         manager.discover()
-        self.assertIn("obsidian", manager.manifests)
+        self.assertIn("sample_plugin", manager.manifests)
         self.window.refresh_plugins_ui()
-        self.assertIn("obsidian", self.window.plugin_sliders)
-
-        # Re-test via Hub component changed with alias 'obsidian-notes'
-        manager.mark_uninstalled("obsidian")
-        self.window.refresh_plugins_ui()
-        self.assertNotIn("obsidian", self.window.plugin_sliders)
-
-        self.window._on_hub_component_changed("obsidian-notes", "install")
-        self.assertIn("obsidian", manager.manifests)
-        self.assertIn("obsidian", self.window.plugin_sliders)
+        self.assertIn("sample_plugin", self.window.plugin_sliders)
 
     def test_plugins_menu_only_shows_plugins_not_other_components(self):
         """Settings plugin menu strictly ignores components whose kind != 'plugin'."""
@@ -203,3 +247,6 @@ class TestPluginSystem(unittest.TestCase):
         self.assertLess(idx_uninst, idx_inst)
         dialog.close()
 
+
+if __name__ == "__main__":
+    unittest.main()
