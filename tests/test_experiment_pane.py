@@ -20,6 +20,7 @@ try:
     app = QApplication.instance() or QApplication(sys.argv[:1])
     from frontend.config_tree import ConfigTreeWidget
     from frontend.config_viewer import ConfigViewer, ConfigBox
+    from frontend.components_panel import ComponentsPanel
     from frontend.app import Window
     HAS_PYQT6 = True
 except ImportError:
@@ -88,6 +89,48 @@ class TestConfigTree(unittest.TestCase):
             item = self.tree_widget.tree.topLevelItem(i)
             self.assertFalse(item.isHidden())
 
+    def test_experiments_mode_only_shows_experiment_directory(self):
+        exp_tree = ConfigTreeWidget(root_dir=self.root, mode="experiments")
+        try:
+            top_count = exp_tree.tree.topLevelItemCount()
+            self.assertEqual(top_count, 1)
+            item = exp_tree.tree.topLevelItem(0)
+            self.assertIn("experiment", item.text(0))
+            top_texts = [exp_tree.tree.topLevelItem(i).text(0) for i in range(top_count)]
+            self.assertFalse(any("agent" in t for t in top_texts))
+            self.assertFalse(any("env" in t for t in top_texts))
+            self.assertFalse(any("config.yaml" in t for t in top_texts))
+        finally:
+            exp_tree.close()
+
+    def test_components_mode_excludes_experiment_directory(self):
+        comp_tree = ConfigTreeWidget(root_dir=self.root, mode="components")
+        try:
+            top_count = comp_tree.tree.topLevelItemCount()
+            top_texts = [comp_tree.tree.topLevelItem(i).text(0) for i in range(top_count)]
+            self.assertTrue(any("agent" in t for t in top_texts))
+            self.assertTrue(any("env" in t for t in top_texts))
+            self.assertTrue(any("config.yaml" in t for t in top_texts))
+            self.assertFalse(any("experiment" in t for t in top_texts))
+        finally:
+            comp_tree.close()
+
+    def test_collapse_and_expand_all(self):
+        exp_tree = ConfigTreeWidget(root_dir=self.root, mode="experiments")
+        try:
+            # Initially, experiment is expanded
+            self.assertTrue(exp_tree.tree.topLevelItem(0).isExpanded())
+
+            # Click collapse all
+            exp_tree.btn_collapse.click()
+            self.assertFalse(exp_tree.tree.topLevelItem(0).isExpanded())
+
+            # Click expand all
+            exp_tree.btn_expand.click()
+            self.assertTrue(exp_tree.tree.topLevelItem(0).isExpanded())
+        finally:
+            exp_tree.close()
+
 
 @unittest.skipIf(not HAS_PYQT6, "PyQt6 not installed in current environment")
 class TestConfigViewer(unittest.TestCase):
@@ -154,6 +197,47 @@ class TestConfigViewer(unittest.TestCase):
 
 
 @unittest.skipIf(not HAS_PYQT6, "PyQt6 not installed in current environment")
+class TestComponentsPanel(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp_dir.name)
+        (self.root / "experiment" / "cartpole").mkdir(parents=True)
+        (self.root / "agent").mkdir(parents=True)
+        (self.root / "env").mkdir(parents=True)
+
+        (self.root / "agent" / "ppo.yaml").write_text("lr: 0.0003\nbatch_size: 64\n", encoding="utf-8")
+        (self.root / "env" / "cartpole.yaml").write_text("name: cartpole\nreward_shaping: false\n", encoding="utf-8")
+        (self.root / "config.yaml").write_text("paradigm: online_rl\n", encoding="utf-8")
+
+        self.panel = ComponentsPanel()
+        self.panel.components_tree.root_dir = self.root
+        self.panel.components_tree.populate()
+
+    def tearDown(self):
+        self.panel.close()
+        self.temp_dir.cleanup()
+
+    def test_components_panel_tree_only_has_components(self):
+        top_count = self.panel.components_tree.tree.topLevelItemCount()
+        top_texts = [self.panel.components_tree.tree.topLevelItem(i).text(0) for i in range(top_count)]
+        self.assertTrue(any("agent" in t for t in top_texts))
+        self.assertFalse(any("experiment" in t for t in top_texts))
+
+    def test_select_component_loads_into_viewer_and_raw_editor(self):
+        ok = self.panel.components_tree.select_file("agent/ppo.yaml")
+        self.assertTrue(ok)
+        self.assertEqual(self.panel.viewer.file_title.text(), "ppo.yaml")
+        self.assertIn("lr", self.panel.viewer.raw_data)
+
+    def test_toggle_raw_yaml_view(self):
+        self.assertTrue(self.panel.raw_panel.isHidden())
+        self.panel.toggle_raw_preview(True)
+        self.assertFalse(self.panel.raw_panel.isHidden())
+        self.panel.toggle_raw_preview(False)
+        self.assertTrue(self.panel.raw_panel.isHidden())
+
+
+@unittest.skipIf(not HAS_PYQT6, "PyQt6 not installed in current environment")
 class TestExperimentPaneWindowIntegration(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -186,6 +270,20 @@ class TestExperimentPaneWindowIntegration(unittest.TestCase):
         if ok:
             self.assertEqual(self.window.current_experiment, "cartpole/quick_test")
             self.assertEqual(self.window.config_viewer.file_title.text(), "quick_test.yaml")
+
+    def test_experiment_pane_only_has_experiments(self):
+        self.assertEqual(self.window.config_tree.mode, "experiments")
+        for i in range(self.window.config_tree.tree.topLevelItemCount()):
+            item = self.window.config_tree.tree.topLevelItem(i)
+            self.assertIn("experiment", item.text(0))
+
+    def test_components_pane_integrated_in_window(self):
+        self.assertIsNotNone(self.window.components_panel)
+        self.assertEqual(self.window.components_panel.components_tree.mode, "components")
+        self.assertIn("components", self.window.tabs.tabs)
+        top_count = self.window.components_panel.components_tree.tree.topLevelItemCount()
+        top_texts = [self.window.components_panel.components_tree.tree.topLevelItem(i).text(0) for i in range(top_count)]
+        self.assertFalse(any("experiment" in t for t in top_texts))
 
 
 if __name__ == "__main__":

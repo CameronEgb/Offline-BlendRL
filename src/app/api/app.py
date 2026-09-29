@@ -35,6 +35,13 @@ except ImportError:
     def list_registered_agents():
         return []
 
+try:
+    import psutil
+except ImportError:
+    psutil = None
+
+from src.app.api.job_store import JobStore
+
 
 app = FastAPI(title="NeSyRL API")
 
@@ -299,6 +306,23 @@ queue_order: list[str] = []  # job IDs with status "queued", next to run first
 queue_state = {"running": False}
 _queue_worker: threading.Thread | None = None
 
+job_store = JobStore(PROJECT_ROOT / JOBS_DIR / "jobs.db")
+
+# Hydrate in-memory state from persistent SQLite database
+for _stored in job_store.list_jobs():
+    jobs[_stored["job_id"]] = _stored
+queue_order.extend(job_store.get_queue())
+for _rec_id in job_store.recover_active_jobs():
+    if _rec_id in jobs:
+        jobs[_rec_id]["status"] = "failed"
+
+
+def _sync_job(job_id: str) -> None:
+    if job_id in jobs:
+        job = jobs[job_id]
+        job.setdefault("job_id", job_id)
+        job_store.save_job(job, job_id=job_id)
+
 
 def _public(job: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in job.items() if not k.startswith("_")}
@@ -315,6 +339,26 @@ def _append_log(job: dict[str, Any], line: str) -> None:
 
 def _kill_process_tree(pid: int) -> None:
     """Terminate the pipeline and every training/plotting subprocess it started."""
+    if psutil is not None:
+        try:
+            parent = psutil.Process(pid)
+            children = parent.children(recursive=True)
+            for child in children:
+                try:
+                    child.terminate()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+            parent.terminate()
+            gone, alive = psutil.wait_procs(children + [parent], timeout=2.0)
+            for p in alive:
+                try:
+                    p.kill()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+            return
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return
+
     if sys.platform == "win32":
         subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
     else:
@@ -343,6 +387,7 @@ def run_experiment_task(job_id: str, req: LaunchRequest):
                 text=True, encoding="utf-8", errors="replace", bufsize=1, **popen_kwargs,
             )
             job.update(status="running", pid=process.pid, _process=process, started=time.time())
+            _sync_job(job_id)
         JOBS_DIR.mkdir(parents=True, exist_ok=True)
         log_file = open(JOBS_DIR / f"{job_id}.log", "w", encoding="utf-8")
         for line in process.stdout:
@@ -356,14 +401,17 @@ def run_experiment_task(job_id: str, req: LaunchRequest):
             job["returncode"] = process.returncode
             if job["status"] != "cancelled":
                 job["status"] = "completed" if process.returncode == 0 else "failed"
+            _sync_job(job_id)
     except Exception as e:
         with _jobs_lock:
             if job.get("status") != "cancelled":
                 job["status"] = "error"
             job["error"] = str(e)
+            _sync_job(job_id)
     finally:
         with _jobs_changed:
             job["finished"] = time.time()
+            _sync_job(job_id)
             _jobs_changed.notify_all()  # the queue worker may start the next job
         if log_file:
             log_file.close()
@@ -413,11 +461,14 @@ def launch_experiment(req: LaunchRequest):
         "effective_timesteps": _effective_timesteps(plans, cfg.get("total_timesteps")),
         "created": time.time(),
     }
+    _sync_job(job_id)
 
     if req.queue:
         with _jobs_changed:
             jobs[job_id].update(status="queued", _request=req)
+            _sync_job(job_id)
             queue_order.append(job_id)
+            job_store.set_queue(queue_order)
             _ensure_queue_worker()
             _jobs_changed.notify_all()
             return dict(_public(jobs[job_id]), position=queue_order.index(job_id),
@@ -456,9 +507,13 @@ def _queue_worker_loop() -> None:
                     break
                 _jobs_changed.wait(timeout=1.0)
             job_id = queue_order.pop(0)
+            job_store.set_queue(queue_order)
             job = jobs[job_id]
             job["status"] = "pending"
-            req = job.pop("_request")
+            _sync_job(job_id)
+            req = job.pop("_request", None)
+            if req is None and job.get("request"):
+                req = LaunchRequest(**job["request"])
         run_experiment_task(job_id, req)
 
 
@@ -501,6 +556,7 @@ def queue_move(job_id: str, req: MoveRequest):
             raise HTTPException(status_code=409, detail="Only queued jobs can be moved.")
         queue_order.remove(job_id)
         queue_order.insert(max(0, min(req.position, len(queue_order))), job_id)
+        job_store.set_queue(queue_order)
         _jobs_changed.notify_all()
         return {"job_id": job_id, "position": queue_order.index(job_id)}
 
@@ -515,7 +571,11 @@ def list_jobs():
 def check_status(job_id: str, since: int = 0):
     """Job state plus log lines after line number `since` (0-based, counted from job start)."""
     if job_id not in jobs:
-        raise HTTPException(status_code=404, detail="Job not found")
+        stored = job_store.get_job(job_id)
+        if stored:
+            jobs[job_id] = stored
+        else:
+            raise HTTPException(status_code=404, detail="Job not found")
 
     with _jobs_lock:
         job = jobs[job_id]
@@ -529,23 +589,103 @@ def check_status(job_id: str, since: int = 0):
 
 
 @app.get("/api/experiments/{job_id}/metrics")
-def job_metrics(job_id: str, since: int = 0):
+def job_metrics(job_id: str, since: int = 0, since_byte: int = 0):
     """Numeric metrics rows for each agent of a job, read live from Lightning's metrics.csv.
 
     Rows after index `since` are returned. When a file was rewritten with fewer rows (Lightning
     rewrites it when new columns appear) `reset` is true and all rows are returned.
     """
     if job_id not in jobs:
-        raise HTTPException(status_code=404, detail="Job not found")
+        stored = job_store.get_job(job_id)
+        if stored:
+            jobs[job_id] = stored
+        else:
+            raise HTTPException(status_code=404, detail="Job not found")
     job = jobs[job_id]
     agents = {}
     for agent in job.get("agents", []):
         path = _latest_metrics_csv(Path("results/logs") / job["group"] / job["experiment_id"] / agent)
-        rows = _read_metrics_rows(path) if path else []
-        reset = since > len(rows)
-        agents[agent] = {"source": str(path) if path else None, "total": len(rows), "reset": reset,
-                         "rows": rows if reset else rows[since:]}
+        if since_byte > 0 and path:
+            rows, next_byte, reset = _read_metrics_incremental(path, last_byte=since_byte)
+            agents[agent] = {"source": str(path), "total": len(rows), "next_byte": next_byte, "reset": reset, "rows": rows}
+        else:
+            rows = _read_metrics_rows(path) if path else []
+            reset = since > len(rows)
+            agents[agent] = {"source": str(path) if path else None, "total": len(rows), "reset": reset,
+                             "rows": rows if reset else rows[since:]}
     return {"job_id": job_id, "status": job.get("status"), "agents": agents}
+
+
+_csv_headers: dict[str, list[str]] = {}
+
+
+def _read_metrics_incremental(path: Path, last_byte: int = 0) -> tuple[list[dict[str, float]], int, bool]:
+    """Read newly appended lines from a metrics CSV starting at last_byte offset.
+
+    Returns (rows, next_byte_offset, reset_occurred).
+    """
+    if not path.is_file():
+        return [], 0, False
+
+    try:
+        current_size = path.stat().st_size
+    except OSError:
+        return [], 0, False
+
+    reset = False
+    if current_size < last_byte:
+        last_byte = 0
+        reset = True
+
+    try:
+        with open(path, "rb") as f:
+            path_key = str(path)
+            if last_byte == 0 or path_key not in _csv_headers:
+                header_line = f.readline().decode("utf-8", errors="replace")
+                if not header_line.endswith("\n"):
+                    return [], 0, False  # header still being written
+                reader = csv.reader([header_line.rstrip("\r\n")])
+                header_fields = next(reader, [])
+                _csv_headers[path_key] = header_fields
+                last_byte = f.tell()
+            else:
+                f.seek(last_byte)
+
+            header_fields = _csv_headers.get(path_key, [])
+            if not header_fields:
+                return [], 0, False
+
+            raw = f.read()
+            if not raw:
+                return [], last_byte, reset
+
+            last_nl = raw.rfind(b"\n")
+            if last_nl == -1:
+                return [], last_byte, reset
+
+            valid_chunk = raw[:last_nl + 1]
+            next_byte = last_byte + len(valid_chunk)
+
+            text = valid_chunk.decode("utf-8", errors="replace")
+            lines = [line for line in text.splitlines() if line.strip()]
+
+            rows = []
+            for line in lines:
+                reader = csv.reader([line])
+                vals = next(reader, [])
+                numeric: dict[str, float] = {}
+                for key, val in zip(header_fields, vals):
+                    if key and val not in (None, ""):
+                        try:
+                            numeric[key] = float(val)
+                        except ValueError:
+                            pass
+                if numeric:
+                    rows.append(numeric)
+
+            return rows, next_byte, reset
+    except OSError:
+        return [], last_byte, reset
 
 
 def _latest_metrics_csv(agent_dir: Path) -> Path | None:
@@ -577,22 +717,85 @@ def _read_metrics_rows(path: Path) -> list[dict[str, float]]:
     return rows
 
 
+@app.get("/api/experiments/{job_id}/telemetry")
+def job_telemetry(job_id: str, since_log: int = 0, since_byte: int = 0):
+    """Unified telemetry: job state, incremental log lines, incremental metrics, and hardware stats."""
+    if job_id not in jobs:
+        stored = job_store.get_job(job_id)
+        if stored:
+            jobs[job_id] = stored
+        else:
+            raise HTTPException(status_code=404, detail="Job not found")
+
+    with _jobs_lock:
+        job = jobs[job_id]
+        log = job.get("_log", [])
+        dropped = job.get("log_dropped", 0)
+        job_info = _public(job)
+        job_info["log"] = log[max(since_log - dropped, 0):]
+        job_info["log_total"] = dropped + len(log)
+        job_info["stdout"] = "\n".join(log[-40:])[-1000:]
+
+    # Hardware stats
+    pid = job.get("pid")
+    hw: dict[str, Any] = {}
+    if pid and psutil is not None:
+        try:
+            proc = psutil.Process(pid)
+            if proc.is_running() and proc.status() != psutil.STATUS_ZOMBIE:
+                hw["cpu_percent"] = proc.cpu_percent()
+                mem = proc.memory_info()
+                hw["memory_mb"] = round(mem.rss / (1024 * 1024), 1)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
+    # Incremental metrics for each agent
+    agents = {}
+    for agent in job.get("agents", []):
+        path = _latest_metrics_csv(Path("results/logs") / job["group"] / job["experiment_id"] / agent)
+        if path:
+            rows, next_byte, reset = _read_metrics_incremental(path, last_byte=since_byte)
+            agents[agent] = {
+                "source": str(path),
+                "rows": rows,
+                "next_byte": next_byte,
+                "reset": reset,
+            }
+        else:
+            agents[agent] = {"source": None, "rows": [], "next_byte": 0, "reset": False}
+
+    return {
+        "job_id": job_id,
+        "job": job_info,
+        "hardware": hw,
+        "agents": agents,
+    }
+
+
 @app.post("/api/experiments/{job_id}/cancel")
 def cancel_experiment(job_id: str):
     if job_id not in jobs:
-        raise HTTPException(status_code=404, detail="Job not found")
+        stored = job_store.get_job(job_id)
+        if stored:
+            jobs[job_id] = stored
+        else:
+            raise HTTPException(status_code=404, detail="Job not found")
 
     with _jobs_changed:
         job = jobs[job_id]
         if job.get("status") == "queued":  # never started: take it out of the queue
-            queue_order.remove(job_id)
+            if job_id in queue_order:
+                queue_order.remove(job_id)
+                job_store.set_queue(queue_order)
             job.pop("_request", None)
             job.update(status="cancelled", finished=time.time())
+            _sync_job(job_id)
             _jobs_changed.notify_all()
             return {"job_id": job_id, "status": "cancelled"}
         if job.get("status") not in ("pending", "running"):
             return {"status": job.get("status"), "message": f"Job is already {job.get('status')}"}
         job["status"] = "cancelled"
+        _sync_job(job_id)
         process = job.get("_process")
 
     if process and process.poll() is None:

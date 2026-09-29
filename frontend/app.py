@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
     QDoubleSpinBox, QPushButton, QTreeWidget, QTreeWidgetItem, QToolBar,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
     QProgressBar, QScrollArea, QFileDialog, QMessageBox, QDialog, QSplitter,
-    QFrame, QToolButton,
+    QFrame, QToolButton, QSlider,
 )
 from .api import DEFAULT_URL, Backend
 from .model import (BASE_EXPERIMENT, FINAL_STATUSES, LIVE_STATUSES, Config, Store, available_metrics, example_runs,
@@ -26,6 +26,7 @@ from .widgets import Chart, MetricCard, ToggleSlider, YamlHighlighter, label
 from .about import AboutDialog, AsciiTheta
 from .config_tree import ConfigTreeWidget
 from .config_viewer import ConfigViewer
+from .components_panel import ComponentsPanel
 from .plots import PlotViewer
 from .queue_panel import QueuePanel
 from .sidetabs import SideTabs
@@ -35,11 +36,11 @@ from .terminal import TerminalPanel
 
 # Metrics the monitor's second chart can show: key -> (card title, chart title, subtitle, value format)
 SECOND_METRICS = {
+    "loss": ("TRAINING LOSS", "Total loss", "policy + 0.5 × value − 0.01 × entropy", ".4f"),
+    "value_loss": ("VALUE LOSS", "Value loss", "value-function error · critic MSE loss", ".3f"),
+    "policy_loss": ("POLICY LOSS", "Policy loss", "PPO clipped surrogate objective", ".4f"),
     "entropy": ("POLICY ENTROPY", "Policy entropy", "how random actions are · ln 2 ≈ 0.693 is uniform", ".3f"),
     "approx_kl": ("APPROX. KL", "Approximate KL per update", "size of each policy update", ".5f"),
-    "loss": ("TRAINING LOSS", "Total loss", "policy + 0.5 × value − 0.01 × entropy", ".4f"),
-    "policy_loss": ("POLICY LOSS", "Policy loss", "PPO clipped surrogate objective", ".4f"),
-    "value_loss": ("VALUE LOSS", "Value loss", "value-function error · grows as episodes lengthen", ".3f"),
 }
 # Highest possible evaluation reward per environment, drawn as the reward chart's ceiling.
 ENV_MAX_REWARD = {"cartpole": 500}
@@ -48,7 +49,7 @@ ENV_MAX_REWARD = {"cartpole": 500}
 class Window(QMainWindow):
     def __init__(self, data_dir, api_url=DEFAULT_URL):
         super().__init__()
-        self.setWindowTitle("ThetaIDE — Research workspace")
+        self.setWindowTitle("ThetaIDE")
         self.resize(1480, 940)
         self.setMinimumSize(1080, 720)
         self.setDockNestingEnabled(True)
@@ -60,6 +61,7 @@ class Window(QMainWindow):
         self.runs = saved or example_runs()
         self.active = None
         self.selected = None
+        self.pinned_baseline_run = None
         self.timer = QTimer(self)
         self.timer.setInterval(350)
         self.timer.timeout.connect(self.tick)
@@ -125,77 +127,12 @@ class Window(QMainWindow):
         self.tabs = SideTabs()
         self.tabs.logoClicked.connect(self.show_about)
         self.setCentralWidget(self.tabs)
-        monitor = QWidget()
-        layout = QVBoxLayout(monitor)
-        layout.setContentsMargins(20, 18, 20, 14)
-        layout.setSpacing(14)
-        layout.addWidget(label("EXPERIMENT / OVERVIEW", "eyebrow"))
-        self.run_title = label("Your next experiment", "heading")
-        layout.addWidget(self.run_title)
-        self.run_caption = label("Configure an experiment, then launch training.", "muted")
-        layout.addWidget(self.run_caption)
-        row = QHBoxLayout()
-        self.reward_card = MetricCard("EPISODE REWARD", "synthetic evaluation / mean")
-        self.loss_card = MetricCard("POLICY ENTROPY", "")
-        self.steps_card = MetricCard("TIMESTEPS", "configured training budget")
-        for card in (self.reward_card, self.loss_card, self.steps_card):
-            row.addWidget(card)
-        layout.addLayout(row)
-        self.progress = QProgressBar()
-        self.progress.setTextVisible(False)
-        self.progress.setFixedHeight(5)
-        layout.addWidget(self.progress)
-        self.reward_chart = Chart("reward", "Episode reward  ·  mean ± 1 std over evaluation episodes",
-                                  band="reward_std")
-        self.second_metric = "entropy"
-        self.loss_chart = Chart(self.second_metric, SECOND_METRICS[self.second_metric][1], zero_based=False)
-        self.metric_select = QComboBox()
-        self.metric_select.setToolTip("Metric shown in this chart and the second card")
-        self.metric_select.currentIndexChanged.connect(self.second_metric_changed)
-        self.loss_chart.set_corner_widget(self.metric_select)
-        layout.addWidget(self.reward_chart, 3)
-        layout.addWidget(self.loss_chart, 2)
-        self.monitor_note = label("", "muted")
-        self.monitor_note.setWordWrap(True)
-        monitor_footer = QHBoxLayout()
-        monitor_footer.addWidget(self.monitor_note, 1)
-        monitor_footer.addWidget(self.button("Open TensorBoard  →", self.show_tensorboard))
-        layout.addLayout(monitor_footer)
-        self.monitor_panel = monitor
-        self.tabs.addTab(self.monitor_panel, "Training monitor", "monitor", "Monitor", tab_id="monitor")
 
-        results = QWidget()
-        results_layout = QVBoxLayout(results)
-        results_layout.setContentsMargins(18, 18, 18, 18)
-        results_layout.addWidget(label("Experiment history", "heading"))
-        results_layout.addWidget(label("Select one run to inspect, or two to compare (Ctrl + click).", "muted"))
-        self.search = QLineEdit()
-        self.search.setPlaceholderText("Filter by experiment name, seed, or status…")
-        self.search.textChanged.connect(self.refresh_runs)
-        results_layout.addWidget(self.search)
-        self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["Experiment", "Seed", "Status", "Reward", "Source"])
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        self.table.verticalHeader().hide()
-        self.table.verticalHeader().setDefaultSectionSize(40)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.table.setAlternatingRowColors(True)
-        self.table.setShowGrid(False)
-        self.table.itemSelectionChanged.connect(self.table_selected)
-        self.table.itemDoubleClicked.connect(lambda _: self.tabs.setCurrentWidget(self.monitor_panel))
-        results_layout.addWidget(self.table, 1)
-        actions = QHBoxLayout()
-        actions.addWidget(self.button("Load saved config", self.load_selected_config))
-        actions.addWidget(self.button("Compare two runs", self.compare))
-        actions.addWidget(self.button("View plot", self.view_selected_plot))
-        actions.addStretch()
-        results_layout.addLayout(actions)
-        self.results_panel = results
-        self.tabs.addTab(self.results_panel, "Results browser", "results", "Results", tab_id="results")
+        # 1. Components Panel
+        self.components_panel = ComponentsPanel(log_fn=self.log, parent=self)
+        self.tabs.addTab(self.components_panel, "Components", "components", "Components", tab_id="components")
 
+        # 2. Experiment (Config) Panel
         config_panel = QWidget()
         config_layout = QVBoxLayout(config_panel)
         config_layout.setContentsMargins(18, 14, 18, 14)
@@ -232,8 +169,8 @@ class Window(QMainWindow):
         splitter = QSplitter(Qt.Orientation.Horizontal)
         self.config_splitter = splitter
 
-        # 1. Config Tree (mirrors in/config/)
-        self.config_tree = ConfigTreeWidget()
+        # 1. Config Tree (mirrors in/config/experiment/)
+        self.config_tree = ConfigTreeWidget(mode="experiments")
         self.config_tree.setMinimumWidth(220)
         self.tree = self.config_tree.tree  # backwards compatibility alias
         self.config_tree.file_selected.connect(self.on_config_file_selected)
@@ -286,16 +223,152 @@ class Window(QMainWindow):
         config_layout.addWidget(splitter, 1)
         self.config_panel = config_panel
         self.tabs.addTab(self.config_panel, "Experiment", "config", "Experiment", tab_id="config")
+
+        # 3. Training Monitor Panel
+        monitor = QWidget()
+        layout = QVBoxLayout(monitor)
+        layout.setContentsMargins(20, 18, 20, 14)
+        layout.setSpacing(14)
+        # Eyebrow row with curve smoothing slider
+        eyebrow_row = QHBoxLayout()
+        eyebrow_row.addWidget(label("EXPERIMENT / OVERVIEW", "eyebrow"))
+        eyebrow_row.addStretch()
+        self.smoothing_label = label("Smoothing: 0%", "muted")
+        eyebrow_row.addWidget(self.smoothing_label)
+        self.smoothing_slider = QSlider(Qt.Orientation.Horizontal)
+        self.smoothing_slider.setRange(0, 95)
+        self.smoothing_slider.setValue(0)
+        self.smoothing_slider.setFixedWidth(110)
+        self.smoothing_slider.setToolTip("Exponential moving average smoothing for training curves (0% = raw)")
+        self.smoothing_slider.valueChanged.connect(self.on_smoothing_changed)
+        eyebrow_row.addWidget(self.smoothing_slider)
+        layout.addLayout(eyebrow_row)
+
+        # Run navigator toolbar: Run selector combo, prev/next, jump to live, pin baseline
+        nav_row = QHBoxLayout()
+        nav_row.setSpacing(8)
+        self.run_combo = QComboBox()
+        self.run_combo.setMinimumWidth(320)
+        self.run_combo.setToolTip("Select any current or past experiment run to inspect")
+        self.run_combo.currentIndexChanged.connect(self.on_run_combo_changed)
+        nav_row.addWidget(self.run_combo, 1)
+
+        self.btn_prev_run = QPushButton("◀ Prev")
+        self.btn_prev_run.setToolTip("View previous experiment run in history")
+        self.btn_prev_run.clicked.connect(self.select_prev_run)
+        nav_row.addWidget(self.btn_prev_run)
+
+        self.btn_next_run = QPushButton("Next ▶")
+        self.btn_next_run.setToolTip("View next experiment run in history")
+        self.btn_next_run.clicked.connect(self.select_next_run)
+        nav_row.addWidget(self.btn_next_run)
+
+        self.btn_live_jump = QPushButton("🟢 Jump to Live")
+        self.btn_live_jump.setToolTip("Return view to the currently training run")
+        self.btn_live_jump.clicked.connect(self.jump_to_live_run)
+        self.btn_live_jump.hide()
+        nav_row.addWidget(self.btn_live_jump)
+
+        self.btn_pin_baseline = QPushButton("📌 Pin as Baseline")
+        self.btn_pin_baseline.setCheckable(True)
+        self.btn_pin_baseline.setToolTip("Pin this run to overlay as a dashed baseline curve on other runs")
+        self.btn_pin_baseline.clicked.connect(self.toggle_pin_baseline)
+        nav_row.addWidget(self.btn_pin_baseline)
+
+        layout.addLayout(nav_row)
+
+        self.run_title = label("Your next experiment", "heading")
+        layout.addWidget(self.run_title)
+
+        caption_row = QHBoxLayout()
+        self.run_caption = label("Configure an experiment, then launch training.", "muted")
+        caption_row.addWidget(self.run_caption, 1)
+        self.storage_label = label("📁 results/logs/  •  🗄️ results/jobs/jobs.db", "muted")
+        caption_row.addWidget(self.storage_label)
+        layout.addLayout(caption_row)
+        row = QHBoxLayout()
+        self.reward_card = MetricCard("EPISODE REWARD", "synthetic evaluation / mean")
+        self.loss_card = MetricCard("TRAINING LOSS", "total loss across minibatches")
+        self.steps_card = MetricCard("TIMESTEPS", "configured training budget")
+        for card in (self.reward_card, self.loss_card, self.steps_card):
+            row.addWidget(card)
+        layout.addLayout(row)
+        self.progress = QProgressBar()
+        self.progress.setTextVisible(False)
+        self.progress.setFixedHeight(5)
+        layout.addWidget(self.progress)
+        self.reward_chart = Chart("reward", "Episode reward  ·  mean ± 1 std over evaluation episodes",
+                                  band="reward_std")
+        self.second_metric = "loss"
+        self.loss_chart = Chart(self.second_metric, SECOND_METRICS[self.second_metric][1], zero_based=False)
+        self.metric_select = QComboBox()
+        self.metric_select.setToolTip("Metric shown in this chart and the second card")
+        self.metric_select.currentIndexChanged.connect(self.second_metric_changed)
+        self.loss_chart.set_corner_widget(self.metric_select)
+        layout.addWidget(self.reward_chart, 3)
+        layout.addWidget(self.loss_chart, 2)
+        self.monitor_note = label("", "muted")
+        self.monitor_note.setWordWrap(True)
+        monitor_footer = QHBoxLayout()
+        monitor_footer.addWidget(self.monitor_note, 1)
+        monitor_footer.addWidget(self.button("Open TensorBoard  →", self.show_tensorboard))
+        layout.addLayout(monitor_footer)
+        self.monitor_panel = monitor
+        self.tabs.addTab(self.monitor_panel, "Training monitor", "monitor", "Monitor", tab_id="monitor")
+
+        # 4. Results Browser Panel
+        results = QWidget()
+        results_layout = QVBoxLayout(results)
+        results_layout.setContentsMargins(18, 18, 18, 18)
+        results_layout.addWidget(label("Experiment history", "heading"))
+        results_layout.addWidget(label("Select one run to inspect, or two to compare (Ctrl + click).", "muted"))
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Filter by experiment name, seed, or status…")
+        self.search.textChanged.connect(self.refresh_runs)
+        results_layout.addWidget(self.search)
+        self.table = QTableWidget(0, 5)
+        self.table.setHorizontalHeaderLabels(["Experiment", "Seed", "Status", "Reward", "Source"])
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.verticalHeader().hide()
+        self.table.verticalHeader().setDefaultSectionSize(40)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.setAlternatingRowColors(True)
+        self.table.setShowGrid(False)
+        self.table.itemSelectionChanged.connect(self.table_selected)
+        self.table.itemDoubleClicked.connect(lambda _: self.tabs.setCurrentWidget(self.monitor_panel))
+        results_layout.addWidget(self.table, 1)
+        actions = QHBoxLayout()
+        actions.addWidget(self.button("Load saved config", self.load_selected_config))
+        actions.addWidget(self.button("Compare two runs", self.compare))
+        actions.addWidget(self.button("View plot", self.view_selected_plot))
+        actions.addStretch()
+        results_layout.addLayout(actions)
+        self.results_panel = results
+        self.tabs.addTab(self.results_panel, "Results browser", "results", "Results", tab_id="results")
+
+        # 5. Plot Viewer
         self.plot_viewer = PlotViewer()
         self.tabs.addTab(self.plot_viewer, "Plot viewer", "plots", "Plots", tab_id="plots")
+
+        # 6. TensorBoard Panel
         self.tensorboard_panel = TensorBoardPanel(self.backend, self.log)
         self.tabs.addTab(self.tensorboard_panel, "TensorBoard", "tensorboard", "TensorBoard", tab_id="tensorboard")
+
+        # 7. Job Queue Panel
         self.queue_panel = QueuePanel(self.move_queued, self.remove_queued, self.open_job, self.set_queue_running)
         self.tabs.addTab(self.queue_panel, "Job queue", "queue", "Queue", tab_id="queue")
+
+        # 8. Terminal Panel
         self.terminal_panel = TerminalPanel(cwd=str(Path.cwd()), parent=self)
         self.tabs.addTab(self.terminal_panel, "Terminal", "terminal", "Terminal", tab_id="terminal")
+
+        # 9. Console Panel
         self.console_panel = self.make_console()
         self.tabs.addTab(self.console_panel, "Console", "console", "Console", tab_id="console")
+
         self.settings_panel = self.make_settings()
         self.tabs.set_settings_widget(self.settings_panel)
         self.tabs.currentChanged.connect(self.tab_changed)
@@ -451,9 +524,10 @@ class Window(QMainWindow):
         panes_grid.setSpacing(8)
 
         pane_metadata = [
+            ("components", "Components", "Modular configs (agent, env, model, paradigms, site, hydra)"),
+            ("config", "Experiment builder", "Hydra configurations & hyperparameter tuner"),
             ("monitor", "Training monitor", "Overview charts & live training curves"),
             ("results", "Results browser", "Experiment runs, comparison, & metrics"),
-            ("config", "Experiment builder", "Hydra configurations & hyperparameter tuner"),
             ("plots", "Plot viewer", "Saved figure plots & multi-seed comparisons"),
             ("tensorboard", "TensorBoard", "Interactive TensorBoard event visualizer"),
             ("queue", "Job queue", "Local sequential run scheduler & manager"),
@@ -537,29 +611,6 @@ class Window(QMainWindow):
         btn_row.addStretch()
         sc_layout.addLayout(btn_row)
         left_layout.addWidget(storage_card)
-
-        # Card 4: Quick Console Commands (Boilerplate commands)
-        cmd_card = QFrame()
-        cmd_card.setObjectName("card")
-        cc_layout = QVBoxLayout(cmd_card)
-        cc_layout.setContentsMargins(14, 12, 14, 12)
-        cc_layout.setSpacing(10)
-        cc_layout.addWidget(label("QUICK ACTIONS", "eyebrow"))
-        cc_layout.addWidget(label("Console Commands", "heading"))
-        cc_layout.addWidget(label("Execute boilerplate commands in the Theta console:", "muted"))
-        cmd_row = QHBoxLayout()
-        for cmd_name, desc in (
-            ("status", "Show active training and run summary"),
-            ("config", "Show pipeline config command"),
-            ("help", "List available console commands"),
-            ("clear", "Clear console output buffer"),
-        ):
-            btn = QPushButton(f"› {cmd_name}")
-            btn.setToolTip(desc)
-            btn.clicked.connect(lambda _, c=cmd_name: self.run_quick_command(c))
-            cmd_row.addWidget(btn)
-        cc_layout.addLayout(cmd_row)
-        left_layout.addWidget(cmd_card)
         left_layout.addStretch()
 
         left_scroll = QScrollArea()
@@ -637,7 +688,7 @@ class Window(QMainWindow):
                 s.setToolTip("Show or hide this panel in the sidebar")
 
     def reset_sidebar_layout(self):
-        default_order = ["monitor", "results", "config", "plots", "tensorboard", "queue", "terminal", "console"]
+        default_order = ["components", "config", "monitor", "results", "plots", "tensorboard", "queue", "terminal", "console"]
         self.tabs.apply_tab_order(default_order)
         for pid, slider in self.pane_sliders.items():
             slider.blockSignals(True)
@@ -740,9 +791,13 @@ class Window(QMainWindow):
         self.themes_menu = view_menu.addMenu("Themes")
         self.themes_menu.aboutToShow.connect(self.populate_themes_menu)
         view_menu.addAction("Theme builder…", self.show_theme_builder)
+        view_menu.addAction("Components", lambda: self.tabs.setCurrentWidget(self.components_panel))
         view_menu.addAction("Experiment config", lambda: self.tabs.setCurrentWidget(self.config_panel))
+        view_menu.addAction("Training monitor", lambda: self.tabs.setCurrentWidget(self.monitor_panel))
+        view_menu.addAction("Results browser", lambda: self.tabs.setCurrentWidget(self.results_panel))
         view_menu.addAction("Plot viewer", lambda: self.tabs.setCurrentWidget(self.plot_viewer))
         view_menu.addAction("TensorBoard", self.show_tensorboard)
+        view_menu.addAction("Job queue", lambda: self.tabs.setCurrentWidget(self.queue_panel))
         view_menu.addAction("Terminal", lambda: self.tabs.setCurrentWidget(self.terminal_panel))
         view_menu.addAction("Console", lambda: self.tabs.setCurrentWidget(self.console_panel))
         view_menu.addAction("Settings & About", lambda: self.tabs.setCurrentWidget(self.settings_panel))
@@ -1030,7 +1085,7 @@ class Window(QMainWindow):
             self.update_launch_state()
             return
         run = new_run(config, simulated=False)
-        run.update(status="starting", log_since=0, metrics_since=0, backend={
+        run.update(status="starting", log_since=0, metrics_since=0, metrics_byte=0, backend={
             key: job.get(key) for key in ("job_id", "experiment", "group", "experiment_id", "agents", "total_timesteps",
                                           "effective_timesteps")})
         if not self.persist(run):
@@ -1056,52 +1111,65 @@ class Window(QMainWindow):
             return
         self.poll_busy = True
         job_id = run["backend"]["job_id"]
-        self.backend.get(f"/api/experiments/{job_id}/status?since={run['log_since']}",
-                         lambda data, error: self.status_received(run, data, error))
+        log_since = run.get("log_since", 0)
+        byte_since = run.get("metrics_byte", 0)
+        self.backend.get(f"/api/experiments/{job_id}/telemetry?since_log={log_since}&since_byte={byte_since}",
+                         lambda data, error: self.telemetry_received(run, data, error))
 
-    def status_received(self, run, data, error):
+    def telemetry_received(self, run, data, error):
+        self.poll_busy = False
         if run is not self.active:
-            self.poll_busy = False
             return
         if error:
-            self.poll_busy = False
             if "404" in error:  # the backend restarted and no longer knows this job
-                self.log("The backend no longer tracks this job (it was restarted). Metrics on disk are kept.")
+                self.log("The backend no longer tracks this job. Metrics on disk are kept.")
                 self.finish("interrupted")
             else:
                 self.set_backend_state(False, error)
             return
         self.set_backend_state(True)
-        for line in data["log"]:
+        job = data.get("job", {})
+        for line in job.get("log", []):
             self.log(f"│ {line}")
             if "Auto-Generating" in line:
                 run["phase"] = "plotting"
-        run["log_since"] = data["log_total"]
-        status = {"pending": "starting"}.get(data["status"], data["status"])
+        run["log_since"] = job.get("log_total", run.get("log_since", 0))
+        status = {"pending": "starting"}.get(job.get("status"), job.get("status"))
         if run["status"] != status:
             run["status"] = status
             self.update_launch_state()
             self.refresh_runs()
-        # Fetch metrics after the status, so a finished job's final rows are always collected.
-        self.backend.get(f"/api/experiments/{run['backend']['job_id']}/metrics?since={run['metrics_since']}",
-                         lambda metrics, err: self.metrics_received(run, metrics, err, data))
 
-    def metrics_received(self, run, data, error, status):
-        self.poll_busy = False
-        if run is not self.active:
-            return
-        if not error:
-            agent = data["agents"].get(run["backend"]["agents"][0], {}) if run["backend"]["agents"] else {}
-            if agent.get("reset"):
-                run["metrics"] = []
-            run["metrics"].extend(metric_points(agent.get("rows", [])))
-            run["metrics_since"] = agent.get("total", run["metrics_since"])
-            if self.selected is run:
+        # Update metrics
+        agents = data.get("agents", {})
+        agent_names = run["backend"].get("agents", [])
+        if not agent_names and agents:
+            agent_names = list(agents.keys())
+            run["backend"]["agents"] = agent_names
+        if agent_names:
+            had_new = False
+            for ag_name in agent_names:
+                agent = agents.get(ag_name, {})
+                if agent.get("reset"):
+                    run["metrics"] = []
+                    run["metrics_byte"] = 0
+                new_rows = agent.get("rows", [])
+                if new_rows:
+                    run["metrics"].extend(metric_points(new_rows))
+                    run["metrics_byte"] = agent.get("next_byte", run.get("metrics_byte", 0))
+                    had_new = True
+            if had_new and self.selected is run:
                 self.render_run()
-        if status["status"] in FINAL_STATUSES:
-            detail = f" (exit code {status['returncode']})" if status.get("returncode") not in (None, 0) else ""
-            self.finish(status["status"], detail)
-        elif len(run["metrics"]) and run["status"] == "running":
+
+        # Live hardware telemetry badge
+        hw = data.get("hardware", {})
+        if hw and hw.get("cpu_percent") is not None:
+            self.monitor_note.setText(f"System: CPU {hw['cpu_percent']:.1f}%  •  Process RAM {hw.get('memory_mb', 0):.0f} MB")
+
+        if job.get("status") in FINAL_STATUSES:
+            detail = f" (exit code {job.get('returncode')})" if job.get("returncode") not in (None, 0) else ""
+            self.finish(job.get("status", "completed"), detail)
+        elif len(run.get("metrics", [])) and run["status"] == "running":
             self.persist(run)
 
     # ── Job queue ────────────────────────────────────────────────────────────
@@ -1310,6 +1378,17 @@ class Window(QMainWindow):
 
     def select_run(self, run):
         self.selected = run
+        if hasattr(self, "run_combo"):
+            self.run_combo.blockSignals(True)
+            for idx in range(self.run_combo.count()):
+                if self.run_combo.itemData(idx) == run["id"]:
+                    self.run_combo.setCurrentIndex(idx)
+                    break
+            self.run_combo.blockSignals(False)
+        if hasattr(self, "btn_prev_run") and hasattr(self, "btn_next_run") and hasattr(self, "run_combo"):
+            idx = self.run_combo.currentIndex()
+            self.btn_prev_run.setEnabled(idx > 0)
+            self.btn_next_run.setEnabled(idx >= 0 and idx < self.run_combo.count() - 1)
         if hasattr(self, "notes"):
             self.notes.blockSignals(True)
             self.notes.setPlainText(run["notes"])
@@ -1318,6 +1397,49 @@ class Window(QMainWindow):
             self.note_status.setText("Notes save automatically as you type.")
         self.render_run()
         self.backfill_metrics(run)
+
+    def on_smoothing_changed(self, value):
+        self.smoothing_label.setText(f"Smoothing: {value}%")
+        factor = value / 100.0
+        self.reward_chart.set_smoothing(factor)
+        self.loss_chart.set_smoothing(factor)
+
+    def on_run_combo_changed(self, index):
+        if index < 0:
+            return
+        run_id = self.run_combo.itemData(index)
+        if not run_id:
+            return
+        target_run = self.by_id(run_id)
+        if target_run and target_run != self.selected:
+            self.select_run(target_run)
+
+    def select_prev_run(self):
+        if not hasattr(self, "run_combo"):
+            return
+        idx = self.run_combo.currentIndex()
+        if idx > 0:
+            self.run_combo.setCurrentIndex(idx - 1)
+
+    def select_next_run(self):
+        if not hasattr(self, "run_combo"):
+            return
+        idx = self.run_combo.currentIndex()
+        if idx < self.run_combo.count() - 1:
+            self.run_combo.setCurrentIndex(idx + 1)
+
+    def jump_to_live_run(self):
+        if self.active:
+            self.select_run(self.active)
+
+    def toggle_pin_baseline(self):
+        if not self.selected:
+            return
+        if self.pinned_baseline_run is self.selected:
+            self.pinned_baseline_run = None
+        else:
+            self.pinned_baseline_run = self.selected
+        self.render_run()
 
     def sync_metric_select(self, run):
         """Offer the second-chart metrics this run has; keep the user's choice when available."""
@@ -1380,6 +1502,46 @@ class Window(QMainWindow):
         source = f"LIVE · job {run['backend']['job_id'][:8]}" if live else "SIMULATED"
         self.run_title.setText(title)
         self.run_caption.setText(f"CartPole-v1  /  PPO  /  seed {config['seed']}   •   {run['status'].upper()}   •   {source}")
+        if hasattr(self, "storage_label"):
+            if live:
+                where = f"results/logs/{run['backend']['group']}/{run['backend']['experiment_id']}/"
+                self.storage_label.setText(f"📁 {where}  •  🗄️ results/jobs/jobs.db")
+            else:
+                self.storage_label.setText("📁 Simulated demo run (in-memory)  •  🗄️ results/jobs/jobs.db")
+
+        # Update Live Jump button
+        if hasattr(self, "btn_live_jump"):
+            if self.active and self.selected != self.active:
+                live_id = self.active["backend"]["experiment_id"] if not self.active["simulated"] else self.active["config"]["name"]
+                chip_text = f"🟢 Jump to Live ({live_id[:14]}…)" if len(live_id) > 14 else f"🟢 Jump to Live ({live_id})"
+                self.btn_live_jump.setText(chip_text)
+                self.btn_live_jump.show()
+            else:
+                self.btn_live_jump.hide()
+
+        # Update Pin Baseline button
+        if hasattr(self, "btn_pin_baseline"):
+            if self.pinned_baseline_run is None:
+                self.btn_pin_baseline.setChecked(False)
+                self.btn_pin_baseline.setText("📌 Pin as Baseline")
+                self.btn_pin_baseline.setToolTip("Pin this run's curve to overlay as a dashed baseline when inspecting other runs")
+            elif self.pinned_baseline_run is run:
+                self.btn_pin_baseline.setChecked(True)
+                self.btn_pin_baseline.setText("📌 Pinned Baseline")
+                self.btn_pin_baseline.setToolTip("This run is currently pinned as the baseline. Click to unpin.")
+            else:
+                self.btn_pin_baseline.setChecked(False)
+                p_name = self.pinned_baseline_run["backend"]["experiment_id"] if not self.pinned_baseline_run["simulated"] else self.pinned_baseline_run["config"]["name"]
+                label_name = (p_name[:12] + "…") if len(p_name) > 12 else p_name
+                self.btn_pin_baseline.setText(f"📌 Replace Baseline ({label_name})")
+                self.btn_pin_baseline.setToolTip(f"Baseline '{p_name}' is pinned. Click to replace it with this run.")
+
+        # Update Prev/Next button states
+        if hasattr(self, "btn_prev_run") and hasattr(self, "btn_next_run") and hasattr(self, "run_combo"):
+            idx = self.run_combo.currentIndex()
+            self.btn_prev_run.setEnabled(idx > 0)
+            self.btn_next_run.setEnabled(idx >= 0 and idx < self.run_combo.count() - 1)
+
         reward = latest(run, "reward")
         second = self.sync_metric_select(run)
         card_title, chart_title, subtitle, fmt = SECOND_METRICS[second]
@@ -1430,6 +1592,17 @@ class Window(QMainWindow):
         self.loss_chart.set_metric(second, chart_title)
         self.loss_chart.set_series([(title, metrics, "#83a598")], xmax)
 
+        # Baseline overlay
+        if self.pinned_baseline_run and self.pinned_baseline_run is not run:
+            b_metrics = self.pinned_baseline_run["metrics"]
+            b_name = self.pinned_baseline_run["backend"]["experiment_id"] if not self.pinned_baseline_run["simulated"] else self.pinned_baseline_run["config"]["name"]
+            b_title = f"{b_name} (baseline)"
+            self.reward_chart.set_baseline_series([(b_title, b_metrics, "#d3869b")])
+            self.loss_chart.set_baseline_series([(b_title, b_metrics, "#d3869b")])
+        else:
+            self.reward_chart.set_baseline_series([])
+            self.loss_chart.set_baseline_series([])
+
     def refresh_runs(self, *_):
         self.plot_viewer.update_runs(self.runs)
         if hasattr(self, "settings_runs_count_label"):
@@ -1453,6 +1626,39 @@ class Window(QMainWindow):
                 self.table.setItem(row, col, cell)
         self.table.blockSignals(False)
 
+        # Sync run_combo dropdown in Monitor
+        if hasattr(self, "run_combo"):
+            self.run_combo.blockSignals(True)
+            self.run_combo.clear()
+            for run in self.runs:
+                config = run["config"]
+                name = config["name"] if run["simulated"] else run["backend"]["experiment_id"]
+                status = run.get("status", "")
+                if status in LIVE_STATUSES:
+                    icon = "🟢 "
+                elif status == "completed":
+                    icon = "✓ "
+                elif status in ("failed", "interrupted", "stopped"):
+                    icon = "✖ "
+                else:
+                    icon = "○ "
+                last_reward = latest(run, "reward")
+                rew_str = f"  ·  {last_reward:.1f} rew" if last_reward is not None else ""
+                seed_str = f" (seed {config['seed']})"
+                self.run_combo.addItem(f"{icon}{name}{seed_str}{rew_str}", run["id"])
+
+            if self.selected:
+                for idx in range(self.run_combo.count()):
+                    if self.run_combo.itemData(idx) == self.selected["id"]:
+                        self.run_combo.setCurrentIndex(idx)
+                        break
+            self.run_combo.blockSignals(False)
+
+        if hasattr(self, "btn_prev_run") and hasattr(self, "btn_next_run") and hasattr(self, "run_combo"):
+            idx = self.run_combo.currentIndex()
+            self.btn_prev_run.setEnabled(idx > 0)
+            self.btn_next_run.setEnabled(idx >= 0 and idx < self.run_combo.count() - 1)
+
     def by_id(self, run_id):
         return next((run for run in self.runs if run["id"] == run_id), None)
 
@@ -1469,6 +1675,17 @@ class Window(QMainWindow):
         if len(rows) == 1:
             run = self.by_id(self.table.item(rows[0].row(), 0).data(Qt.ItemDataRole.UserRole))
             self.select_run(run)
+        elif len(rows) >= 2:
+            runs = [self.by_id(self.table.item(r.row(), 0).data(Qt.ItemDataRole.UserRole)) for r in rows]
+            runs = [r for r in runs if r is not None]
+            if runs:
+                palette = ("#b8bb26", "#83a598", "#fabd2f", "#d3869b", "#8ec07c")
+                series = []
+                for i, r in enumerate(runs[:5]):
+                    name = f"{r['config'].get('name', r['id'])} (seed {r['config'].get('seed', 0)})"
+                    series.append((name, r.get("metrics", []), palette[i % len(palette)]))
+                self.reward_chart.set_series(series)
+                self.selected = runs[0]
 
     def notes_changed(self):
         if hasattr(self, "notes") and self.selected:

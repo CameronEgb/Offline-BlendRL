@@ -10,10 +10,10 @@ from pathlib import Path
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
 try:
-    from PyQt6 import QtWebEngineWidgets
     from PyQt6.QtCore import QSize, Qt
     from PyQt6.QtGui import QPainter, QPixmap
     from PyQt6.QtWidgets import QApplication, QLabel, QWidget
+    QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts, True)
     app = QApplication.instance() or QApplication(sys.argv[:1])
     from frontend.widgets import ToggleSlider
     from frontend.sidetabs import SideTabs
@@ -127,8 +127,12 @@ class TestWindowLayoutAndSliders(unittest.TestCase):
         self.window.close()
         self.temp_dir.cleanup()
 
+    def test_default_tab_order(self):
+        expected_order = ["components", "config", "monitor", "results", "plots", "tensorboard", "queue", "terminal", "console"]
+        self.assertEqual(self.window.tabs.tab_order, expected_order)
+
     def test_pane_sliders_registered(self):
-        expected_panes = ["monitor", "results", "config", "plots", "tensorboard", "queue", "terminal", "console"]
+        expected_panes = ["components", "config", "monitor", "results", "plots", "tensorboard", "queue", "terminal", "console"]
         for pane_id in expected_panes:
             self.assertIn(pane_id, self.window.pane_sliders)
             slider = self.window.pane_sliders[pane_id]
@@ -147,7 +151,7 @@ class TestWindowLayoutAndSliders(unittest.TestCase):
 
     def test_cannot_hide_all_panes(self):
         # Turn off all panes except one
-        panes = ["monitor", "results", "config", "plots", "tensorboard", "queue", "terminal", "console"]
+        panes = ["components", "config", "monitor", "results", "plots", "tensorboard", "queue", "terminal", "console"]
         for p in panes[:-1]:
             self.window.pane_sliders[p].setChecked(False)
 
@@ -167,7 +171,7 @@ class TestWindowLayoutAndSliders(unittest.TestCase):
 
         # Reset
         self.window.reset_sidebar_layout()
-        default_order = ["monitor", "results", "config", "plots", "tensorboard", "queue", "terminal", "console"]
+        default_order = ["components", "config", "monitor", "results", "plots", "tensorboard", "queue", "terminal", "console"]
         self.assertEqual(self.window.tabs.tab_order, default_order)
         for p in default_order:
             self.assertTrue(self.window.tabs.is_tab_visible(p))

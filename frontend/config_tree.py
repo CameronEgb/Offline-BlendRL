@@ -43,9 +43,10 @@ class ConfigTreeWidget(QWidget):
     duplicate_requested = pyqtSignal(str)     # (rel_path)
     new_in_group_requested = pyqtSignal()
 
-    def __init__(self, root_dir=None, parent=None):
+    def __init__(self, root_dir=None, parent=None, mode="all"):
         super().__init__(parent)
         self.root_dir = Path(root_dir) if root_dir else find_config_root()
+        self.mode = mode  # "all", "experiments", "components"
         self.current_rel_path = None
         self._init_ui()
         self.populate()
@@ -58,7 +59,13 @@ class ConfigTreeWidget(QWidget):
         # Header with title and actions
         header = QHBoxLayout()
         header.setSpacing(4)
-        title = label("CONFIG REPOSITORY", "eyebrow")
+        if self.mode in ("experiments", "experiment"):
+            title_text = "EXPERIMENTS"
+        elif self.mode == "components":
+            title_text = "COMPONENTS"
+        else:
+            title_text = "CONFIG REPOSITORY"
+        title = label(title_text, "eyebrow")
         header.addWidget(title)
         header.addStretch()
 
@@ -68,15 +75,39 @@ class ConfigTreeWidget(QWidget):
         self.btn_refresh.clicked.connect(self.populate)
         header.addWidget(self.btn_refresh)
 
-        self.btn_new_group = QToolButton()
-        self.btn_new_group.setText("+ New")
-        self.btn_new_group.setToolTip("Create a new default experiment in a group")
-        self.btn_new_group.clicked.connect(self.prompt_new_in_group)
-        header.addWidget(self.btn_new_group)
+        self.btn_collapse = QToolButton()
+        self.btn_collapse.setText("⊟")
+        self.btn_collapse.setToolTip("Collapse all folders in the tree")
+        self.btn_collapse.clicked.connect(self.collapse_all)
+        self.btn_collapse_all = self.btn_collapse  # alias
+        header.addWidget(self.btn_collapse)
+
+        self.btn_expand = QToolButton()
+        self.btn_expand.setText("⊞")
+        self.btn_expand.setToolTip("Expand all folders in the tree")
+        self.btn_expand.clicked.connect(self.expand_all)
+        self.btn_expand_all = self.btn_expand  # alias
+        header.addWidget(self.btn_expand)
+
+        self.btn_new = QToolButton()
+        self.btn_new.setText("+ New")
+        if self.mode == "components":
+            self.btn_new.setToolTip("Create a new modular component (agent, env, model, etc.)")
+            self.btn_new.clicked.connect(self.prompt_new_component)
+        else:
+            self.btn_new.setToolTip("Create a new default experiment in a group")
+            self.btn_new.clicked.connect(self.prompt_new_in_group)
+        self.btn_new_group = self.btn_new  # backwards compatibility alias
+        header.addWidget(self.btn_new)
 
         self.btn_duplicate = QToolButton()
         self.btn_duplicate.setText("📑 Copy")
-        self.btn_duplicate.setToolTip("Duplicate currently selected experiment")
+        if self.mode in ("experiments", "experiment"):
+            self.btn_duplicate.setToolTip("Duplicate currently selected experiment")
+        elif self.mode == "components":
+            self.btn_duplicate.setToolTip("Duplicate currently selected component")
+        else:
+            self.btn_duplicate.setToolTip("Duplicate currently selected configuration")
         self.btn_duplicate.clicked.connect(self.prompt_duplicate)
         header.addWidget(self.btn_duplicate)
 
@@ -84,7 +115,13 @@ class ConfigTreeWidget(QWidget):
 
         # Search filter
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Filter configs…")
+        if self.mode in ("experiments", "experiment"):
+            placeholder = "Filter experiments…"
+        elif self.mode == "components":
+            placeholder = "Filter components…"
+        else:
+            placeholder = "Filter configs…"
+        self.search.setPlaceholderText(placeholder)
         self.search.textChanged.connect(self.filter_tree)
         layout.addWidget(self.search)
 
@@ -98,35 +135,53 @@ class ConfigTreeWidget(QWidget):
         layout.addWidget(self.tree, 1)
 
         # Status footer
-        self.footer = label(f"●  in/config/ ({self.root_dir.name})", "muted")
+        if self.mode in ("experiments", "experiment"):
+            footer_text = f"●  in/config/experiment/ ({self.root_dir.name})"
+        elif self.mode == "components":
+            footer_text = f"●  in/config/ [components] ({self.root_dir.name})"
+        else:
+            footer_text = f"●  in/config/ ({self.root_dir.name})"
+        self.footer = label(footer_text, "muted")
         layout.addWidget(self.footer)
 
     def populate(self):
-        """Recursively scan root_dir and populate the tree."""
+        """Recursively scan root_dir and populate the tree based on mode."""
         self.tree.clear()
         if not self.root_dir.exists():
             item = QTreeWidgetItem(self.tree, ["in/config (not found)"])
             item.setToolTip(0, f"Directory not found: {self.root_dir}")
             return
 
-        # Top-level directory ordering
-        preferred_order = ["experiment", "agent", "env", "model", "paradigms", "site", "hydra"]
         existing_dirs = {p.name: p for p in self.root_dir.iterdir() if p.is_dir() and not p.name.startswith(".")}
         top_files = sorted([p for p in self.root_dir.iterdir() if p.is_file() and p.suffix in (".yaml", ".yml")])
 
-        # 1. Preferred top-level directories
-        for cat in preferred_order:
-            if cat in existing_dirs:
-                self._add_dir_node(self.tree, existing_dirs[cat], expand=(cat == "experiment"))
-
-        # 2. Any other directories not in preferred_order
-        for name, dir_path in sorted(existing_dirs.items()):
-            if name not in preferred_order:
-                self._add_dir_node(self.tree, dir_path, expand=False)
-
-        # 3. Top-level files
-        for f in top_files:
-            self._add_file_node(self.tree, f)
+        if self.mode in ("experiments", "experiment"):
+            # ONLY display in/config/experiment (or experiments)
+            exp_dir = existing_dirs.get("experiment") or existing_dirs.get("experiments") or (self.root_dir / "experiment")
+            if exp_dir.exists():
+                self._add_dir_node(self.tree, exp_dir, expand=True)
+        elif self.mode == "components":
+            # Display all modular configuration directories and files OUTSIDE experiment
+            preferred_comp_order = ["agent", "env", "model", "paradigms", "site", "hydra"]
+            for cat in preferred_comp_order:
+                if cat in existing_dirs:
+                    self._add_dir_node(self.tree, existing_dirs[cat], expand=False)
+            for name, dir_path in sorted(existing_dirs.items()):
+                if name not in preferred_comp_order and name not in ("experiment", "experiments"):
+                    self._add_dir_node(self.tree, dir_path, expand=False)
+            for f in top_files:
+                self._add_file_node(self.tree, f)
+        else:
+            # "all": Top-level directory ordering with experiment first
+            preferred_order = ["experiment", "agent", "env", "model", "paradigms", "site", "hydra"]
+            for cat in preferred_order:
+                if cat in existing_dirs:
+                    self._add_dir_node(self.tree, existing_dirs[cat], expand=(cat == "experiment"))
+            for name, dir_path in sorted(existing_dirs.items()):
+                if name not in preferred_order:
+                    self._add_dir_node(self.tree, dir_path, expand=False)
+            for f in top_files:
+                self._add_file_node(self.tree, f)
 
         # Re-apply current selection if possible
         if self.current_rel_path:
@@ -365,15 +420,35 @@ class ConfigTreeWidget(QWidget):
         if data["type"] == "file":
             action_select = menu.addAction("Load in Config Viewer")
             action_select.triggered.connect(lambda: self._on_item_clicked(item, 0))
-            action_dup = menu.addAction("Duplicate Experiment…")
+            label_dup = "Duplicate Experiment…" if self.mode in ("experiments", "experiment") else "Duplicate Config…"
+            action_dup = menu.addAction(label_dup)
             action_dup.triggered.connect(self.prompt_duplicate)
         elif data["type"] == "dir":
-            if data["rel_path"].startswith("experiment"):
+            rel = data["rel_path"]
+            if rel.startswith("experiment") or self.mode in ("experiments", "experiment"):
                 action_new = menu.addAction("New Experiment in this group…")
                 group_name = Path(data["rel_path"]).name
                 action_new.triggered.connect(lambda: self._create_in_specific_group(group_name))
+            else:
+                action_new = menu.addAction("New Component in this category…")
+                cat_name = Path(data["rel_path"]).name
+                action_new.triggered.connect(lambda: self._create_in_specific_component_category(cat_name))
+
+        menu.addSeparator()
+        action_collapse = menu.addAction("Collapse All")
+        action_collapse.triggered.connect(self.collapse_all)
+        action_expand = menu.addAction("Expand All")
+        action_expand.triggered.connect(self.expand_all)
 
         menu.exec(self.tree.viewport().mapToGlobal(position))
+
+    def collapse_all(self):
+        """Collapse all folders/nodes in the tree."""
+        self.tree.collapseAll()
+
+    def expand_all(self):
+        """Expand all folders/nodes in the tree."""
+        self.tree.expandAll()
 
     def _create_in_specific_group(self, group_name):
         name, ok = QInputDialog.getText(
@@ -408,5 +483,78 @@ class ConfigTreeWidget(QWidget):
             target_file.write_text(content, encoding="utf-8")
             self.populate()
             self.select_file(f"experiment/{group_name}/{filename}")
+        except OSError as exc:
+            QMessageBox.critical(self, "Error", str(exc))
+
+    def prompt_new_component(self):
+        """Prompt to create a new component configuration (agent, env, model, etc.)."""
+        categories = ["agent", "env", "model", "paradigms", "site", "hydra"]
+        existing = [p.name for p in self.root_dir.iterdir() if p.is_dir() and not p.name.startswith(".") and p.name not in ("experiment", "experiments")]
+        for e in sorted(existing):
+            if e not in categories:
+                categories.append(e)
+
+        cat, ok = QInputDialog.getItem(
+            self, "New Component", "Select or type component category:",
+            categories, 0, True
+        )
+        if not ok or not cat.strip():
+            return
+        cat = cat.strip()
+
+        name, ok2 = QInputDialog.getText(
+            self, "New Component Name", f"Component name in '{cat}':",
+            QLineEdit.EchoMode.Normal, "custom"
+        )
+        if not ok2 or not name.strip():
+            return
+
+        name = name.strip()
+        filename = f"{name}.yaml" if not name.endswith(".yaml") else name
+        target_dir = self.root_dir / cat
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target_file = target_dir / filename
+
+        if target_file.exists():
+            QMessageBox.warning(self, "File Exists", f"Component file already exists:\n{target_file}")
+            return
+
+        content = (
+            f"# @package {cat}\n"
+            f"# Modular component configuration: {cat}/{filename}\n\n"
+            f"name: {name.replace('.yaml', '')}\n"
+        )
+        try:
+            target_file.write_text(content, encoding="utf-8")
+            self.populate()
+            self.select_file(f"{cat}/{filename}")
+        except OSError as exc:
+            QMessageBox.critical(self, "Error Creating Component", f"Could not create file:\n{exc}")
+
+    def _create_in_specific_component_category(self, cat_name):
+        name, ok = QInputDialog.getText(
+            self, "New Component", f"New component name in '{cat_name}':",
+            QLineEdit.EchoMode.Normal, "custom"
+        )
+        if not ok or not name.strip():
+            return
+        name = name.strip()
+        filename = f"{name}.yaml" if not name.endswith(".yaml") else name
+        target_dir = self.root_dir / cat_name
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target_file = target_dir / filename
+        if target_file.exists():
+            QMessageBox.warning(self, "File Exists", f"Component file already exists:\n{target_file}")
+            return
+
+        content = (
+            f"# @package {cat_name}\n"
+            f"# Modular component configuration: {cat_name}/{filename}\n\n"
+            f"name: {name.replace('.yaml', '')}\n"
+        )
+        try:
+            target_file.write_text(content, encoding="utf-8")
+            self.populate()
+            self.select_file(f"{cat_name}/{filename}")
         except OSError as exc:
             QMessageBox.critical(self, "Error", str(exc))
