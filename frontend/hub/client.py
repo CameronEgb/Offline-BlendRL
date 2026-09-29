@@ -13,106 +13,6 @@ from .models import AuthorInfo, HubComponent, ReleaseInfo
 
 DEFAULT_REGISTRY_URL = "https://raw.githubusercontent.com/CameronEgb/theta-hub/main/dist/index.json"
 
-# Built-in fallback index for offline use or initial development
-SAMPLE_COMPONENTS = [
-    {
-        "id": "obsidian-notes",
-        "name": "Obsidian Notes",
-        "kind": "plugin",
-        "version": "0.1.0",
-        "description": "Embedded Obsidian vault browser and research markdown notebook linked to NeSyRL experiment runs.",
-        "author": {"name": "Cameron Egbert", "github": "CameronEgb"},
-        "repository": "https://github.com/CameronEgb/Theta-IDE",
-        "tags": ["notes", "obsidian", "markdown", "research"],
-        "target_path": "plugins/obsidian",
-        "releases": {
-            "0.1.0": {
-                "tag": "v0.1.0",
-                "url": "https://raw.githubusercontent.com/CameronEgb/theta-hub/main/packages/obsidian-0.1.0.zip",
-                "sha256": "48c21bb5df26d2158637856320d3da12943e1e4cccb31105d7b4801775a44167",
-                "published_at": "2026-09-29T00:00:00Z"
-            }
-        }
-    },
-    {
-        "id": "wandb-monitor",
-        "name": "Weights & Biases Live Sync",
-        "kind": "plugin",
-        "version": "0.2.1",
-        "description": "Streams real-time training losses, rewards, and evaluation metrics directly to W&B dashboards.",
-        "author": {"name": "NeSyRL Community", "github": "nesyrl"},
-        "repository": "https://github.com/nesyrl/theta-plugin-wandb",
-        "tags": ["wandb", "telemetry", "visualization", "monitoring"],
-        "target_path": "plugins/wandb",
-        "releases": {
-            "0.2.1": {
-                "tag": "v0.2.1",
-                "url": "https://raw.githubusercontent.com/CameronEgb/theta-hub/main/packages/wandb-0.2.1.zip",
-                "sha256": "18ef286e692c9757221c472bff6a8747cb7548159d3be55c4e1bb66b1346dc83",
-                "published_at": "2026-09-25T12:00:00Z"
-            }
-        }
-    },
-    {
-        "id": "cql-continuous",
-        "name": "Conservative Q-Learning (Continuous)",
-        "kind": "method",
-        "version": "1.0.0",
-        "description": "Offline continuous-action CQL algorithm with automated Lagrange multiplier tuning for out-of-distribution state penalties.",
-        "author": {"name": "NeSyRL Lab", "github": "nesyrl"},
-        "repository": "https://github.com/nesyrl/theta-method-cql-cont",
-        "tags": ["offline-rl", "cql", "continuous", "actor-critic"],
-        "target_path": "src/usr/methods/cql_continuous",
-        "releases": {
-            "1.0.0": {
-                "tag": "v1.0.0",
-                "url": "https://raw.githubusercontent.com/CameronEgb/theta-hub/main/packages/cql_continuous-1.0.0.zip",
-                "sha256": "cc8da4c62655cdb94ece4d63f84888e12eb17ff0a7723617a72b43e9382d6564",
-                "published_at": "2026-09-20T10:00:00Z"
-            }
-        }
-    },
-    {
-        "id": "neumann-fast",
-        "name": "Neumann Fast Reasoner",
-        "kind": "model",
-        "version": "0.3.0",
-        "description": "High-throughput vector-matrix NeSy symbolic logic forward reasoner for hybrid RL policies.",
-        "author": {"name": "LogicRL Contributors", "github": "logicrl"},
-        "repository": "https://github.com/logicrl/neumann-fast",
-        "tags": ["logic", "symbolic", "neumann", "hybrid"],
-        "target_path": "src/usr/models/neumann_fast",
-        "releases": {
-            "0.3.0": {
-                "tag": "v0.3.0",
-                "url": "https://raw.githubusercontent.com/CameronEgb/theta-hub/main/packages/neumann_fast-0.3.0.zip",
-                "sha256": "179d06547babbc51baae187fe6b4bb72492c181e8a15b9d032208e9dec7a2599",
-                "published_at": "2026-09-18T08:00:00Z"
-            }
-        }
-    },
-    {
-        "id": "mujoco-ant-maze",
-        "name": "MuJoCo AntMaze Navigation",
-        "kind": "env",
-        "version": "0.1.5",
-        "description": "Vectorized D4RL AntMaze benchmark environment wrappers with sparse and shaped reward profiles.",
-        "author": {"name": "Gym Contributors", "github": "farama"},
-        "repository": "https://github.com/farama/antmaze-wrappers",
-        "tags": ["mujoco", "antmaze", "d4rl", "offline-rl"],
-        "target_path": "in/envs/antmaze",
-        "releases": {
-            "0.1.5": {
-                "tag": "v0.1.5",
-                "url": "https://raw.githubusercontent.com/CameronEgb/theta-hub/main/packages/antmaze-0.1.5.zip",
-                "sha256": "a2f5575a23d7b4a604efe0065975cd34d25d2e33b039995b4cef2501c1b16caf",
-                "published_at": "2026-09-15T14:00:00Z"
-            }
-        }
-    }
-]
-
-
 class HubClient(QObject):
     """Client for browsing, searching, and installing community hub items."""
 
@@ -182,6 +82,11 @@ class HubClient(QObject):
                 data = json.loads(local_file.read_text(encoding="utf-8"))
         else:
             candidates = [self.registry_url]
+            # Check local theta-hub directory if available
+            local_hub = (self.workspace_dir.parent / "theta-hub" / "dist" / "index.json").resolve()
+            if local_hub.exists():
+                candidates.insert(0, f"file://{local_hub}")
+
             for alt in [
                 "https://raw.githubusercontent.com/CameronEgb/theta-hub/main/dist/index.json",
                 "https://cameronegb.github.io/theta-hub/index.json",
@@ -192,6 +97,15 @@ class HubClient(QObject):
 
             for target_url in candidates:
                 try:
+                    if target_url.startswith("file://"):
+                        local_p = Path(target_url[7:])
+                        if local_p.exists():
+                            raw_body = local_p.read_text(encoding="utf-8")
+                            data = json.loads(raw_body)
+                            self.cache_file.write_text(raw_body, encoding="utf-8")
+                            break
+                        continue
+
                     req = urllib.request.Request(target_url, headers=headers)
                     with urllib.request.urlopen(req, timeout=8) as response:
                         raw_body = response.read().decode("utf-8")
@@ -221,9 +135,8 @@ class HubClient(QObject):
             except Exception:
                 data = None
 
-        # Ultimate fallback: Sample community feed
         if data is None:
-            data = {"components": SAMPLE_COMPONENTS}
+            data = {"components": []}
 
         raw_list = data.get("components", data if isinstance(data, list) else [])
         components = [HubComponent.from_dict(item) for item in raw_list]

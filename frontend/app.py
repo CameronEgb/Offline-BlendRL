@@ -840,10 +840,9 @@ class Window(QMainWindow):
     def _on_hub_component_changed(self, component_id: str, action: str):
         if hasattr(self, "plugin_manager"):
             ids_to_process = {component_id, component_id.replace("-", "_"), component_id.replace("_", "-")}
-            if component_id.endswith("-notes"):
-                ids_to_process.add(component_id[:-6])
-            elif component_id.endswith("_notes"):
-                ids_to_process.add(component_id[:-6])
+            for suffix in ("-notes", "_notes", "-sim", "_sim", "-plugin", "_plugin"):
+                if component_id.endswith(suffix):
+                    ids_to_process.add(component_id[:-len(suffix)])
 
             if hasattr(self, "hub_client"):
                 comp = self.hub_client.get_component(component_id)

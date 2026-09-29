@@ -118,13 +118,11 @@ class PluginManager(QObject):
             plugin_id.replace("-", "_"),
             plugin_id.replace("_", "-"),
         }
-        if plugin_id.endswith("-notes"):
-            aliases.add(plugin_id[:-6])
-        elif plugin_id.endswith("_notes"):
-            aliases.add(plugin_id[:-6])
-        else:
-            aliases.add(f"{plugin_id}-notes")
-            aliases.add(f"{plugin_id}_notes")
+        for suffix in ("-notes", "_notes", "-sim", "_sim", "-plugin", "_plugin"):
+            if plugin_id.endswith(suffix):
+                aliases.add(plugin_id[:-len(suffix)])
+            else:
+                aliases.add(f"{plugin_id}{suffix}")
 
         for alias in aliases:
             self.disable_plugin(alias)
@@ -150,13 +148,11 @@ class PluginManager(QObject):
             plugin_id.replace("-", "_"),
             plugin_id.replace("_", "-"),
         }
-        if plugin_id.endswith("-notes"):
-            aliases.add(plugin_id[:-6])
-        elif plugin_id.endswith("_notes"):
-            aliases.add(plugin_id[:-6])
-        else:
-            aliases.add(f"{plugin_id}-notes")
-            aliases.add(f"{plugin_id}_notes")
+        for suffix in ("-notes", "_notes", "-sim", "_sim", "-plugin", "_plugin"):
+            if plugin_id.endswith(suffix):
+                aliases.add(plugin_id[:-len(suffix)])
+            else:
+                aliases.add(f"{plugin_id}{suffix}")
 
         for alias in aliases:
             self.uninstalled_ids.discard(alias)

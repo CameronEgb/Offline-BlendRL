@@ -1,0 +1,10 @@
+{
+  "id": "doom",
+  "name": "DOOM Simulator",
+  "version": "0.1.0",
+  "description": "Real-time 3D DOOM raycaster simulator, RL agent testbed, and performance benchmark to answer: Can Theta run DOOM?",
+  "author": "Cameron Egbert",
+  "default_enabled": false,
+  "icon": "doom",
+  "entry_point": "DoomPlugin"
+}
