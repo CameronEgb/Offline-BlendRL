@@ -7,15 +7,30 @@
   <link rel="stylesheet" href="vendor/xterm.css" />
   <script src="vendor/xterm.js"></script>
   <script src="vendor/xterm-addon-fit.js"></script>
+  <script src="vendor/xterm-addon-canvas.js"></script>
+  <script src="vendor/xterm-addon-unicode11.js"></script>
   <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
   <style>
+    @font-face {
+      font-family: "Symbols Nerd Font Mono";
+      src: url("vendor/SymbolsNerdFontMono-Regular.ttf") format("truetype");
+      font-display: block;
+    }
+    @font-face {
+      font-family: "Symbols Nerd Font";
+      src: url("vendor/SymbolsNerdFont-Regular.ttf") format("truetype");
+      font-display: block;
+    }
     html, body {
       margin: 0;
       padding: 0;
       width: 100%;
       height: 100%;
       overflow: hidden;
-      background-color: #1d2021;
+      background-color: #24273a;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
     }
     #terminal-container {
       width: 100%;
@@ -25,6 +40,14 @@
     }
     .xterm {
       height: 100%;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
+    }
+    .xterm .xterm-screen canvas {
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      image-rendering: -webkit-optimize-contrast;
     }
     .xterm .xterm-viewport::-webkit-scrollbar {
       width: 8px;
@@ -33,11 +56,11 @@
       background: transparent;
     }
     .xterm .xterm-viewport::-webkit-scrollbar-thumb {
-      background: rgba(168, 153, 132, 0.3);
+      background: rgba(110, 115, 141, 0.3);
       border-radius: 4px;
     }
     .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
-      background: rgba(168, 153, 132, 0.6);
+      background: rgba(110, 115, 141, 0.6);
     }
   </style>
 </head>
@@ -47,41 +70,105 @@
     const term = new Terminal({
       cursorBlink: true,
       cursorStyle: 'block',
-      fontFamily: "'JetBrains Mono', 'SF Mono', 'Fira Code', 'Menlo', 'Monaco', 'Cascadia Code', monospace",
+      fontFamily: "'JetBrains Mono', 'Symbols Nerd Font Mono', 'Symbols Nerd Font', 'SF Mono', 'Fira Code', 'Menlo', 'Monaco', 'Cascadia Code', monospace",
       fontSize: 13,
-      lineHeight: 1.22,
+      lineHeight: 1.0,
+      letterSpacing: 0,
+      customGlyphs: true,
       macOptionIsMeta: true,
+      macOptionClickForcesSelection: true,
+      altClickMovesCursor: false,
       allowProposedApi: true,
+      scrollback: 10000,
       theme: {
-        background: '#1d2021',
-        foreground: '#ebdbb2',
-        cursor: '#fabd2f',
-        cursorAccent: '#1d2021',
-        selectionBackground: 'rgba(250, 189, 47, 0.35)',
-        black: '#1d2021',
-        red: '#ea6962',
-        green: '#b8bb26',
-        yellow: '#fabd2f',
-        blue: '#83a598',
-        magenta: '#d3869b',
-        cyan: '#8ec07c',
-        white: '#ebdbb2',
-        brightBlack: '#928374',
-        brightRed: '#fb4934',
-        brightGreen: '#b8bb26',
-        brightYellow: '#fabd2f',
-        brightBlue: '#83a598',
-        brightMagenta: '#d3869b',
-        brightCyan: '#8ec07c',
-        brightWhite: '#fbf1c7'
+        background: '#24273a',
+        foreground: '#cad3f5',
+        cursor: '#f4dbd6',
+        cursorAccent: '#24273a',
+        selectionBackground: 'rgba(110, 115, 141, 0.45)',
+        selectionForeground: '#cad3f5',
+        black: '#494d64',
+        red: '#ed8796',
+        green: '#a6da95',
+        yellow: '#eed49f',
+        blue: '#8aadf4',
+        magenta: '#f5bde6',
+        cyan: '#8bd5ca',
+        white: '#b8c0e0',
+        brightBlack: '#5b6078',
+        brightRed: '#ed8796',
+        brightGreen: '#a6da95',
+        brightYellow: '#eed49f',
+        brightBlue: '#8aadf4',
+        brightMagenta: '#c6a0f6',
+        brightCyan: '#8bd5ca',
+        brightWhite: '#cad3f5'
       }
     });
 
     const fitAddon = new FitAddon.FitAddon();
     term.loadAddon(fitAddon);
 
+    try {
+      const unicode11Addon = new Unicode11Addon.Unicode11Addon();
+      term.loadAddon(unicode11Addon);
+      term.unicode.activeVersion = '11';
+    } catch (e) {
+      console.warn("Unicode11Addon load warning:", e);
+    }
+
     const container = document.getElementById('terminal-container');
     term.open(container);
+
+    let canvasAddon = null;
+    try {
+      canvasAddon = new CanvasAddon.CanvasAddon();
+      term.loadAddon(canvasAddon);
+    } catch (e) {
+      console.warn("CanvasAddon load warning, falling back to DOM renderer:", e);
+    }
+
+    // Register CSI handlers for Kitty keyboard protocol queries and DECRQM
+    try {
+      term.parser.registerCsiHandler({ final: 'u', prefix: '?' }, () => {
+        if (window.bridge && typeof window.bridge.send_input === 'function') {
+          window.bridge.send_input('\x1b[?0u');
+        }
+        return true;
+      });
+      term.parser.registerCsiHandler({ intermediates: '$', final: 'p', prefix: '?' }, (params) => {
+        if (params && params[0] === 2026 && window.bridge && typeof window.bridge.send_input === 'function') {
+          window.bridge.send_input('\x1b[?2026;2$y');
+        }
+        return true;
+      });
+    } catch (e) {
+      console.warn("CSI handler registration warning:", e);
+    }
+
+    // Register OSC 52 handler for tmux clipboard sync (set -s set-clipboard on)
+    term.parser.registerOscHandler(52, function(data) {
+      try {
+        const idx = data.indexOf(';');
+        if (idx !== -1) {
+          const b64 = data.substring(idx + 1);
+          if (b64 && b64 !== '?') {
+            const raw = atob(b64);
+            const bytes = new Uint8Array(raw.length);
+            for (let i = 0; i < raw.length; i++) {
+              bytes[i] = raw.charCodeAt(i);
+            }
+            const text = new TextDecoder('utf-8').decode(bytes);
+            if (window.bridge && typeof window.bridge.set_clipboard === 'function') {
+              window.bridge.set_clipboard(text);
+            }
+          }
+        }
+      } catch (e) {
+        console.error("OSC 52 error:", e);
+      }
+      return true;
+    });
 
     function fitTerminal() {
       try {
@@ -102,61 +189,128 @@
       resizeTimer = setTimeout(fitTerminal, 40);
     });
 
-    // Custom key handler for clipboard copy/paste on macOS
+    // Custom key handler for clipboard, tmux meta/alt shortcuts, and IDE actions
     term.attachCustomKeyEventHandler((event) => {
-      if (event.metaKey && (event.key === 'c' || event.key === 'C') && term.hasSelection()) {
-        return false; // let browser / OS handle copy
+      // Pass Alt/Option combinations directly to xterm for tmux (e.g. Option+s / M-s, Option+p / M-p)
+      if (event.altKey) {
+        return true;
+      }
+      // Allow standard copy (Cmd+C on macOS if selection, Ctrl+Shift+C on Linux/Windows)
+      if ((event.metaKey && (event.key === 'c' || event.key === 'C') && term.hasSelection()) ||
+          (event.ctrlKey && event.shiftKey && (event.key === 'c' || event.key === 'C') && term.hasSelection())) {
+        return false;
+      }
+      // Allow standard paste (Cmd+V on macOS, Ctrl+Shift+V on Linux/Windows)
+      if ((event.metaKey && (event.key === 'v' || event.key === 'V')) ||
+          (event.ctrlKey && event.shiftKey && (event.key === 'v' || event.key === 'V'))) {
+        return false;
+      }
+      // Allow Cmd+A (Select All on macOS)
+      if (event.metaKey && (event.key === 'a' || event.key === 'A')) {
+        term.selectAll();
+        return false;
+      }
+      // Allow Cmd+K (Clear terminal on macOS)
+      if (event.metaKey && (event.key === 'k' || event.key === 'K')) {
+        term.reset();
+        return false;
       }
       return true;
     });
 
-    if (typeof QWebChannel !== "undefined") {
-      new QWebChannel(qt.webChannelTransport, function(channel) {
-        window.bridge = channel.objects.bridge;
+    // Native clipboard paste integration
+    window.addEventListener('paste', (event) => {
+      const clip = event.clipboardData || window.clipboardData;
+      if (clip) {
+        const text = clip.getData('text');
+        if (text && window.bridge) {
+          window.bridge.send_input(text);
+        }
+      }
+      event.preventDefault();
+    });
 
-        // Incoming terminal bytes from Python PTY
-        window.bridge.data_received.connect(function(data) {
-          term.write(data);
-        });
+    // Prevent default Chromium browser context menu and trigger IDE context menu
+    window.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      if (window.bridge && typeof window.bridge.show_context_menu === 'function') {
+        const selected = term.hasSelection() ? term.getSelection() : '';
+        window.bridge.show_context_menu(Math.round(event.clientX), Math.round(event.clientY), selected);
+      }
+    });
 
-        // Theme updates from Python
-        window.bridge.theme_received.connect(function(themeJson) {
-          try {
-            const theme = JSON.parse(themeJson);
-            term.options.theme = theme;
-            document.body.style.backgroundColor = theme.background || '#1d2021';
-          } catch(e) {
-            console.error("Theme parse error:", e);
+    function initChannel() {
+      if (typeof QWebChannel !== "undefined" && typeof qt !== "undefined" && qt.webChannelTransport) {
+        new QWebChannel(qt.webChannelTransport, function(channel) {
+          window.bridge = channel.objects.bridge;
+
+          // Incoming terminal bytes from Python PTY
+          window.bridge.data_received.connect(function(data) {
+            term.write(data);
+          });
+
+          // Theme updates from Python
+          window.bridge.theme_received.connect(function(themeJson) {
+            try {
+              const theme = JSON.parse(themeJson);
+              term.options.theme = theme;
+              document.body.style.backgroundColor = theme.background || '#24273a';
+            } catch(e) {
+              console.error("Theme parse error:", e);
+            }
+          });
+
+          // Font size updates
+          window.bridge.font_size_received.connect(function(newSize) {
+            term.options.fontSize = newSize;
+            fitTerminal();
+          });
+
+          // Clear / reset terminal
+          window.bridge.clear_requested.connect(function() {
+            term.reset();
+          });
+
+          // Outgoing keystrokes to Python PTY
+          term.onData(function(data) {
+            window.bridge.send_input(data);
+          });
+
+          // Await font rendering and preloading before initial layout fit
+          const finishReady = () => {
+            fitTerminal();
+            if (window.bridge) {
+              window.bridge.terminal_ready();
+            }
+            term.focus();
+          };
+
+          if (document.fonts) {
+            Promise.all([
+              document.fonts.load("13px 'Symbols Nerd Font Mono'"),
+              document.fonts.load("13px 'Symbols Nerd Font'"),
+              document.fonts.ready
+            ]).then(finishReady).catch(finishReady);
+          } else {
+            setTimeout(finishReady, 60);
           }
         });
-
-        // Font size updates
-        window.bridge.font_size_received.connect(function(newSize) {
-          term.options.fontSize = newSize;
-          fitTerminal();
-        });
-
-        // Clear terminal
-        window.bridge.clear_requested.connect(function() {
-          term.clear();
-        });
-
-        // Outgoing keystrokes to Python PTY
-        term.onData(function(data) {
-          window.bridge.send_input(data);
-        });
-
-        // Notify Python that the terminal is mounted and ready
-        setTimeout(() => {
-          fitTerminal();
-          window.bridge.terminal_ready();
-          term.focus();
-        }, 50);
-      });
+      } else {
+        setTimeout(initChannel, 20);
+      }
     }
+    initChannel();
 
     window.addEventListener('click', () => {
       term.focus();
+    });
+
+    window.addEventListener('focus', () => {
+      term.focus();
+    });
+
+    window.addEventListener('blur', () => {
+      term.blur();
     });
   </script>
 </body>

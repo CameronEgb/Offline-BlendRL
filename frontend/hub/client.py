@@ -63,6 +63,14 @@ class HubClient(QObject):
     def fetch_index_sync(self, force: bool = False) -> List[HubComponent]:
         """Fetch index synchronously using HTTP conditional caching (ETag)."""
         headers = {"User-Agent": "ThetaIDE-HubClient/1.0"}
+        
+        if force:
+            headers["Cache-Control"] = "no-cache"
+            if self.cache_file.exists():
+                self.cache_file.unlink()
+            if self.meta_file.exists():
+                self.meta_file.unlink()
+
         etag = None
 
         if not force and self.meta_file.exists():

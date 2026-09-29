@@ -8,6 +8,9 @@ from pathlib import Path
 import sys
 from typing import Optional
 
+if sys.platform == "darwin" and "QTWEBENGINE_CHROMIUM_FLAGS" not in os.environ:
+    os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--disable-gpu"
+
 from PyQt6.QtCore import Qt, QTimer, QRegularExpression, QUrl
 from PyQt6.QtGui import QAction, QFont, QRegularExpressionValidator, QDesktopServices, QIcon
 from PyQt6.QtWidgets import (
@@ -16,11 +19,12 @@ from PyQt6.QtWidgets import (
     QDoubleSpinBox, QPushButton, QTreeWidget, QTreeWidgetItem, QToolBar,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
     QProgressBar, QScrollArea, QFileDialog, QMessageBox, QDialog, QSplitter,
-    QFrame, QToolButton, QSlider, QStyle,
+    QFrame, QToolButton, QSlider, QStyle, QLabel,
 )
 from .api import DEFAULT_URL, Backend
 from .model import (BASE_EXPERIMENT, FINAL_STATUSES, LIVE_STATUSES, Config, Store, available_metrics, example_runs,
                     latest, metric_points, new_run, sample)
+from .settings import SettingsManager
 from .theme import STYLE, ThemeManager, theme_color
 from .theme_builder import ThemeBuilder
 from .widgets import Chart, MetricCard, ToggleSlider, YamlHighlighter, label
@@ -57,13 +61,22 @@ class Window(QMainWindow):
         self.setMinimumSize(1080, 720)
         self.setDockNestingEnabled(True)
         self.store = Store(data_dir)
-        self.theme_manager = ThemeManager(Path(data_dir) / ".appearance.json", self)
-        self.layout_file = Path(data_dir) / ".layout.json"
+
+        # --- Unified settings (must be first; everything else reads from it) ---
+        self.settings_manager = SettingsManager(Path(data_dir))
+        self.settings_manager.changed.connect(self._on_settings_changed)
+
+        self.theme_manager = ThemeManager(
+            Path(data_dir) / ".appearance.json",
+            self,
+            initial_theme=self.settings_manager.theme,
+        )
         self.pane_sliders = {}
         self.plugin_sliders = {}
         self.plugin_manager = PluginManager(
             self,
             [Path(__file__).parent / "plugins", Path(data_dir) / "plugins"],
+            settings_manager=self.settings_manager,
         )
         self.plugin_manager.discover()
         self.hub_client = HubClient(
@@ -130,6 +143,10 @@ class Window(QMainWindow):
         if self.theme_manager.error:
             self.log(self.theme_manager.error)
         self.default_layout = self.saveState()
+
+        # --- Hotkey and Action-key Navigation Manager ---
+        from .hotkeys import HotkeyManager
+        self.hotkey_manager = HotkeyManager(self, self.settings_manager)
 
     def button(self, text, callback, primary=False):
         button = QPushButton(text)
@@ -610,6 +627,61 @@ class Window(QMainWindow):
 
         left_layout.addWidget(plugins_card)
 
+        # Card 1.9: Hotkeys & Action-Key Navigation
+        hotkeys_card = QFrame()
+        hotkeys_card.setObjectName("card")
+        hk_layout = QVBoxLayout(hotkeys_card)
+        hk_layout.setContentsMargins(14, 12, 14, 12)
+        hk_layout.setSpacing(10)
+        hk_layout.addWidget(label("KEYBOARD SHORTCUTS & NAVIGATION", "eyebrow"))
+        hk_layout.addWidget(label("Action Key & Pane Hotkeys", "heading"))
+        hk_layout.addWidget(
+            label("Revolve IDE navigation around an Action key (Ctrl+B / Caps Lock by default). "
+                  "Press or hold the Action key, then press 0–9 to quickly move between open panes.", "muted")
+        )
+
+        ak_row = QHBoxLayout()
+        ak_row.addWidget(label("Primary Action Key:", "muted"))
+        self.settings_action_key_combo = QComboBox()
+        for k, title in [
+            ("ctrl+b", "Ctrl + B / Caps Lock (tmux default)"),
+            ("caps_lock", "Caps Lock"),
+            ("alt", "Alt / Option"),
+            ("ctrl", "Control"),
+            ("meta", "Command / Meta"),
+            ("shift", "Shift"),
+        ]:
+            self.settings_action_key_combo.addItem(title, k)
+        cur_action_key = self.settings_manager.action_key.lower()
+        idx = self.settings_action_key_combo.findData(cur_action_key)
+        if idx >= 0:
+            self.settings_action_key_combo.setCurrentIndex(idx)
+        else:
+            self.settings_action_key_combo.addItem(cur_action_key.replace("_", " ").title(), cur_action_key)
+            self.settings_action_key_combo.setCurrentText(cur_action_key.replace("_", " ").title())
+        self.settings_action_key_combo.currentIndexChanged.connect(self._on_action_key_changed)
+        ak_row.addWidget(self.settings_action_key_combo, 1)
+        hk_layout.addLayout(ak_row)
+
+        hk_table = QLabel(
+            "<table style='font-size: 11px; line-height: 1.6; color: rgba(255,255,255,0.75);'>"
+            "<tr><td style='padding-right: 20px;'><code>Action + 0</code> ➔ Settings & About</td>"
+            "<td><code>Action + 5</code> ➔ Plot viewer</td></tr>"
+            "<tr><td style='padding-right: 20px;'><code>Action + 1</code> ➔ Components</td>"
+            "<td><code>Action + 6</code> ➔ TensorBoard</td></tr>"
+            "<tr><td style='padding-right: 20px;'><code>Action + 2</code> ➔ Experiment builder</td>"
+            "<td><code>Action + 7</code> ➔ Job queue</td></tr>"
+            "<tr><td style='padding-right: 20px;'><code>Action + 3</code> ➔ Training monitor</td>"
+            "<td><code>Action + 8</code> ➔ Terminal</td></tr>"
+            "<tr><td style='padding-right: 20px;'><code>Action + 4</code> ➔ Results browser</td>"
+            "<td><code>Action + 9</code> ➔ Console</td></tr>"
+            "</table>"
+        )
+        hk_table.setStyleSheet("padding: 2px 0;")
+        hk_layout.addWidget(hk_table)
+
+        left_layout.addWidget(hotkeys_card)
+
         # Card 2: Backend API Connection
         backend_card = QFrame()
         backend_card.setObjectName("card")
@@ -651,8 +723,17 @@ class Window(QMainWindow):
         btn_reset_layout.setToolTip("Restore default pane sizes and layout")
         btn_reset_layout.clicked.connect(lambda: (self.restoreState(self.default_layout), self.statusBar().showMessage("Restored default UI layout.", 4000)))
         btn_row.addWidget(btn_reset_layout)
+        btn_open_settings = QPushButton("Open settings.toml ↗")
+        btn_open_settings.setToolTip(
+            f"Open the settings file in your default text editor\n{self.settings_manager.workspace_settings_path}"
+        )
+        btn_open_settings.clicked.connect(self.open_settings_file)
+        btn_row.addWidget(btn_open_settings)
         btn_row.addStretch()
         sc_layout.addLayout(btn_row)
+        settings_path_label = label(str(self.settings_manager.workspace_settings_path), "muted")
+        settings_path_label.setWordWrap(True)
+        sc_layout.addWidget(settings_path_label)
         left_layout.addWidget(storage_card)
         left_layout.addStretch()
 
@@ -704,6 +785,73 @@ class Window(QMainWindow):
             theme = self.theme_manager.themes().get(theme_name)
             if theme:
                 self.select_theme(theme)
+                # Persist the selection to settings.toml
+                if hasattr(self, "settings_manager"):
+                    self.settings_manager.set("appearance", "theme", theme_name)
+
+    def _on_settings_changed(self):
+        """Called when settings.toml changes on disk (or when the app mutates it).
+
+        Applies any differences to the live UI — theme, sidebar visibility, etc.
+        Designed to be idempotent so redundant calls are harmless.
+        """
+        if not hasattr(self, "settings_manager"):
+            return
+
+        # --- Theme hot-reload ---
+        new_theme = self.settings_manager.theme
+        if new_theme != self.theme_manager.active.get("name"):
+            if not self.theme_manager.select_by_name(new_theme):
+                self.log(f"[settings] Unknown theme '{new_theme}' in settings.toml; keeping current theme.")
+            else:
+                # Sync the dropdown in the Settings panel if it's already built
+                if hasattr(self, "settings_theme_select"):
+                    self.settings_theme_select.blockSignals(True)
+                    self.settings_theme_select.setCurrentText(new_theme)
+                    self.settings_theme_select.blockSignals(False)
+
+        # --- Sidebar visibility hot-reload ---
+        known_set = set(self.settings_manager.sidebar_order)
+        visible_set = set(self.settings_manager.sidebar_visible)
+        if known_set and hasattr(self, "tabs"):
+            for pid in self.tabs.tab_order:
+                if pid not in known_set:
+                    continue  # plugin tab not in settings — leave it alone
+                should_be = pid in visible_set
+                if self.tabs.is_tab_visible(pid) != should_be:
+                    self.tabs.set_tab_visible(pid, should_be)
+                    if hasattr(self, "pane_sliders") and pid in self.pane_sliders:
+                        slider = self.pane_sliders[pid]
+                        slider.blockSignals(True)
+                        slider.setChecked(should_be)
+                        slider.blockSignals(False)
+            if hasattr(self, "pane_sliders"):
+                self.update_pane_sliders_state()
+
+        # --- Hotkeys hot-reload ---
+        if hasattr(self, "settings_action_key_combo"):
+            cur = self.settings_manager.action_key.lower()
+            idx = self.settings_action_key_combo.findData(cur)
+            if idx >= 0 and self.settings_action_key_combo.currentIndex() != idx:
+                self.settings_action_key_combo.blockSignals(True)
+                self.settings_action_key_combo.setCurrentIndex(idx)
+                self.settings_action_key_combo.blockSignals(False)
+
+    def _on_action_key_changed(self, index):
+        if not hasattr(self, "settings_action_key_combo"):
+            return
+        val = self.settings_action_key_combo.itemData(index)
+        if val:
+            self.settings_manager.set("hotkeys", "action_key", val)
+            self.statusBar().showMessage(f"Action Key set to {val.replace('_', ' ').title()}", 3000)
+
+    def switch_to_pane(self, target: str | int) -> bool:
+        """Switch to a pane by name or numeric index [0, 1, 2, ...]."""
+        if hasattr(self, "hotkey_manager"):
+            if isinstance(target, int):
+                return self.hotkey_manager.switch_to_pane_by_index(target)
+            return self.hotkey_manager.switch_to_pane(str(target))
+        return False
 
     def on_pane_slider_toggled(self, pane_id, checked):
         visible_count = sum(1 for s in self.pane_sliders.values() if s.isChecked())
@@ -790,6 +938,18 @@ class Window(QMainWindow):
                 self.plugin_sliders[pid] = slider
                 row.addWidget(slider)
 
+                btn_settings = QToolButton()
+                btn_settings.setText("⚙")
+                btn_settings.setToolTip(f"{manifest.name} Settings")
+                btn_settings.setFixedSize(28, 28)
+                btn_settings.setCursor(Qt.CursorShape.PointingHandCursor)
+                btn_settings.setStyleSheet(
+                    "QToolButton { border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 4px; background: rgba(255, 255, 255, 0.04); font-size: 16px; } "
+                    "QToolButton:hover { background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.3); }"
+                )
+                btn_settings.clicked.connect(lambda _, p=pid: self.open_plugin_settings(p))
+                row.addWidget(btn_settings)
+
                 btn_trash = QToolButton()
                 trash_icon_path = Path(__file__).parent / "icons" / "trash.svg"
                 if trash_icon_path.exists():
@@ -836,6 +996,38 @@ class Window(QMainWindow):
         self.refresh_plugins_ui()
         self.save_layout()
         self.statusBar().showMessage(f"Uninstalled plugin: {name}", 4000)
+
+    def open_plugin_settings(self, plugin_id: str):
+        from PyQt6.QtWidgets import QDialogButtonBox, QVBoxLayout, QMessageBox, QDialog
+        
+        instance = self.plugin_manager.instances.get(plugin_id)
+        if not instance:
+            QMessageBox.information(self, "Plugin Disabled", "Please enable the plugin first to configure its settings.")
+            return
+            
+        context = self.plugin_manager.contexts.get(plugin_id)
+        settings_widget = None
+        if hasattr(instance, "get_settings_widget"):
+            settings_widget = instance.get_settings_widget(context)
+            
+        if not settings_widget:
+            QMessageBox.information(self, "No Settings", f"The plugin '{plugin_id}' has no configurable settings.")
+            return
+            
+        dialog = QDialog(self)
+        manifest = self.plugin_manager.manifests.get(plugin_id)
+        name = manifest.name if manifest else plugin_id
+        dialog.setWindowTitle(f"{name} Settings")
+        dialog.setMinimumWidth(400)
+        
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(settings_widget)
+        
+        btn_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
+        btn_box.accepted.connect(dialog.accept)
+        layout.addWidget(btn_box)
+        
+        dialog.exec()
 
     def _on_hub_component_changed(self, component_id: str, action: str):
         if hasattr(self, "plugin_manager"):
@@ -887,38 +1079,42 @@ class Window(QMainWindow):
         self.statusBar().showMessage("Restored default sidebar panels and order.", 4000)
 
     def save_layout(self):
-        if not hasattr(self, "layout_file"):
+        if not hasattr(self, "settings_manager"):
             return
-        data = {
-            "tab_order": list(self.tabs.tab_order),
-            "visible_tabs": {pid: self.tabs.is_tab_visible(pid) for pid in self.tabs.tab_order}
-        }
         try:
-            self.layout_file.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-        except OSError as exc:
+            order = list(self.tabs.tab_order)
+            visible = [pid for pid in order if self.tabs.is_tab_visible(pid)]
+            self.settings_manager.set("sidebar", "order", order)
+            self.settings_manager.set("sidebar", "visible", visible)
+        except Exception as exc:
             self.log(f"Failed to save sidebar layout: {exc}")
 
     def load_layout(self):
-        if not hasattr(self, "layout_file") or not self.layout_file.exists():
+        if not hasattr(self, "settings_manager"):
             return
         try:
-            data = json.loads(self.layout_file.read_text(encoding="utf-8"))
-            if isinstance(data, dict):
-                order = data.get("tab_order")
-                if isinstance(order, list):
-                    self.tabs.apply_tab_order(order)
-                vis = data.get("visible_tabs")
-                if isinstance(vis, dict):
-                    for pid, val in vis.items():
-                        self.tabs.set_tab_visible(pid, bool(val))
-                        if hasattr(self, "pane_sliders") and pid in self.pane_sliders:
-                            slider = self.pane_sliders[pid]
-                            slider.blockSignals(True)
-                            slider.setChecked(bool(val))
-                            slider.blockSignals(False)
-                    self.update_pane_sliders_state()
-        except (OSError, ValueError, TypeError) as exc:
-            self.log(f"Could not load sidebar layout preferences: {exc}")
+            order = self.settings_manager.sidebar_order
+            visible_set = set(self.settings_manager.sidebar_visible)
+            known_set = set(order)  # tabs settings.toml explicitly knows about
+            if order:
+                self.tabs.apply_tab_order(order)
+            for pid in self.tabs.tab_order:
+                if pid not in known_set:
+                    # Plugin-added tab not yet in settings — leave it visible
+                    # (the user hasn't made a preference yet; save_layout will
+                    # persist it the next time the layout changes)
+                    continue
+                is_visible = pid in visible_set
+                self.tabs.set_tab_visible(pid, is_visible)
+                if hasattr(self, "pane_sliders") and pid in self.pane_sliders:
+                    slider = self.pane_sliders[pid]
+                    slider.blockSignals(True)
+                    slider.setChecked(is_visible)
+                    slider.blockSignals(False)
+            if hasattr(self, "pane_sliders"):
+                self.update_pane_sliders_state()
+        except Exception as exc:
+            self.log(f"Failed to load sidebar layout: {exc}")
 
     def test_backend_connection(self):
         if hasattr(self, "settings_backend_status"):
@@ -989,8 +1185,16 @@ class Window(QMainWindow):
         view_menu.addAction("Console", lambda: self.tabs.setCurrentWidget(self.console_panel))
         view_menu.addAction("Settings & About", lambda: self.tabs.setCurrentWidget(self.settings_panel))
         view_menu.addAction("Restore default layout", lambda: self.restoreState(self.default_layout))
+        view_menu.addSeparator()
+        view_menu.addAction("Preferences: Open Settings File", self.open_settings_file)
         help_menu = self.menuBar().addMenu("Help")
         help_menu.addAction("Settings & About", self.show_about)
+
+    def open_settings_file(self):
+        """Open the workspace settings.toml in the user's default text editor."""
+        path = self.settings_manager.workspace_settings_path
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+        self.statusBar().showMessage(f"Opened {path.name} — changes apply automatically on save.", 6000)
 
     def show_tensorboard(self):
         self.tabs.setCurrentWidget(self.tensorboard_panel)
@@ -1985,6 +2189,8 @@ class Window(QMainWindow):
             self.persist(self.active)  # training keeps running in the backend; reopening reconnects
         if hasattr(self, "terminal_panel"):
             self.terminal_panel.terminal.close()
+        if hasattr(self, "hotkey_manager"):
+            self.hotkey_manager.cleanup()
         self.save_notes()
         event.accept()
 

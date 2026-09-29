@@ -1,12 +1,14 @@
 """PyQt6 QWebEngineView wrapper for xterm.js terminal emulator with PTY integration."""
 import json
+import os
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import Qt, QUrl, pyqtSignal, pyqtSlot, QObject, QTimer
+from PyQt6.QtCore import Qt, QUrl, pyqtSignal, pyqtSlot, QObject, QTimer, QPoint
+from PyQt6.QtGui import QAction, QCursor
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
-    QStackedWidget, QPlainTextEdit, QFrame, QSizePolicy
+    QPlainTextEdit, QFrame, QSizePolicy, QMenu, QApplication
 )
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineSettings
@@ -42,6 +44,30 @@ NATIVE_TERMINAL_PALETTES = {
         "brightMagenta": "#cba6f7",
         "brightCyan": "#94e2d5",
         "brightWhite": "#a6adc8",
+    },
+    "catppuccin macchiato": {
+        "background": "#24273a",
+        "foreground": "#cad3f5",
+        "cursor": "#f4dbd6",
+        "cursorAccent": "#24273a",
+        "selectionBackground": "rgba(110, 115, 141, 0.45)",
+        "selectionForeground": "#cad3f5",
+        "black": "#494d64",
+        "red": "#ed8796",
+        "green": "#a6da95",
+        "yellow": "#eed49f",
+        "blue": "#8aadf4",
+        "magenta": "#f5bde6",
+        "cyan": "#8bd5ca",
+        "white": "#b8c0e0",
+        "brightBlack": "#5b6078",
+        "brightRed": "#ed8796",
+        "brightGreen": "#a6da95",
+        "brightYellow": "#eed49f",
+        "brightBlue": "#8aadf4",
+        "brightMagenta": "#c6a0f6",
+        "brightCyan": "#8bd5ca",
+        "brightWhite": "#cad3f5",
     },
     "catppuccin latte": {
         "background": "#eff1f5",
@@ -113,7 +139,67 @@ NATIVE_TERMINAL_PALETTES = {
         "brightCyan": "#8fbcbb",
         "brightWhite": "#eceff4",
     },
+    "gruvbox light": {
+        "background": "#fbf1c7",
+        "foreground": "#3c3836",
+        "cursor": "#9d6000",
+        "cursorAccent": "#fbf1c7",
+        "selectionBackground": "rgba(213, 196, 161, 0.6)",
+        "selectionForeground": "#3c3836",
+        "black": "#282828",
+        "red": "#cc241d",
+        "green": "#79740e",
+        "yellow": "#b57614",
+        "blue": "#076678",
+        "magenta": "#8f3f71",
+        "cyan": "#427b58",
+        "white": "#7c6f64",
+        "brightBlack": "#928374",
+        "brightRed": "#9d0006",
+        "brightGreen": "#79740e",
+        "brightYellow": "#b57614",
+        "brightBlue": "#076678",
+        "brightMagenta": "#8f3f71",
+        "brightCyan": "#427b58",
+        "brightWhite": "#3c3836",
+    },
+    "paper": {
+        "background": "#ffffff",
+        "foreground": "#202b3b",
+        "cursor": "#6246b5",
+        "cursorAccent": "#ffffff",
+        "selectionBackground": "rgba(226, 231, 239, 0.7)",
+        "selectionForeground": "#202b3b",
+        "black": "#202b3b",
+        "red": "#d32f2f",
+        "green": "#287448",
+        "yellow": "#c77700",
+        "blue": "#176b91",
+        "magenta": "#8851c5",
+        "cyan": "#00838f",
+        "white": "#526176",
+        "brightBlack": "#65748a",
+        "brightRed": "#c62828",
+        "brightGreen": "#2e7d32",
+        "brightYellow": "#e65100",
+        "brightBlue": "#1565c0",
+        "brightMagenta": "#6a1b9a",
+        "brightCyan": "#00695c",
+        "brightWhite": "#101620",
+    },
 }
+
+
+def _is_light_hex(hex_code: str) -> bool:
+    """Determine whether a hex color has light luminance."""
+    try:
+        c = hex_code.lstrip("#")
+        if len(c) == 6:
+            r, g, b = int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16)
+            return (0.299 * r + 0.587 * g + 0.114 * b) > 135
+    except Exception:
+        pass
+    return False
 
 
 class TerminalBridge(QObject):
@@ -131,12 +217,32 @@ class TerminalBridge(QObject):
     @pyqtSlot(str)
     def send_input(self, data: str):
         """Called from xterm.js on user keyboard input."""
+        if not self.terminal_widget.pty.is_alive():
+            # If the process exited, pressing Enter or newline restarts the session
+            if "\r" in data or "\n" in data or data == " ":
+                self.terminal_widget.restart_session()
+                return
+            return
         self.terminal_widget.pty.write(data)
 
     @pyqtSlot(int, int)
     def resize_pty(self, cols: int, rows: int):
         """Called from xterm.js when container or window resizes."""
+        if cols > 0 and rows > 0:
+            self.terminal_widget._current_cols = cols
+            self.terminal_widget._current_rows = rows
         self.terminal_widget.pty.resize(cols, rows)
+
+    @pyqtSlot(int, int, str)
+    def show_context_menu(self, x: int, y: int, selected_text: str = ""):
+        """Called from JavaScript on right-click."""
+        self.terminal_widget.show_custom_context_menu(x, y, selected_text)
+
+    @pyqtSlot(str)
+    def set_clipboard(self, text: str):
+        """Called from JavaScript when tmux or an inner program sets the clipboard via OSC 52."""
+        if text:
+            QApplication.clipboard().setText(text)
 
     @pyqtSlot()
     def terminal_ready(self):
@@ -199,7 +305,9 @@ class TerminalWidget(QWidget):
             self.apply_theme(self._pending_theme)
             self._pending_theme = None
 
-        self.focus_terminal()
+        # Only claim focus if the terminal is currently visible to the user
+        if self.isVisible():
+            self.focus_terminal()
 
     def _on_pty_data(self, text: str):
         """Send raw data from PTY process to xterm.js."""
@@ -223,11 +331,12 @@ class TerminalWidget(QWidget):
         self.pty.close()
         self.bridge.clear_requested.emit()
         self.pty.start(cols=self._current_cols, rows=self._current_rows)
+        self.session_started.emit()
         self.fit_terminal()
         self.focus_terminal()
 
     def clear(self):
-        """Clear xterm terminal viewport."""
+        """Clear and reset xterm terminal viewport."""
         self.bridge.clear_requested.emit()
 
     def fit_terminal(self):
@@ -241,65 +350,162 @@ class TerminalWidget(QWidget):
         if self._is_ready:
             self.web_view.page().runJavaScript("if (typeof term !== 'undefined') term.focus();")
 
+    def showEvent(self, event):
+        """Handle showing after tab switch to ensure layout coordinates are settled."""
+        super().showEvent(event)
+        QTimer.singleShot(60, self.fit_terminal)
+        QTimer.singleShot(60, self.focus_terminal)
+
+    def blur_terminal(self):
+        """Blur terminal to trigger DEC 1004 FocusLost in tmux/vim."""
+        if self._is_ready:
+            self.web_view.page().runJavaScript("if (typeof term !== 'undefined') term.blur();")
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self.blur_terminal()
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         QTimer.singleShot(50, self.fit_terminal)
 
-    def apply_theme(self, theme_dict: dict):
-        """Map Theta-IDE palette to xterm.js theme object and update web view."""
-        if not self._is_ready:
-            self._pending_theme = theme_dict
-            return
+    def show_custom_context_menu(self, x: int, y: int, selected_text: str = ""):
+        """Display native context menu with standard terminal actions."""
+        menu = QMenu(self)
 
+        copy_act = QAction("Copy", menu)
+        copy_act.setEnabled(bool(selected_text.strip()))
+        def do_copy():
+            if selected_text:
+                QApplication.clipboard().setText(selected_text)
+        copy_act.triggered.connect(do_copy)
+        menu.addAction(copy_act)
+
+        paste_act = QAction("Paste", menu)
+        clip_text = QApplication.clipboard().text()
+        paste_act.setEnabled(bool(clip_text))
+        def do_paste():
+            text = QApplication.clipboard().text()
+            if text:
+                if not self.pty.is_alive():
+                    self.restart_session()
+                self.pty.write(text)
+        paste_act.triggered.connect(do_paste)
+        menu.addAction(paste_act)
+
+        select_all_act = QAction("Select All", menu)
+        select_all_act.triggered.connect(lambda: self.web_view.page().runJavaScript("if (typeof term !== 'undefined') term.selectAll();"))
+        menu.addAction(select_all_act)
+
+        menu.addSeparator()
+
+        clear_act = QAction("Clear Terminal", menu)
+        clear_act.triggered.connect(self.clear)
+        menu.addAction(clear_act)
+
+        restart_act = QAction("Restart Shell", menu)
+        restart_act.triggered.connect(self.restart_session)
+        menu.addAction(restart_act)
+
+        global_pos = self.web_view.mapToGlobal(QPoint(x, y))
+        menu.exec(global_pos)
+
+    def resolve_theme_palette(self, theme_dict: dict) -> dict:
+        """Map Theta-IDE palette to xterm.js theme object."""
         name_key = (theme_dict.get("name") or "").strip().casefold()
         if name_key in NATIVE_TERMINAL_PALETTES:
-            xterm_theme = NATIVE_TERMINAL_PALETTES[name_key]
+            return NATIVE_TERMINAL_PALETTES[name_key]
         elif "catppuccin" in name_key and "latte" in name_key:
-            xterm_theme = NATIVE_TERMINAL_PALETTES["catppuccin latte"]
+            return NATIVE_TERMINAL_PALETTES["catppuccin latte"]
+        elif "catppuccin" in name_key and "mocha" in name_key:
+            return NATIVE_TERMINAL_PALETTES["catppuccin"]
         elif "catppuccin" in name_key:
-            xterm_theme = NATIVE_TERMINAL_PALETTES["catppuccin"]
+            return NATIVE_TERMINAL_PALETTES["catppuccin macchiato"]
         elif "dracula" in name_key:
-            xterm_theme = NATIVE_TERMINAL_PALETTES["dracula"]
+            return NATIVE_TERMINAL_PALETTES["dracula"]
         elif "nord" in name_key:
-            xterm_theme = NATIVE_TERMINAL_PALETTES["nord"]
-        else:
-            colors = theme_dict.get("colors", {})
-            if not colors:
-                return
+            return NATIVE_TERMINAL_PALETTES["nord"]
+        elif "gruvbox" in name_key and "light" in name_key:
+            return NATIVE_TERMINAL_PALETTES["gruvbox light"]
+        elif "paper" in name_key:
+            return NATIVE_TERMINAL_PALETTES["paper"]
 
-            base = colors.get("base", "#1d2021")
-            text = colors.get("text", "#ebdbb2")
-            accent = colors.get("accent", "#fabd2f")
-            primary = colors.get("primary", "#b8bb26")
-            secondary = colors.get("secondary", "#83a598")
-            number = colors.get("number", "#d3869b")
-            comment = colors.get("comment", "#928374")
-            border = colors.get("border", "#504945")
+        colors = theme_dict.get("colors", {})
+        if not colors:
+            return {}
 
-            xterm_theme = {
+        base = colors.get("base", "#1d2021")
+        text = colors.get("text", "#ebdbb2")
+        accent = colors.get("accent", "#fabd2f")
+        primary = colors.get("primary", "#b8bb26")
+        secondary = colors.get("secondary", "#83a598")
+        number = colors.get("number", "#d3869b")
+        comment = colors.get("comment", "#928374")
+        border = colors.get("border", "#504945")
+
+        is_light = _is_light_hex(base)
+        if is_light:
+            return {
                 "background": base,
                 "foreground": text,
                 "cursor": accent,
                 "cursorAccent": base,
                 "selectionBackground": border,
-                "black": base,
-                "red": "#ea6962",
+                "black": text,
+                "red": "#cc241d",
                 "green": primary,
-                "yellow": accent,
+                "yellow": "#b57614",
                 "blue": secondary,
                 "magenta": number,
-                "cyan": "#8ec07c",
-                "white": text,
+                "cyan": "#427b58",
+                "white": "#7c6f64",
                 "brightBlack": comment,
-                "brightRed": "#fb4934",
+                "brightRed": "#9d0006",
                 "brightGreen": primary,
-                "brightYellow": accent,
+                "brightYellow": "#b57614",
                 "brightBlue": secondary,
                 "brightMagenta": number,
-                "brightCyan": "#8ec07c",
-                "brightWhite": "#fbf1c7",
+                "brightCyan": "#427b58",
+                "brightWhite": text,
             }
+        return {
+            "background": base,
+            "foreground": text,
+            "cursor": accent,
+            "cursorAccent": base,
+            "selectionBackground": border,
+            "black": base,
+            "red": "#ea6962",
+            "green": primary,
+            "yellow": accent,
+            "blue": secondary,
+            "magenta": number,
+            "cyan": "#8ec07c",
+            "white": text,
+            "brightBlack": comment,
+            "brightRed": "#fb4934",
+            "brightGreen": primary,
+            "brightYellow": accent,
+            "brightBlue": secondary,
+            "brightMagenta": number,
+            "brightCyan": "#8ec07c",
+            "brightWhite": "#fbf1c7",
+        }
+
+    def apply_theme(self, theme_dict: dict):
+        """Map Theta-IDE palette to xterm.js theme object and update web view."""
+        xterm_theme = self.resolve_theme_palette(theme_dict)
+        if not xterm_theme:
+            return
+        self._current_terminal_theme = xterm_theme
+        if not self._is_ready:
+            self._pending_theme = theme_dict
+            return
         self.bridge.theme_received.emit(json.dumps(xterm_theme))
+
+    @property
+    def current_terminal_theme(self) -> dict:
+        return getattr(self, "_current_terminal_theme", {})
 
     def close(self):
         self.pty.close()
@@ -307,7 +513,7 @@ class TerminalWidget(QWidget):
 
 
 class TerminalPanel(QWidget):
-    """Pure, edge-to-edge interactive terminal pane without top bars or headers."""
+    """Pure, modern interactive terminal pane with compact toolbar controls."""
 
     def __init__(self, cwd: Optional[str] = None, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -317,13 +523,107 @@ class TerminalPanel(QWidget):
         root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.setSpacing(0)
 
+        # Compact top control header
+        self.toolbar = QFrame(self)
+        self.toolbar.setObjectName("terminalToolbar")
+        self.toolbar.setFixedHeight(28)
+        tb_layout = QHBoxLayout(self.toolbar)
+        tb_layout.setContentsMargins(10, 0, 10, 0)
+        tb_layout.setSpacing(8)
+
+        self.status_dot = QLabel("●", self)
+        self.status_dot.setStyleSheet("color: #a6e3a1; font-size: 11px;")
+        tb_layout.addWidget(self.status_dot)
+
+        self.title_label = QLabel("Terminal", self)
+        self.title_label.setStyleSheet("font-weight: 600; font-size: 11px; opacity: 0.85;")
+        tb_layout.addWidget(self.title_label)
+
+        tb_layout.addStretch()
+
+        self.restart_btn = QPushButton("+ New Shell", self)
+        self.restart_btn.setToolTip("Start a fresh shell session")
+        self.restart_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.restart_btn.clicked.connect(self._restart_shell)
+        tb_layout.addWidget(self.restart_btn)
+
+        self.clear_btn = QPushButton("Clear", self)
+        self.clear_btn.setToolTip("Clear and reset terminal output")
+        self.clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.clear_btn.clicked.connect(self._clear_terminal)
+        tb_layout.addWidget(self.clear_btn)
+
+        root_layout.addWidget(self.toolbar)
+
         # Full-bleed, edge-to-edge interactive terminal
         self.terminal = TerminalWidget(cwd=self.cwd, parent=self)
         root_layout.addWidget(self.terminal, 1)
 
+        self.terminal.session_started.connect(self._on_session_started)
+        self.terminal.session_exited.connect(self._on_session_exited)
+
+        self.status_timer = QTimer(self)
+        self.status_timer.setInterval(2000)
+        self.status_timer.timeout.connect(self._update_status)
+        self.status_timer.start()
+
+    def _update_status(self):
+        if not self.terminal.pty.is_alive():
+            return
+        if self.terminal.pty.is_tmux_active():
+            self.title_label.setText("Terminal · tmux (Action: C-b)")
+            self.status_dot.setStyleSheet("color: #89b4fa; font-size: 11px;")
+        else:
+            sh_path = os.environ.get("SHELL", "shell")
+            shell_name = Path(sh_path).name or "shell"
+            self.title_label.setText(f"Terminal · {shell_name}")
+            self.status_dot.setStyleSheet("color: #a6e3a1; font-size: 11px;")
+
+    def _on_session_started(self):
+        self._update_status()
+
+    def _on_session_exited(self, code: int):
+        self.title_label.setText(f"Terminal · Exited ({code})")
+        self.status_dot.setStyleSheet("color: #f38ba8; font-size: 11px;")
+
+    def _restart_shell(self):
+        self.terminal.restart_session()
+
+    def _clear_terminal(self):
+        self.terminal.clear()
+
     def apply_theme(self, theme_dict: dict):
-        """Apply active theme palette to terminal."""
+        """Apply active theme palette to terminal and toolbar."""
         self.terminal.apply_theme(theme_dict)
+        colors = theme_dict.get("colors", {})
+        if not colors:
+            return
+        panel_bg = colors.get("surface", colors.get("panel", "#282828"))
+        text_color = colors.get("text", "#ebdbb2")
+        border_color = colors.get("border", "#504945")
+        btn_bg = colors.get("raised", "#3c3836")
+        accent = colors.get("accent", "#fabd2f")
+
+        self.toolbar.setStyleSheet(f"""
+            QFrame#terminalToolbar {{
+                background-color: {panel_bg};
+                border-bottom: 1px solid {border_color};
+            }}
+            QLabel {{
+                color: {text_color};
+            }}
+            QPushButton {{
+                background-color: {btn_bg};
+                color: {text_color};
+                border: 1px solid {border_color};
+                border-radius: 3px;
+                padding: 2px 8px;
+                font-size: 11px;
+            }}
+            QPushButton:hover {{
+                border-color: {accent};
+            }}
+        """)
 
     def closeEvent(self, event):
         self.terminal.close()

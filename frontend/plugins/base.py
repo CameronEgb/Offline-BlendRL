@@ -46,3 +46,10 @@ class Plugin(ABC):
         Clean up all registered widgets, resources, and event listeners.
         """
         pass
+
+    def get_settings_widget(self, context: PluginContext):
+        """Return a custom QWidget for configuring this plugin's settings.
+        
+        Return None if this plugin has no configurable settings.
+        """
+        return None

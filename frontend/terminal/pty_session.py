@@ -1,16 +1,48 @@
 """Pseudo-terminal (PTY) session management for interactive shells."""
 import codecs
 import errno
-import fcntl
 import os
 from pathlib import Path
-import pty
+import select
+import signal
 import struct
 import subprocess
-import termios
+import sys
 from typing import Optional
 
+try:
+    import fcntl
+    import pty
+    import termios
+    HAS_PTY = True
+except ImportError:
+    fcntl = None
+    pty = None
+    termios = None
+    HAS_PTY = False
+
 from PyQt6.QtCore import QObject, QSocketNotifier, pyqtSignal
+
+
+def get_default_shell() -> list[str]:
+    """Resolve the preferred interactive user shell."""
+    shell_env = os.environ.get("SHELL")
+    if shell_env and Path(shell_env).is_file() and os.access(shell_env, os.X_OK):
+        return [shell_env, "-l"]
+
+    try:
+        import pwd
+        pw_shell = pwd.getpwuid(os.getuid()).pw_shell
+        if pw_shell and Path(pw_shell).is_file() and os.access(pw_shell, os.X_OK):
+            return [pw_shell, "-l"]
+    except Exception:
+        pass
+
+    for candidate in ["/bin/zsh", "/bin/bash", "/bin/sh"]:
+        if Path(candidate).is_file() and os.access(candidate, os.X_OK):
+            return [candidate, "-l"]
+
+    return ["/bin/sh"]
 
 
 class PtySession(QObject):
@@ -32,6 +64,12 @@ class PtySession(QObject):
 
     def start(self, cols: int = 80, rows: int = 24) -> bool:
         """Start the child shell process inside a new PTY."""
+        if not HAS_PTY:
+            return False
+
+        # Cleanly shut down any existing session and descriptors first
+        self.close()
+
         self.initial_cols = max(10, cols)
         self.initial_rows = max(4, rows)
 
@@ -47,13 +85,23 @@ class PtySession(QObject):
         except OSError:
             pass
 
-        shell = self.command or [os.environ.get("SHELL", "/bin/zsh"), "-l"]
+        shell = self.command or get_default_shell()
 
         env = os.environ.copy()
         env["TERM"] = "xterm-256color"
         env["COLORTERM"] = "truecolor"
+        env["TERM_PROGRAM"] = "ghostty"
         env["LANG"] = "en_US.UTF-8"
         env["LC_ALL"] = "en_US.UTF-8"
+
+        def _preexec():
+            # Create a new session leader and set controlling terminal so /dev/tty,
+            # job control, and SIGWINCH resize signals function properly.
+            os.setsid()
+            try:
+                fcntl.ioctl(slave_fd, termios.TIOCSCTTY, 0)
+            except Exception:
+                pass
 
         try:
             self.process = subprocess.Popen(
@@ -63,7 +111,7 @@ class PtySession(QObject):
                 stderr=slave_fd,
                 cwd=self.cwd,
                 env=env,
-                preexec_fn=os.setsid,
+                preexec_fn=_preexec,
                 close_fds=True,
             )
         except Exception:
@@ -91,7 +139,9 @@ class PtySession(QObject):
             return
 
         try:
-            while True:
+            # Read up to a budget per event invocation to keep Qt event loop responsive
+            chunks_read = 0
+            while chunks_read < 32:
                 chunk = os.read(self.master_fd, 8192)
                 if not chunk:
                     self._handle_exit()
@@ -99,6 +149,7 @@ class PtySession(QObject):
                 text = self.decoder.decode(chunk)
                 if text:
                     self.data_ready.emit(text)
+                chunks_read += 1
         except BlockingIOError:
             # All available bytes read for this cycle
             return
@@ -122,21 +173,40 @@ class PtySession(QObject):
             except Exception:
                 exit_code = 0
 
+        if self.master_fd is not None:
+            try:
+                os.close(self.master_fd)
+            except OSError:
+                pass
+            self.master_fd = None
+
         self.process_exited.emit(exit_code or 0)
 
     def write(self, data: str):
-        """Write string to the master PTY."""
+        """Write string to the master PTY, handling partial writes and buffer drains."""
         if self.master_fd is None:
             return
         try:
             encoded = data.encode("utf-8", errors="replace")
-            os.write(self.master_fd, encoded)
+            total = len(encoded)
+            offset = 0
+            while offset < total:
+                try:
+                    written = os.write(self.master_fd, encoded[offset:])
+                    if written <= 0:
+                        break
+                    offset += written
+                except BlockingIOError:
+                    # Buffer full; wait briefly for PTY to drain
+                    _, writable, _ = select.select([], [self.master_fd], [], 0.05)
+                    if not writable:
+                        break
         except OSError:
             pass
 
     def resize(self, cols: int, rows: int):
         """Resize terminal window via ioctl TIOCSWINSZ."""
-        if self.master_fd is None:
+        if self.master_fd is None or not HAS_PTY:
             return
         cols = max(10, cols)
         rows = max(4, rows)
@@ -147,18 +217,23 @@ class PtySession(QObject):
             pass
 
     def close(self):
-        """Cleanly terminate child process and close file descriptors."""
+        """Cleanly terminate child process group and close file descriptors."""
         if self.notifier:
             self.notifier.setEnabled(False)
             self.notifier = None
 
         if self.process and self.process.poll() is None:
+            pid = self.process.pid
             try:
-                self.process.terminate()
+                # Terminate entire process group to avoid leaving orphan processes
+                os.killpg(pid, signal.SIGTERM)
                 self.process.wait(timeout=0.3)
+            except (ProcessLookupError, OSError):
+                pass
             except Exception:
                 try:
-                    self.process.kill()
+                    os.killpg(pid, signal.SIGKILL)
+                    self.process.wait(timeout=0.2)
                 except Exception:
                     pass
 
@@ -171,3 +246,19 @@ class PtySession(QObject):
 
     def is_alive(self) -> bool:
         return self.process is not None and self.process.poll() is None
+
+    def is_tmux_active(self) -> bool:
+        """Check if tmux is currently running in this terminal session."""
+        if not self.is_alive() or not self.process:
+            return False
+        try:
+            pid = self.process.pid
+            out = subprocess.check_output(["pgrep", "-P", str(pid)], text=True, timeout=0.1)
+            child_pids = [int(p) for p in out.strip().split() if p.isdigit()]
+            for cpid in child_pids:
+                comm = subprocess.check_output(["ps", "-p", str(cpid), "-o", "comm="], text=True, timeout=0.1).strip()
+                if "tmux" in comm:
+                    return True
+        except Exception:
+            pass
+        return False

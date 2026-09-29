@@ -13,6 +13,7 @@ from .context import PluginContext
 
 if TYPE_CHECKING:
     from ..app import Window
+    from ..settings import SettingsManager
 
 
 class PluginManager(QObject):
@@ -20,19 +21,21 @@ class PluginManager(QObject):
 
     pluginStateChanged = pyqtSignal(str, bool)  # (plugin_id, enabled)
 
-    def __init__(self, window: Window, plugin_dirs: Optional[List[Path]] = None):
+    def __init__(self, window: Window, plugin_dirs: Optional[List[Path]] = None,
+                 settings_manager: Optional["SettingsManager"] = None):
         super().__init__()
         self.window = window
         self.plugin_dirs = plugin_dirs or [Path(__file__).parent]
+        self._settings = settings_manager
         store = getattr(window, "store", None)
         root_dir = getattr(store, "root", getattr(store, "data_dir", Path("."))) if store else Path(".")
+        # Legacy file path — used only for one-time migration reads
         self.state_file = Path(root_dir) / ".plugins.json"
 
         self.manifests: Dict[str, PluginManifest] = {}
         self.instances: Dict[str, Plugin] = {}
         self.contexts: Dict[str, PluginContext] = {}
         self.enabled_states: Dict[str, bool] = {}
-        self.uninstalled_ids: set[str] = set()
 
     def discover(self) -> None:
         """Scan configured plugin directories for plugin.json manifests."""
@@ -44,12 +47,9 @@ class PluginManager(QObject):
             for manifest_path in pdir.glob("*/plugin.json"):
                 try:
                     data = json.loads(manifest_path.read_text(encoding="utf-8"))
-                    kind = data.get("kind", "plugin")
-                    if kind != "plugin":
+                    if data.get("kind", "plugin") != "plugin":
                         continue
                     pid = data["id"]
-                    if pid in self.uninstalled_ids:
-                        continue
                     manifest = PluginManifest(
                         id=pid,
                         name=data.get("name", pid),
@@ -66,53 +66,71 @@ class PluginManager(QObject):
                 except Exception as exc:
                     self.window.log(f"Failed to load plugin manifest at {manifest_path}: {exc}")
 
-        # Sync enabled_states for newly discovered manifests
+        # Plugins discovered for the first time default to their manifest setting
         for pid, manifest in self.manifests.items():
             if pid not in self.enabled_states:
                 self.enabled_states[pid] = bool(manifest.default_enabled)
 
     def _load_states(self) -> None:
-        """Load enabled/disabled and uninstalled states from persistent storage."""
-        saved = {}
+        """Load which plugins are enabled from settings.toml (preferred) or
+        the legacy .plugins.json (one-time migration fallback)."""
+        if self._settings is not None:
+            enabled_list = self._settings.plugins_enabled
+            self.enabled_states = {pid: True for pid in enabled_list}
+            # One-time migration: pull any extra states from .plugins.json
+            self._merge_legacy_states()
+        else:
+            self._load_legacy_states()
+
+    def _load_legacy_states(self) -> None:
+        """Read enabled states from the legacy .plugins.json."""
+        saved: dict = {}
         if self.state_file.exists():
             try:
                 saved = json.loads(self.state_file.read_text(encoding="utf-8"))
             except Exception as exc:
                 self.window.log(f"Failed to read plugin state file: {exc}")
-                saved = {}
-
-        if isinstance(saved, dict) and "uninstalled" in saved:
-            self.uninstalled_ids = set(saved.get("uninstalled", []))
-            saved_enabled = saved.get("enabled", {})
-        else:
-            self.uninstalled_ids = set()
-            saved_enabled = saved if isinstance(saved, dict) else {}
-
+        saved_enabled = saved.get("enabled", saved) if isinstance(saved, dict) else {}
         self.enabled_states = {
             k: bool(v) for k, v in saved_enabled.items()
             if k not in ("uninstalled", "enabled")
         }
 
-    def save_states(self) -> None:
-        """Persist plugin states to .plugins.json."""
+    def _merge_legacy_states(self) -> None:
+        """Pull any extra enabled/disabled states from .plugins.json not yet in settings."""
+        if not self.state_file.exists():
+            return
         try:
-            self.state_file.parent.mkdir(parents=True, exist_ok=True)
-            payload = {
-                "enabled": dict(self.enabled_states),
-                "uninstalled": list(self.uninstalled_ids),
-            }
-            # For backward compatibility with tests/tools checking top-level keys
-            for pid, val in self.enabled_states.items():
-                payload[pid] = val
+            saved = json.loads(self.state_file.read_text(encoding="utf-8"))
+        except Exception:
+            return
+        saved_enabled = saved.get("enabled", saved) if isinstance(saved, dict) else {}
+        for k, v in saved_enabled.items():
+            if k not in ("uninstalled", "enabled") and k not in self.enabled_states:
+                self.enabled_states[k] = bool(v)
 
-            self.state_file.write_text(
-                json.dumps(payload, indent=2) + "\n", encoding="utf-8"
-            )
-        except OSError as exc:
-            self.window.log(f"Failed to save plugin states: {exc}")
+    def save_states(self) -> None:
+        """Persist which plugins are enabled to settings.toml (or legacy .plugins.json)."""
+        enabled_list = sorted(pid for pid, on in self.enabled_states.items() if on)
+        if self._settings is not None:
+            try:
+                self._settings.set("plugins", "enabled", enabled_list)
+            except Exception as exc:
+                self.window.log(f"Failed to save plugin states to settings.toml: {exc}")
+        else:
+            try:
+                self.state_file.parent.mkdir(parents=True, exist_ok=True)
+                payload: dict = {"enabled": dict(self.enabled_states)}
+                self.state_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+            except OSError as exc:
+                self.window.log(f"Failed to save plugin states: {exc}")
 
     def mark_uninstalled(self, plugin_id: str) -> None:
-        """Mark a plugin as uninstalled, disable it, and remove from manifests."""
+        """Uninstall a plugin: deactivate it and delete its directory from disk.
+
+        After deletion the plugin won't be discovered on the next startup.
+        No blocklist needed — if it's not on disk, it doesn't exist.
+        """
         aliases = {
             plugin_id,
             plugin_id.replace("-", "_"),
@@ -126,7 +144,6 @@ class PluginManager(QObject):
 
         for alias in aliases:
             self.disable_plugin(alias)
-            self.uninstalled_ids.add(alias)
             self.manifests.pop(alias, None)
             self.enabled_states.pop(alias, None)
 
@@ -141,22 +158,7 @@ class PluginManager(QObject):
                     shutil.rmtree(target, ignore_errors=True)
         self.save_states()
 
-    def unmark_uninstalled(self, plugin_id: str) -> None:
-        """Remove uninstalled flag when a plugin is re-installed."""
-        aliases = {
-            plugin_id,
-            plugin_id.replace("-", "_"),
-            plugin_id.replace("_", "-"),
-        }
-        for suffix in ("-notes", "_notes", "-sim", "_sim", "-plugin", "_plugin"):
-            if plugin_id.endswith(suffix):
-                aliases.add(plugin_id[:-len(suffix)])
-            else:
-                aliases.add(f"{plugin_id}{suffix}")
 
-        for alias in aliases:
-            self.uninstalled_ids.discard(alias)
-        self.save_states()
 
     def initialize_plugins(self) -> None:
         """Activate plugins that are currently enabled in the saved state."""

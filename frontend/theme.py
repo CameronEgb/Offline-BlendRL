@@ -38,6 +38,7 @@ BUILTINS = {
     "Nord": preset("Nord", "#242933 #2e3440 #343c4b #3b4252 #4c566a #69768c #eceff4 #b4bfd1 #8996ad #88c0d0 #81a1c1 #a3be8c #b5cf9f #8fbcbb #b48ead"),
     "Dracula": preset("Dracula", "#21222c #282a36 #303341 #383b4b #44475a #6272a4 #f8f8f2 #bcc2dc #929dc4 #bd93f9 #8be9fd #50fa7b #80ff9f #ffb86c #ff79c6"),
     "Catppuccin": preset("Catppuccin", "#1e1e2e #181825 #313244 #45475a #585b70 #6c7086 #cdd6f4 #a6adc8 #7f849c #cba6f7 #89b4fa #a6e3a1 #94e2d5 #fab387 #f5c2e7"),
+    "Catppuccin Macchiato": preset("Catppuccin Macchiato", "#24273a #1e2030 #363a4f #494d64 #5b6078 #6e738d #cad3f5 #a5adcb #8087a2 #eed49f #8aadf4 #a6da95 #8bd5ca #c6a0f6 #f5bde6"),
     "Catppuccin Latte": preset("Catppuccin Latte", "#eff1f5 #e6e9ef #ccd0da #bcc0cc #acb0be #9ca0b0 #4c4f69 #6c6f85 #8c8fa1 #8839ef #1e66f5 #40a02b #179299 #fe640b #ea76cb"),
     "Paper": preset("Paper", "#ffffff #f5f7fa #edf0f5 #e2e7ef #c1cad8 #8794a6 #202b3b #526176 #65748a #6246b5 #176b91 #287448 #328a57 #8851c5 #a03876"),
 }
@@ -152,12 +153,13 @@ STYLE = stylesheet(DEFAULT)  # Backward-compatible default for tests and preview
 class ThemeManager(QObject):
     changed = pyqtSignal()
 
-    def __init__(self, path, parent=None):
+    def __init__(self, path, parent=None, initial_theme: str | None = None):
         super().__init__(parent)
         self.path = Path(path)
         self.custom = {}
         self.active = copy.deepcopy(DEFAULT)
         self.error = None
+        # Migrate existing .appearance.json on first load (for backward compat)
         if self.path.exists():
             try:
                 data = json.loads(self.path.read_text(encoding="utf-8"))
@@ -169,13 +171,18 @@ class ThemeManager(QObject):
                     if theme["name"].casefold() in {n.casefold() for n in BUILTINS}:
                         raise ValueError("A custom theme cannot replace a built-in theme.")
                     custom[theme["name"]] = theme
-                selected = data.get("selected")
+                self.custom = custom
+                # Honour initial_theme (from settings.toml) over .appearance.json
+                selected = initial_theme if initial_theme and initial_theme in {**BUILTINS, **custom} \
+                    else data.get("selected")
                 if not isinstance(selected, str) or selected not in {**BUILTINS, **custom}:
                     raise ValueError("Selected theme was not found.")
-                self.custom = custom
                 self.active = copy.deepcopy(self.themes()[selected])
             except (OSError, ValueError, TypeError) as exc:
                 self.error = f"Appearance settings could not be loaded; using Gruvbox Dark. {exc}"
+        elif initial_theme:
+            # No .appearance.json yet — apply whatever settings.toml declares
+            self.select_by_name(initial_theme, _emit=False)
         self.apply(self.active)
 
     def themes(self):
@@ -203,6 +210,23 @@ class ThemeManager(QObject):
         self.changed.emit()
         for widget in app.allWidgets():
             widget.update()
+
+    def select_by_name(self, name: str, _emit: bool = True) -> bool:
+        """Switch the active theme to *name* without writing to .appearance.json.
+
+        Called by the :class:`SettingsManager` when a hot-reload or GUI
+        selection changes ``appearance.theme`` in ``settings.toml``.
+
+        Returns ``True`` if the named theme was found and applied.
+        """
+        theme = self.themes().get(name)
+        if theme is None:
+            return False
+        self.apply(theme)
+        if not _emit:
+            # apply() already emits; this param exists only for __init__ usage
+            pass
+        return True
 
     def commit(self, theme):
         theme = validate_theme(theme)
