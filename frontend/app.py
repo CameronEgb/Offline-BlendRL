@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
     QDoubleSpinBox, QPushButton, QTreeWidget, QTreeWidgetItem, QToolBar,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
     QProgressBar, QScrollArea, QFileDialog, QMessageBox, QDialog, QSplitter,
-    QFrame,
+    QFrame, QToolButton,
 )
 from .api import DEFAULT_URL, Backend
 from .model import (BASE_EXPERIMENT, FINAL_STATUSES, LIVE_STATUSES, Config, Store, available_metrics, example_runs,
@@ -24,6 +24,8 @@ from .theme import STYLE, ThemeManager, theme_color
 from .theme_builder import ThemeBuilder
 from .widgets import Chart, MetricCard, ToggleSlider, YamlHighlighter, label
 from .about import AboutDialog, AsciiTheta
+from .config_tree import ConfigTreeWidget
+from .config_viewer import ConfigViewer
 from .plots import PlotViewer
 from .queue_panel import QueuePanel
 from .sidetabs import SideTabs
@@ -80,8 +82,13 @@ class Window(QMainWindow):
         self.queue_busy = False
         self.issued_ids = set()
         self.queue_running = False
-        self.make_inspector()
+        self.active_config_path = None
+        self.active_config_rel_path = None
+        self.current_experiment = None
+        self.fixed_fields = {}
+        self.fields = {}
         self.make_center()
+        self.init_default_experiment()
         self.tabs.tabOrderChanged.connect(lambda _: self.save_layout())
         self.load_layout()
         self.make_menus()
@@ -196,43 +203,65 @@ class Window(QMainWindow):
 
         actions_bar = QHBoxLayout()
         actions_bar.setSpacing(8)
-        actions_bar.addWidget(self.button("+  New experiment", self.new_experiment))
+        actions_bar.addWidget(self.button("+  New in group…", self.new_experiment))
+        actions_bar.addWidget(self.button("📑  Duplicate…", self.duplicate_experiment))
         self.start_button = self.button("▶  Launch training", self.launch_training, True)
-        self.start_button.setToolTip("Train the builder's config on this machine through the backend (F5)")
+        self.start_button.setToolTip("Train the loaded experiment config through the backend (F5)")
         self.start_button.setEnabled(False)
         actions_bar.addWidget(self.start_button)
         self.queue_button = self.button("＋  Add to queue", self.add_to_queue)
-        self.queue_button.setToolTip("Queue the builder's config; queued jobs train one at a time, in order "
-                                     "(Ctrl+Shift+Q)")
+        self.queue_button.setToolTip("Queue the loaded config; queued jobs train one at a time, in order (Ctrl+Shift+Q)")
         self.queue_button.setEnabled(False)
         actions_bar.addWidget(self.queue_button)
         self.stop_button = self.button("■  Stop", self.stop_run)
         self.stop_button.setEnabled(False)
         actions_bar.addWidget(self.stop_button)
+        actions_bar.addWidget(self.button("💾  Save YAML", self.save_current_config))
         actions_bar.addWidget(self.button("Export recipe YAML…", self.export_config))
         actions_bar.addStretch()
+
+        self.btn_toggle_yaml = QPushButton("{ }  View Hydra YAML")
+        self.btn_toggle_yaml.setCheckable(True)
+        self.btn_toggle_yaml.setChecked(False)
+        self.btn_toggle_yaml.setToolTip("Toggle preview of the resolved Hydra YAML configuration")
+        self.btn_toggle_yaml.clicked.connect(lambda: self.toggle_yaml_preview())
+        actions_bar.addWidget(self.btn_toggle_yaml)
+
         config_layout.addLayout(actions_bar)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.config_splitter = splitter
 
-        tree_panel = QWidget()
-        tree_layout = QVBoxLayout(tree_panel)
-        tree_layout.setContentsMargins(0, 0, 0, 0)
-        tree_layout.setSpacing(6)
-        tree_layout.addWidget(label("THETA / WORKSPACE", "eyebrow"))
-        self.tree = QTreeWidget()
-        self.tree.setHeaderHidden(True)
-        self.tree.setIndentation(14)
-        self.tree.itemClicked.connect(self.tree_selected)
-        tree_layout.addWidget(self.tree, 1)
-        tree_layout.addWidget(label("●  Run records stay local", "muted"))
-        splitter.addWidget(tree_panel)
-        splitter.addWidget(self.inspector_tabs)
+        # 1. Config Tree (mirrors in/config/)
+        self.config_tree = ConfigTreeWidget()
+        self.config_tree.setMinimumWidth(220)
+        self.tree = self.config_tree.tree  # backwards compatibility alias
+        self.config_tree.file_selected.connect(self.on_config_file_selected)
+        splitter.addWidget(self.config_tree)
 
+        # 2. Boxed Config Viewer (takes up the main area of the screen)
+        self.config_viewer = ConfigViewer()
+        self.config_viewer.config_changed.connect(self.update_config)
+        self.config_viewer.save_requested.connect(self.on_config_saved)
+        splitter.addWidget(self.config_viewer)
+
+        # 3. Preview Panel (Hydra YAML - hidden by default!)
         preview_panel = QWidget()
         preview_layout = QVBoxLayout(preview_panel)
         preview_layout.setContentsMargins(0, 0, 0, 0)
         preview_layout.setSpacing(6)
+
+        prev_header = QHBoxLayout()
+        prev_header.setSpacing(8)
+        prev_header.addWidget(label("RESOLVED HYDRA YAML", "eyebrow"))
+        prev_header.addStretch()
+        btn_close_prev = QToolButton()
+        btn_close_prev.setText("✕")
+        btn_close_prev.setToolTip("Close preview and expand config viewer")
+        btn_close_prev.clicked.connect(lambda: self.toggle_yaml_preview(False))
+        prev_header.addWidget(btn_close_prev)
+        preview_layout.addLayout(prev_header)
+
         self.preview_status = label("Resolved config • waiting for backend", "muted")
         preview_layout.addWidget(self.preview_status)
         self.preview_errors = label("", "configError")
@@ -244,9 +273,16 @@ class Window(QMainWindow):
         self.preview.setReadOnly(True)
         self.highlighter = YamlHighlighter(self.preview.document())
         preview_layout.addWidget(self.preview, 1)
+
+        self.builder_status = label("", "muted")
+        self.builder_status.setWordWrap(True)
+        preview_layout.addWidget(self.builder_status)
+
+        self.preview_panel = preview_panel
+        self.preview_panel.hide()  # Hidden by default!
         splitter.addWidget(preview_panel)
 
-        splitter.setSizes([200, 360, 480])
+        splitter.setSizes([260, 1000, 0])
         config_layout.addWidget(splitter, 1)
         self.config_panel = config_panel
         self.tabs.addTab(self.config_panel, "Experiment", "config", "Experiment", tab_id="config")
@@ -271,93 +307,56 @@ class Window(QMainWindow):
         self.addDockWidget(area, dock)
         return dock
 
-    def make_inspector(self):
-        self.inspector_tabs = QTabWidget()
-        form_widget = QWidget()
-        layout = QVBoxLayout(form_widget)
-        layout.setContentsMargins(15, 16, 15, 14)
-        layout.setSpacing(12)
-        layout.addWidget(label("BUILD AN EXPERIMENT", "eyebrow"))
-        layout.addWidget(label("Start with a question.", "heading"))
-        description = label("A small, reproducible CartPole experiment.\nTune the parameters and watch it train.", "muted")
-        description.setWordWrap(True)
-        layout.addWidget(description)
-        form = QFormLayout()
-        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
-        form.setVerticalSpacing(10)
-        self.name = QLineEdit(Config().name)
-        self.name.setMaxLength(100)
-        self.name.setValidator(QRegularExpressionValidator(QRegularExpression(r"[A-Za-z0-9_\-]+"), self.name))
-        form.addRow("Experiment name", self.name)
-        self.fixed_fields = {}
-        for title, value in (("Task", "Reinforcement learning"), ("Environment", "CartPole-v1"),
-                             ("Method", "PPO · neural policy"), ("Training mode", "Online")):
-            combo = QComboBox()
-            combo.addItem(value)
-            combo.setToolTip("This proof of concept supports the CartPole / PPO workflow.")
-            form.addRow(title, combo)
-            self.fixed_fields[title] = combo
-        self.seed = QSpinBox()
-        self.seed.setRange(0, 2147483647)
-        self.seed.setValue(42)
-        form.addRow("Random seed", self.seed)
-        self.steps = QSpinBox()
-        self.steps.setRange(1000, 10000000)
-        self.steps.setSingleStep(1000)
-        self.steps.setValue(10000)
-        form.addRow("Total timesteps", self.steps)
-        self.lr = QDoubleSpinBox()
-        self.lr.setDecimals(6)
-        self.lr.setRange(0.000001, 1)
-        self.lr.setSingleStep(0.0001)
-        self.lr.setValue(0.0003)
-        form.addRow("Learning rate", self.lr)
-        self.batch = QComboBox()
-        self.batch.addItems(["32", "64", "128", "256"])
-        self.batch.setCurrentText("64")
-        form.addRow("Batch size", self.batch)
-        self.gamma = QDoubleSpinBox()
-        self.gamma.setDecimals(3)
-        self.gamma.setRange(0, 1)
-        self.gamma.setSingleStep(0.01)
-        self.gamma.setValue(0.99)
-        form.addRow("Discount factor · γ", self.gamma)
-        self.tensorboard = QCheckBox("Log to TensorBoard")
-        self.tensorboard.setChecked(True)
-        form.addRow("Logging", self.tensorboard)
-        layout.addLayout(form)
-        self.fields = {"experiment_id": self.name, "seed": self.seed, "total_timesteps": self.steps,
-                       "methods.ppo.lr": self.lr, "methods.ppo.batch_size": self.batch, "methods.ppo.gamma": self.gamma,
-                       "tensorboard": self.tensorboard}
-        self.builder_status = label("Checking config with backend…", "muted")
-        self.builder_status.setWordWrap(True)
-        layout.addWidget(self.builder_status)
-        layout.addWidget(label("Trains locally  /  ≈ 30 s for 20k steps on CPU", "badge"))
-        layout.addStretch()
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setWidget(form_widget)
-        self.inspector_tabs.addTab(scroll, "Experiment builder")
+    def init_default_experiment(self):
+        default_exp = "experiment/cartpole/quick_test.yaml"
+        if not (self.config_tree.root_dir / default_exp).exists():
+            default_exp = "experiment/thetaide/cartpole_ppo_reference.yaml"
+        self.config_tree.select_file(default_exp)
 
-        notes = QWidget()
-        notes_layout = QVBoxLayout(notes)
-        self.note_target = label("No run selected", "muted")
-        self.note_target.setWordWrap(True)
-        notes_layout.addWidget(self.note_target)
-        self.notes = QPlainTextEdit()
-        self.notes.setPlaceholderText("## Hypothesis\nWhat do you expect to learn?\n\n## Observations\n\n## Next iteration")
-        notes_layout.addWidget(self.notes)
-        self.note_status = label("Notes are linked to the selected run.", "muted")
-        notes_layout.addWidget(self.note_status)
-        notes_layout.addWidget(self.button("Save notes", self.save_notes))
-        self.inspector_tabs.addTab(notes, "Notes")
-        self.inspector_tabs.setMinimumWidth(320)
-        self.name.textChanged.connect(self.update_config)
-        self.batch.currentTextChanged.connect(self.update_config)
-        for field in (self.seed, self.steps, self.lr, self.gamma):
-            field.valueChanged.connect(self.update_config)
-        self.tensorboard.toggled.connect(self.update_config)
-        self.notes.textChanged.connect(self.notes_changed)
+    def toggle_yaml_preview(self, checked=None):
+        if checked is None:
+            checked = self.btn_toggle_yaml.isChecked()
+        else:
+            self.btn_toggle_yaml.setChecked(checked)
+        self.preview_panel.setVisible(checked)
+        if checked:
+            self.config_splitter.setSizes([240, 600, 420])
+            self.request_compose()
+        else:
+            self.config_splitter.setSizes([240, 1000, 0])
+
+    def on_config_file_selected(self, file_path, rel_path):
+        self.active_config_path = file_path
+        self.active_config_rel_path = rel_path
+        self.config_viewer.load_file(file_path, rel_path)
+
+        norm_rel = str(Path(rel_path)).replace("\\", "/")
+        if norm_rel.startswith("experiment/") and not Path(rel_path).name.startswith("_"):
+            exp_name = str(Path(norm_rel).relative_to("experiment").with_suffix(""))
+            self.current_experiment = exp_name
+            self.start_button.setEnabled(self.compose_valid)
+            self.queue_button.setEnabled(self.compose_valid)
+            self.start_button.setToolTip(f"Train {exp_name} through the backend (F5)")
+        else:
+            self.current_experiment = None
+            self.start_button.setEnabled(False)
+            self.queue_button.setEnabled(False)
+            self.start_button.setToolTip("Select an experiment from experiment/ to launch training")
+
+        self.request_compose()
+
+    def duplicate_experiment(self):
+        self.config_tree.prompt_duplicate()
+
+    def save_current_config(self):
+        if hasattr(self, "config_viewer"):
+            ok = self.config_viewer.save_to_disk()
+            if ok:
+                self.statusBar().showMessage(f"Saved {self.config_viewer.current_rel_path}", 4000)
+
+    def on_config_saved(self):
+        self.statusBar().showMessage(f"Saved {self.config_viewer.current_rel_path}", 4000)
+        self.request_compose()
 
     def make_console(self):
         panel = QWidget()
@@ -741,7 +740,7 @@ class Window(QMainWindow):
         self.themes_menu = view_menu.addMenu("Themes")
         self.themes_menu.aboutToShow.connect(self.populate_themes_menu)
         view_menu.addAction("Theme builder…", self.show_theme_builder)
-        view_menu.addAction("Experiment builder", lambda: self.tabs.setCurrentWidget(self.config_panel))
+        view_menu.addAction("Experiment config", lambda: self.tabs.setCurrentWidget(self.config_panel))
         view_menu.addAction("Plot viewer", lambda: self.tabs.setCurrentWidget(self.plot_viewer))
         view_menu.addAction("TensorBoard", self.show_tensorboard)
         view_menu.addAction("Terminal", lambda: self.tabs.setCurrentWidget(self.terminal_panel))
@@ -813,10 +812,19 @@ class Window(QMainWindow):
         dialog.deleteLater()
 
     def config(self):
-        return Config(name=self.name.text().strip() or "untitled_experiment", seed=self.seed.value(),
-                      total_timesteps=self.steps.value(), lr=self.lr.value(),
-                      batch_size=int(self.batch.currentText()), gamma=self.gamma.value(),
-                      tensorboard=self.tensorboard.isChecked())
+        if hasattr(self, "config_viewer") and getattr(self.config_viewer, "raw_data", None):
+            d = self.config_viewer.raw_data
+            exp_id = d.get("experiment_id") or (self.config_viewer.current_path.stem if getattr(self.config_viewer, "current_path", None) else "cartpole_ppo_baseline")
+            seed = int(d.get("seed") if d.get("seed") is not None else 42)
+            steps = int(d.get("total_timesteps") or 10000)
+            tb = bool(d.get("tensorboard", True))
+            methods = d.get("methods", {})
+            ppo_spec = methods.get("ppo", {}) if isinstance(methods, dict) else {}
+            lr = float(ppo_spec.get("lr") or 0.0003)
+            batch = int(ppo_spec.get("batch_size") or 64)
+            gamma = float(ppo_spec.get("gamma") or 0.99)
+            return Config(name=str(exp_id), seed=seed, total_timesteps=steps, lr=lr, batch_size=batch, gamma=gamma, tensorboard=tb)
+        return Config()
 
     def update_config(self, *_):
         self.compose_timer.start()
@@ -824,7 +832,9 @@ class Window(QMainWindow):
     def request_compose(self):
         self.compose_serial += 1
         serial, config = self.compose_serial, self.config()
-        payload = {"experiment": BASE_EXPERIMENT, "overrides": config.overrides()}
+        exp_target = getattr(self, "current_experiment", None) or BASE_EXPERIMENT
+        overrides = self.config_viewer.get_overrides() if hasattr(self, "config_viewer") else config.overrides()
+        payload = {"experiment": exp_target, "overrides": overrides}
         self.backend.post("/api/config/compose", payload,
                           lambda data, error: self.compose_finished(serial, config, data, error))
 
@@ -900,7 +910,8 @@ class Window(QMainWindow):
         for title, text in (("Environment", env.get("env_id") or env["name"]),
                             ("Method", f"{method['agent'].upper()} · {method['model']}"),
                             ("Training mode", f"Online · {data['paradigm']}")):
-            self.fixed_fields[title].setItemText(0, text)
+            if title in self.fixed_fields:
+                self.fixed_fields[title].setItemText(0, text)
         for field in data["fields"]:
             widget = self.fields.get(field["key"])
             if widget is None:
@@ -928,21 +939,28 @@ class Window(QMainWindow):
         self.update_config()
 
     def set_config(self, config):
-        self.name.setText(config.name)
-        self.seed.setValue(config.seed)
-        self.steps.setValue(config.total_timesteps)
-        self.lr.setValue(config.lr)
-        self.batch.setCurrentText(str(config.batch_size))
-        self.gamma.setValue(config.gamma)
-        self.tensorboard.setChecked(config.tensorboard)
+        if hasattr(self, "config_viewer"):
+            d = self.config_viewer.raw_data
+            d["experiment_id"] = config.name
+            d["seed"] = config.seed
+            d["total_timesteps"] = config.total_timesteps
+            d["tensorboard"] = config.tensorboard
+            methods = d.setdefault("methods", {})
+            if isinstance(methods, dict):
+                ppo_spec = methods.setdefault("ppo", {})
+                if isinstance(ppo_spec, dict):
+                    ppo_spec["lr"] = config.lr
+                    ppo_spec["batch_size"] = config.batch_size
+                    ppo_spec["gamma"] = config.gamma
+            self.config_viewer._render_boxes()
         self.update_config()
 
     def new_experiment(self):
-        self.set_config(Config(name="cartpole_ppo_experiment"))
-        self.inspector_tabs.setCurrentIndex(0)
-        self.tabs.setCurrentWidget(self.config_panel)
-        self.name.setFocus()
-        self.name.selectAll()
+        if hasattr(self, "config_tree"):
+            self.config_tree.prompt_new_in_group()
+        else:
+            self.set_config(Config(name="cartpole_ppo_experiment"))
+            self.tabs.setCurrentWidget(self.config_panel)
 
     def persist(self, run):
         try:
@@ -992,13 +1010,17 @@ class Window(QMainWindow):
         if not self.compose_valid:
             self.statusBar().showMessage("Start the backend and fix config errors before launching.", 5000)
             return
+        if hasattr(self, "config_viewer") and self.config_viewer.is_dirty:
+            self.config_viewer.save_to_disk()
+
         config = self.config()
-        # Each launch gets its own experiment_id: the pipeline purges results of a reused ID.
+        exp_target = getattr(self, "current_experiment", None) or BASE_EXPERIMENT
         experiment_id = self.unique_experiment_id(config.name)
-        overrides = replace(config, name=experiment_id).overrides()
+        overrides = self.config_viewer.get_overrides() if hasattr(self, "config_viewer") else config.overrides()
+        overrides = [o for o in overrides if not o.startswith("++experiment_id=")] + [f"++experiment_id='{experiment_id}'"]
         self.start_button.setEnabled(False)
-        self.log(f"Launching {experiment_id}:\n  python run_pipeline.py {BASE_EXPERIMENT} {' '.join(overrides)}")
-        self.backend.post("/api/experiments/launch", {"experiment": BASE_EXPERIMENT, "overrides": overrides},
+        self.log(f"Launching {experiment_id}:\n  python run_pipeline.py {exp_target} {' '.join(overrides)}")
+        self.backend.post("/api/experiments/launch", {"experiment": exp_target, "overrides": overrides},
                           lambda data, error: self.launch_finished(config, data, error))
 
     def launch_finished(self, config, job, error):
@@ -1097,11 +1119,18 @@ class Window(QMainWindow):
         if not self.compose_valid:
             self.statusBar().showMessage("Start the backend and fix config errors before queueing.", 5000)
             return
+        if hasattr(self, "config_viewer") and self.config_viewer.is_dirty:
+            self.config_viewer.save_to_disk()
+
         config = self.config()
+        exp_target = getattr(self, "current_experiment", None) or BASE_EXPERIMENT
         experiment_id = self.unique_experiment_id(config.name)
-        overrides = replace(config, name=experiment_id).overrides()
+        overrides = self.config_viewer.get_overrides() if hasattr(self, "config_viewer") else config.overrides()
+        overrides = [o for o in overrides if not o.startswith("++experiment_id=")] + [f"++experiment_id='{experiment_id}'"]
+        self.queue_button.setEnabled(False)
+        self.log(f"Queuing {experiment_id}:\n  python run_pipeline.py {exp_target} {' '.join(overrides)}")
         self.backend.post("/api/experiments/launch",
-                          {"experiment": BASE_EXPERIMENT, "overrides": overrides, "queue": True},
+                          {"experiment": exp_target, "overrides": overrides, "queue": True},
                           lambda data, error: self.queued(config, data, error))
 
     def queued(self, config, job, error):
@@ -1281,11 +1310,12 @@ class Window(QMainWindow):
 
     def select_run(self, run):
         self.selected = run
-        self.notes.blockSignals(True)
-        self.notes.setPlainText(run["notes"])
-        self.notes.blockSignals(False)
-        self.note_target.setText(f"Linked to {run['config']['name']}\nRun {run['id']}")
-        self.note_status.setText("Notes save automatically as you type.")
+        if hasattr(self, "notes"):
+            self.notes.blockSignals(True)
+            self.notes.setPlainText(run["notes"])
+            self.notes.blockSignals(False)
+            self.note_target.setText(f"Linked to {run['config']['name']}\nRun {run['id']}")
+            self.note_status.setText("Notes save automatically as you type.")
         self.render_run()
         self.backfill_metrics(run)
 
@@ -1407,18 +1437,9 @@ class Window(QMainWindow):
         query = self.search.text().lower()
         self.table.blockSignals(True)
         self.table.setRowCount(0)
-        self.tree.clear()
-        project = QTreeWidgetItem(self.tree, ["▾  theta-workspace"])
-        draft = QTreeWidgetItem(project, ["◇  config.yaml"])
-        draft.setData(0, Qt.ItemDataRole.UserRole, "draft")
-        folder = QTreeWidgetItem(project, [f"▾  Experiments ({len(self.runs)})"])
         for run in self.runs:
             config = run["config"]
             name = config["name"] if run["simulated"] else run["backend"]["experiment_id"]
-            item = QTreeWidgetItem(folder, [name])
-            item.setData(0, Qt.ItemDataRole.UserRole, run["id"])
-            item.setToolTip(0, f"{run['status']} · seed {config['seed']} · "
-                               + ("synthetic data" if run["simulated"] else "trained by the backend"))
             if query not in f"{name} {config['seed']} {run['status']}".lower():
                 continue
             row = self.table.rowCount()
@@ -1430,10 +1451,6 @@ class Window(QMainWindow):
                 cell = QTableWidgetItem(value)
                 cell.setData(Qt.ItemDataRole.UserRole, run["id"])
                 self.table.setItem(row, col, cell)
-        catalog = QTreeWidgetItem(project, ["◇  Backend reference"])
-        for title in ("PPO / dnn", "CartPole-v1", "Hydra config groups"):
-            QTreeWidgetItem(catalog, [title]).setToolTip(0, "Reference only; backend is not loaded")
-        self.tree.expandAll()
         self.table.blockSignals(False)
 
     def by_id(self, run_id):
@@ -1445,12 +1462,7 @@ class Window(QMainWindow):
         self.tabs.setCurrentWidget(self.plot_viewer)
 
     def tree_selected(self, item, _):
-        run_id = item.data(0, Qt.ItemDataRole.UserRole)
-        if run_id == "draft":
-            self.tabs.setCurrentWidget(self.config_panel)
-        elif run := self.by_id(run_id):
-            self.select_run(run)
-            self.tabs.setCurrentWidget(self.monitor_panel)
+        pass
 
     def table_selected(self):
         rows = self.table.selectionModel().selectedRows()
@@ -1459,10 +1471,11 @@ class Window(QMainWindow):
             self.select_run(run)
 
     def notes_changed(self):
-        if self.selected:
+        if hasattr(self, "notes") and self.selected:
             self.selected["notes"] = self.notes.toPlainText()
             ok = self.persist(self.selected)
-            self.note_status.setText("Saved locally · linked to this run" if ok else "Save failed · see console")
+            if hasattr(self, "note_status"):
+                self.note_status.setText("Saved locally · linked to this run" if ok else "Save failed · see console")
 
     def save_notes(self):
         self.notes_changed()
@@ -1474,7 +1487,6 @@ class Window(QMainWindow):
             return
         run = self.by_id(self.table.item(rows[0].row(), 0).data(Qt.ItemDataRole.UserRole))
         self.set_config(Config(**run["config"]))
-        self.inspector_tabs.setCurrentIndex(0)
         self.tabs.setCurrentWidget(self.config_panel)
         self.log(f"Loaded exact configuration from {run['id']}. Launch to create a new run.")
 
@@ -1522,9 +1534,12 @@ class Window(QMainWindow):
         path, _ = QFileDialog.getSaveFileName(self, "Export experiment recipe", f"{config.name}.yaml", "YAML (*.yaml)")
         if path:
             try:
-                Path(path).write_text(config.recipe_yaml(), encoding="utf-8")
-                self.log(f"Exported recipe to {path}. Place it in in/config/experiment/thetaide/ and run:\n"
-                         f"  python run_pipeline.py thetaide/{Path(path).stem}")
+                if hasattr(self, "config_viewer") and getattr(self.config_viewer, "raw_data", None):
+                    text = yaml.safe_dump(self.config_viewer.raw_data, sort_keys=False)
+                else:
+                    text = config.recipe_yaml()
+                Path(path).write_text(text, encoding="utf-8")
+                self.log(f"Exported configuration to {path}.")
             except OSError as exc:
                 QMessageBox.warning(self, "Export failed", str(exc))
 
