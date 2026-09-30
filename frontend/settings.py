@@ -92,7 +92,7 @@ enabled = true
 
 # Primary action key (leader / chord modifier).
 # Press or hold this key, then press a number key to switch panes.
-# Default: "ctrl+b" (tmux standard prefix / remapped Caps Lock). Also supports: "caps_lock", "alt", "ctrl", "meta", etc.
+# Default: "ctrl+b" (tmux-style prefix). Also supports: "caps_lock", "alt", "ctrl", "meta", "ctrl+tab", etc.
 action_key = "ctrl+b"
 
 # Leader timeout in seconds for sequential presses (e.g. tap Action key, then press number).

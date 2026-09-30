@@ -25,6 +25,7 @@ mappings in settings.toml under [hotkeys].
 from __future__ import annotations
 
 import logging
+import sys
 from typing import TYPE_CHECKING, Optional
 
 from PyQt6.QtCore import QEvent, QObject, Qt, QTimer
@@ -87,50 +88,81 @@ _MODIFIER_KEY_CODES: frozenset[Qt.Key] = frozenset({
 
 
 # ---------------------------------------------------------------------------
+# macOS Ctrl ↔ Meta swap helpers
+#
+# Qt remaps physical keys on macOS so that user-visible names stay intuitive:
+#
+#   Physical key  │ Qt Key code   │ Qt Modifier
+#   ──────────────┼───────────────┼─────────────────
+#   Control  (⌃)  │ Key_Meta      │ MetaModifier      ← "ctrl" in Theta
+#   Command  (⌘)  │ Key_Control   │ ControlModifier   ← "cmd" / "meta"
+#   Option   (⌥)  │ Key_Alt       │ AltModifier
+#
+# These helpers return the correct Qt value per-platform so that "ctrl+b"
+# always means the physical Control+B the user intends (tmux default).
+# ---------------------------------------------------------------------------
+
+def _ctrl_key() -> Qt.Key:
+    """Qt key code for the physical Control key (⌃ on macOS)."""
+    return Qt.Key.Key_Meta if sys.platform == "darwin" else Qt.Key.Key_Control
+
+def _ctrl_mod() -> Qt.KeyboardModifier:
+    """Qt modifier flag for the physical Control key."""
+    return Qt.KeyboardModifier.MetaModifier if sys.platform == "darwin" else Qt.KeyboardModifier.ControlModifier
+
+def _meta_key() -> Qt.Key:
+    """Qt key code for the physical Command/Meta key (⌘ on macOS)."""
+    return Qt.Key.Key_Control if sys.platform == "darwin" else Qt.Key.Key_Meta
+
+def _meta_mod() -> Qt.KeyboardModifier:
+    """Qt modifier flag for the physical Command/Meta key."""
+    return Qt.KeyboardModifier.ControlModifier if sys.platform == "darwin" else Qt.KeyboardModifier.MetaModifier
+
+
+# ---------------------------------------------------------------------------
 # parse_action_key
 # ---------------------------------------------------------------------------
 
 def parse_action_key(key_name: str) -> tuple[Optional[Qt.Key], Optional[Qt.KeyboardModifier]]:
     """Parse a human-readable action-key string into ``(Qt.Key, modifier | None)``.
 
-    Supported formats (case-insensitive):
+    Names always refer to *physical* keys, regardless of platform:
 
-    Single keys:
-      ``caps_lock``, ``ctrl``, ``alt``, ``meta`` / ``cmd``, ``shift``,
-      ``space``, ``tab``, ``escape``, ``f1`` … ``f12``, …
+      ``ctrl``        → physical Control key  (⌃ on macOS)
+      ``cmd``/``meta``→ physical Command/Meta key  (⌘ on macOS)
+      ``alt``         → physical Option/Alt key  (⌥ on macOS)
+      ``ctrl+b``      → physical Control + B  (the tmux default)
 
-    Compound shortcuts:
-      ``ctrl+b``, ``alt+space``, ``ctrl+tab``, ``meta+grave``, …
-
-    Any bare key name is looked up in ``Qt.Key`` as a last-resort fallback.
+    Qt swaps Ctrl and Meta internally on macOS; the helpers above handle
+    that transparently so callers never need to think about it.
     """
     cleaned = key_name.strip().lower().replace(" ", "_")
 
-    # Single-token lookup table
+    # Single-token lookup — always resolves to the *physical* key
     _SINGLE: dict[str, tuple[Qt.Key, Optional[Qt.KeyboardModifier]]] = {
         "caps_lock": (Qt.Key.Key_CapsLock, None),
         "capslock":  (Qt.Key.Key_CapsLock, None),
         "caps":      (Qt.Key.Key_CapsLock, None),
-        "ctrl":      (Qt.Key.Key_Control,  None),
-        "control":   (Qt.Key.Key_Control,  None),
-        "alt":       (Qt.Key.Key_Alt,      None),
-        "option":    (Qt.Key.Key_Alt,      None),
-        "meta":      (Qt.Key.Key_Meta,     None),
-        "cmd":       (Qt.Key.Key_Meta,     None),
-        "command":   (Qt.Key.Key_Meta,     None),
-        "super":     (Qt.Key.Key_Meta,     None),
-        "win":       (Qt.Key.Key_Meta,     None),
-        "shift":     (Qt.Key.Key_Shift,    None),
-        "space":     (Qt.Key.Key_Space,    None),
-        "spacebar":  (Qt.Key.Key_Space,    None),
-        "tab":       (Qt.Key.Key_Tab,      None),
-        "escape":    (Qt.Key.Key_Escape,   None),
-        "esc":       (Qt.Key.Key_Escape,   None),
+        "ctrl":      (_ctrl_key(),          None),
+        "control":   (_ctrl_key(),          None),
+        "alt":       (Qt.Key.Key_Alt,       None),
+        "option":    (Qt.Key.Key_Alt,       None),
+        "meta":      (_meta_key(),          None),
+        "cmd":       (_meta_key(),          None),
+        "command":   (_meta_key(),          None),
+        "super":     (_meta_key(),          None),
+        "win":       (_meta_key(),          None),
+        "shift":     (Qt.Key.Key_Shift,     None),
+        "space":     (Qt.Key.Key_Space,     None),
+        "spacebar":  (Qt.Key.Key_Space,     None),
+        "tab":       (Qt.Key.Key_Tab,       None),
+        "escape":    (Qt.Key.Key_Escape,    None),
+        "esc":       (Qt.Key.Key_Escape,    None),
     }
     if cleaned in _SINGLE:
         return _SINGLE[cleaned]
 
-    # Compound "modifier+key" (e.g. "ctrl+b", "alt+space", "meta+grave")
+    # Compound "modifier+key" (e.g. "ctrl+b", "alt+space", "cmd+grave")
     if "+" in cleaned or (cleaned.count("-") >= 1 and cleaned != "-"):
         delim = "+" if "+" in cleaned else "-"
         parts = [p.strip() for p in cleaned.split(delim)]
@@ -138,15 +170,14 @@ def parse_action_key(key_name: str) -> tuple[Optional[Qt.Key], Optional[Qt.Keybo
         key: Optional[Qt.Key] = None
         for p in parts:
             if p in ("ctrl", "control"):
-                mod |= Qt.KeyboardModifier.ControlModifier
+                mod |= _ctrl_mod()
             elif p in ("alt", "option"):
                 mod |= Qt.KeyboardModifier.AltModifier
             elif p in ("meta", "cmd", "command", "super", "win"):
-                mod |= Qt.KeyboardModifier.MetaModifier
+                mod |= _meta_mod()
             elif p in ("shift",):
                 mod |= Qt.KeyboardModifier.ShiftModifier
             else:
-                # Bare key token
                 for attr in (f"Key_{p.capitalize()}", f"Key_{p.upper()}"):
                     if hasattr(Qt.Key, attr):
                         key = getattr(Qt.Key, attr)
@@ -154,13 +185,13 @@ def parse_action_key(key_name: str) -> tuple[Optional[Qt.Key], Optional[Qt.Keybo
         if key is not None:
             return key, mod if mod != Qt.KeyboardModifier.NoModifier else None
 
-    # Fallback: look up as a bare Qt.Key name
+    # Fallback: bare Qt.Key name
     for attr in (f"Key_{cleaned.capitalize()}", f"Key_{cleaned.upper()}"):
         if hasattr(Qt.Key, attr):
             return getattr(Qt.Key, attr), None
 
     logger.warning("Unknown action_key %r; falling back to Ctrl+B.", key_name)
-    return Qt.Key.Key_B, Qt.KeyboardModifier.ControlModifier
+    return Qt.Key.Key_B, _ctrl_mod()
 
 
 # ---------------------------------------------------------------------------
