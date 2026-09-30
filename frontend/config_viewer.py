@@ -1,14 +1,49 @@
 """Full-screen, simplified, boxed configuration viewer for Theta-IDE."""
-from pathlib import Path
 import random
+from pathlib import Path
+
 import yaml
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout,
-    QLabel, QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QCheckBox,
-    QPushButton, QToolButton, QFrame, QScrollArea, QMessageBox
+    QCheckBox,
+    QComboBox,
+    QDoubleSpinBox,
+    QFormLayout,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QSpinBox,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
 )
+
+from .config_model import ConfigTree
 from .widgets import label
+
+_CONFIG_TREE = None
+_CONFIG_TREE_LOADED = False
+
+
+def config_tree():
+    """The parsed in/config tree, or None if it cannot be found.
+
+    Callers must handle None: the viewer falls back to free-text entry so it
+    still works when run outside a checkout.
+    """
+    global _CONFIG_TREE, _CONFIG_TREE_LOADED
+    if not _CONFIG_TREE_LOADED:
+        _CONFIG_TREE_LOADED = True
+        try:
+            _CONFIG_TREE = ConfigTree.discover()
+        except (FileNotFoundError, OSError):
+            _CONFIG_TREE = None
+    return _CONFIG_TREE
 
 
 class ConfigBox(QFrame):
@@ -46,6 +81,8 @@ class ConfigViewer(QWidget):
     """
     config_changed = pyqtSignal()
     save_requested = pyqtSignal()
+
+    INHERIT = "(inherit from base)"
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -188,6 +225,37 @@ class ConfigViewer(QWidget):
         form_id.addRow("Group", self.txt_group)
         self.field_widgets["group"] = self.txt_group
 
+        # Paradigm + Environment, driven by in/config/paradigms constraints.
+        tree = config_tree()
+        if tree and tree.paradigms:
+            self.combo_paradigm = QComboBox()
+            self.combo_paradigm.addItems(sorted(tree.paradigms))
+            if paradigm in tree.paradigms:
+                self.combo_paradigm.setCurrentText(paradigm)
+            rules = tree.paradigms.get(self.combo_paradigm.currentText())
+            if rules and rules.description:
+                self.combo_paradigm.setToolTip(rules.description)
+            self.combo_paradigm.currentTextChanged.connect(self._on_paradigm_changed)
+            form_id.addRow("Paradigm", self.combo_paradigm)
+            self.field_widgets["paradigm"] = self.combo_paradigm
+
+            self.combo_env = QComboBox()
+            self.combo_env.addItem(self.INHERIT)
+            allowed_envs = [e.name for e in tree.environments_for(self.combo_paradigm.currentText())]
+            self.combo_env.addItems(allowed_envs)
+            current_env = data.get("env")
+            if isinstance(current_env, str) and current_env in allowed_envs:
+                self.combo_env.setCurrentText(current_env)
+            self.combo_env.setToolTip(
+                f"Environments compatible with {self.combo_paradigm.currentText()} "
+                f"(offline_only must match)"
+            )
+            self.combo_env.currentTextChanged.connect(
+                lambda v: self._on_field_edited("env", v) if v != self.INHERIT else None
+            )
+            form_id.addRow("Environment", self.combo_env)
+            self.field_widgets["env"] = self.combo_env
+
         # Defaults / Base
         defaults = data.get("defaults", [])
         if defaults:
@@ -251,6 +319,16 @@ class ConfigViewer(QWidget):
         form_budget.addWidget(self.spin_eval_ep, 1, 3)
         self.field_widgets["eval_episodes"] = self.spin_eval_ep
 
+        # Disable fields the paradigm forbids rather than letting the pipeline
+        # reject them at launch.
+        if tree and paradigm in tree.paradigms:
+            rules = tree.paradigms[paradigm]
+            for key, widget in (("intervals_count", self.spin_intervals),
+                                ("eval_episodes", self.spin_eval_ep)):
+                if not rules.field_enabled(key):
+                    widget.setEnabled(False)
+                    widget.setToolTip(rules.disabled_reason(key))
+
         # Checkboxes: Tensorboard, Save Dataset, Recover
         chk_row = QHBoxLayout()
         chk_row.setSpacing(18)
@@ -311,20 +389,54 @@ class ConfigViewer(QWidget):
                 title_lbl = label(f"Method: {m_name}", "heading")
                 sc_layout.addRow(title_lbl)
 
-                # Agent
-                agent_val = m_spec.get("agent", "")
-                txt_agent = QLineEdit(str(agent_val))
-                txt_agent.textChanged.connect(lambda v, mn=m_name: self._on_method_param_edited(mn, "agent", v))
+                # Agent — restricted to what this paradigm permits
+                agent_val = str(m_spec.get("agent", ""))
+                if tree and tree.paradigms.get(paradigm):
+                    permitted = [a.name for a in tree.agents_for(paradigm)]
+                    txt_agent = QComboBox()
+                    txt_agent.addItems(permitted)
+                    if agent_val and agent_val not in permitted:
+                        # Never silently rewrite what is already on disk.
+                        txt_agent.insertItem(0, agent_val)
+                        txt_agent.setToolTip(
+                            f"'{agent_val}' is not permitted by {paradigm} "
+                            f"(allowed: {', '.join(permitted) or 'none declared'})"
+                        )
+                    else:
+                        txt_agent.setToolTip(f"Agents permitted by {paradigm}")
+                    txt_agent.setCurrentText(agent_val)
+                    txt_agent.currentTextChanged.connect(
+                        lambda v, mn=m_name: self._on_method_param_edited(mn, "agent", v)
+                    )
+                else:
+                    txt_agent = QLineEdit(agent_val)
+                    txt_agent.textChanged.connect(
+                        lambda v, mn=m_name: self._on_method_param_edited(mn, "agent", v)
+                    )
                 sc_layout.addRow("Agent Algorithm", txt_agent)
 
-                # Model
+                # Model — a dict value is a nested override, so keep it as text
                 model_val = m_spec.get("model", "")
                 if isinstance(model_val, dict):
                     model_str = yaml.safe_dump(model_val, default_flow_style=True).strip()
                 else:
                     model_str = str(model_val)
-                txt_model = QLineEdit(model_str)
-                txt_model.textChanged.connect(lambda v, mn=m_name: self._on_method_param_edited(mn, "model", v))
+                if tree and tree.models and not isinstance(model_val, dict):
+                    txt_model = QComboBox()
+                    known = sorted(tree.models)
+                    txt_model.addItems(known)
+                    if model_str and model_str not in known:
+                        txt_model.insertItem(0, model_str)
+                    txt_model.setCurrentText(model_str)
+                    txt_model.setToolTip("Architectures defined in in/config/model/")
+                    txt_model.currentTextChanged.connect(
+                        lambda v, mn=m_name: self._on_method_param_edited(mn, "model", v)
+                    )
+                else:
+                    txt_model = QLineEdit(model_str)
+                    txt_model.textChanged.connect(
+                        lambda v, mn=m_name: self._on_method_param_edited(mn, "model", v)
+                    )
                 sc_layout.addRow("Model Architecture", txt_model)
 
                 # Learning rate
@@ -501,6 +613,22 @@ class ConfigViewer(QWidget):
         self.raw_data[key] = value
         self._mark_dirty()
 
+    def _on_paradigm_changed(self, value):
+        if self._block_updates:
+            return
+        self.raw_data["paradigm"] = value
+        # An env or agent valid under the old paradigm may be forbidden under the
+        # new one, so drop stale choices and rebuild against the new constraints.
+        tree = config_tree()
+        if tree and value in tree.paradigms:
+            rules = tree.paradigms[value]
+            env_name = self.raw_data.get("env")
+            if isinstance(env_name, str) and env_name in tree.environments:
+                if not rules.permits_environment(tree.environments[env_name]):
+                    self.raw_data.pop("env", None)
+        self._mark_dirty()
+        self._render_boxes()
+
     def _on_nested_edited(self, parent_key, child_key, value):
         if self._block_updates:
             return
@@ -564,6 +692,13 @@ class ConfigViewer(QWidget):
 
         if "experiment_id" in data:
             overrides.append(f"++experiment_id='{data['experiment_id']}'")
+
+        # Hydra config-group selections (defaults in in/config/config.yaml)
+        for group in ("paradigm", "env"):
+            value = data.get(group)
+            if isinstance(value, str) and value and value != self.INHERIT:
+                overrides.append(f"{group}={value}")
+
         if "seed" in data:
             overrides.append(f"seed={data['seed']}")
         if "total_timesteps" in data:
