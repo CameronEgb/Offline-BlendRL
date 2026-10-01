@@ -971,7 +971,9 @@ class Window(QMainWindow):
             self.plugins_grid.addWidget(label("No plugins discovered or installed.", "muted"))
 
     def uninstall_plugin_from_settings(self, plugin_id: str):
-        manifest = self.plugin_manager.manifests.get(plugin_id) if hasattr(self, "plugin_manager") else None
+        if not hasattr(self, "plugin_manager"):
+            return
+        manifest = self.plugin_manager.manifests.get(plugin_id)
         name = manifest.name if manifest else plugin_id
         reply = QMessageBox.question(
             self,
@@ -983,15 +985,11 @@ class Window(QMainWindow):
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        if hasattr(self, "hub_client"):
-            comp = self.hub_client.get_component(plugin_id)
-            if comp:
-                self.hub_client.installer.uninstall(comp)
-                self.hub_client.refresh_installed_status()
+        self.plugin_manager.uninstall_plugin(plugin_id)
 
-        if hasattr(self, "plugin_manager"):
-            self.plugin_manager.mark_uninstalled(plugin_id)
-            self.plugin_manager.discover()
+        # Let the Hub refresh its installed-status badge if it's open.
+        if hasattr(self, "hub_client"):
+            self.hub_client.refresh_installed_status()
 
         self.refresh_plugins_ui()
         self.save_layout()
@@ -1031,33 +1029,37 @@ class Window(QMainWindow):
 
     def _on_hub_component_changed(self, component_id: str, action: str):
         comp = self.hub_client.get_component(component_id) if hasattr(self, "hub_client") else None
-        # Non-plugin components (methods, models, envs) are filesystem assets, not UI plugins
+        # Non-plugin components (methods, models, envs) are filesystem assets only — no UI to update.
         if comp and comp.kind != "plugin":
             self.statusBar().showMessage(f"Hub {action} finished: {component_id}", 4000)
             return
 
-        if hasattr(self, "plugin_manager"):
-            ids_to_process = {component_id, component_id.replace("-", "_"), component_id.replace("_", "-")}
-            for suffix in ("-notes", "_notes", "-sim", "_sim", "-plugin", "_plugin"):
-                if component_id.endswith(suffix):
-                    ids_to_process.add(component_id[:-len(suffix)])
+        if not hasattr(self, "plugin_manager"):
+            return
 
-            if comp and comp.target_path:
-                ids_to_process.add(Path(comp.target_path).name)
+        if action == "uninstall":
+            # Resolve the plugin id from the component's target_path (e.g. "plugins/doom" → "doom").
+            # Deactivate any running instance before discover() prunes its manifest.
+            pid = Path(comp.target_path).name if comp and comp.target_path else component_id
+            if pid in self.plugin_manager.instances:
+                self.plugin_manager.disable_plugin(pid)
+            self.plugin_manager.manifests.pop(pid, None)
+            self.plugin_manager.enabled_states.pop(pid, None)
+            self.plugin_manager.save_states()
 
-            for pid in ids_to_process:
-                if action == "uninstall":
-                    if hasattr(self.plugin_manager, "mark_uninstalled"):
-                        self.plugin_manager.mark_uninstalled(pid)
-                    else:
-                        self.plugin_manager.disable_plugin(pid)
-                elif action == "install":
-                    if hasattr(self.plugin_manager, "unmark_uninstalled"):
-                        self.plugin_manager.unmark_uninstalled(pid)
+        # Sync manifests with the current filesystem state.
+        self.plugin_manager.discover()
 
-            self.plugin_manager.discover()
-            self.refresh_plugins_ui()
-            self.statusBar().showMessage(f"Hub {action} finished: {component_id}", 4000)
+        if action == "install":
+            # Auto-enable if the user had it enabled before (e.g. re-installing).
+            pid = Path(comp.target_path).name if comp and comp.target_path else component_id
+            if pid in self.plugin_manager.manifests:
+                if self.plugin_manager.is_plugin_enabled(pid) and pid not in self.plugin_manager.instances:
+                    self.plugin_manager.enable_plugin(pid)
+
+        self.refresh_plugins_ui()
+        self.save_layout()
+        self.statusBar().showMessage(f"Hub {action} finished: {component_id}", 4000)
 
     def open_hub(self, initial_kind: Optional[str] = None):
         if hasattr(self, "hub_client"):
