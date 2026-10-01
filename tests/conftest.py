@@ -21,6 +21,17 @@ for p in [
 
 collect_ignore_glob = ["in/envs/*", "src/usr/models/fyd_repo/*", "src/usr/models/cew_repo/*"]
 
+# Qt requires QtWebEngineWidgets to be imported before any QApplication exists.
+# Test modules build one at import time, so whichever module pytest collects
+# first would otherwise decide whether the web engine is usable for all of them
+# — and the modules that need it fail to import and skip silently rather than
+# failing. Importing it here, before any test module is collected, removes the
+# ordering dependency.
+try:
+    from PyQt6 import QtWebEngineWidgets  # noqa: F401
+except ImportError:
+    pass
+
 
 @pytest.fixture
 def project_root():

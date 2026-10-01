@@ -15,10 +15,6 @@ from pathlib import Path
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
 try:
-    # QtWebEngineWidgets must be imported before any QApplication exists, and
-    # other test modules rely on that too, so import it here even though this
-    # module does not use it.
-    from PyQt6 import QtWebEngineWidgets  # noqa: F401
     from PyQt6.QtWidgets import QApplication, QComboBox
 
     app = QApplication.instance() or QApplication(sys.argv[:1])

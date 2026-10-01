@@ -42,14 +42,15 @@ except ImportError:
 
 from src.app.api.job_store import JobStore
 
-
 app = FastAPI(title="NeSyRL API")
 
 # Enable CORS for frontend clients (Vite, Next.js, Electron, etc.)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    # Browsers reject a wildcard origin when credentials are allowed, and this
+    # API has no cookies or auth to send, so credentials stay off.
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

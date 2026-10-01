@@ -16,6 +16,8 @@ dependencies = [
     "torchaudio>=2.0,<3",
     "pytorch-lightning>=2.0,<3",
     "lightning>=2.0,<3",
+    # Attribution, imported by src/usr/models/blendrl/agents/blender_agent.py
+    "captum>=0.7",
     # Config & Sweeps
     "hydra-core>=1.3,<2",
     "hydra-optuna-sweeper<=1.1.2",
