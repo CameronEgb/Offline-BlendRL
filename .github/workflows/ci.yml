@@ -32,8 +32,11 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -e ".[dev,api]"
+          pip install -r frontend/requirements.txt
       - name: Run tests
-        run: pytest tests/ -v --tb=short --cov=src --cov-report=xml
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: pytest tests/ -v --tb=short --cov=src --cov=frontend --cov-report=xml
       - name: Upload coverage
         uses: codecov/codecov-action@v4
         with:
@@ -53,4 +56,4 @@ jobs:
           pip install --upgrade pip
           pip install -e ".[dev,api]"
       - name: Type check
-        run: mypy src/pipeline/ src/methods/registry.py src/method_registry.py --ignore-missing-imports --follow-imports=silent
+        run: mypy src/app/pipeline/ src/usr/methods/registry.py src/usr/methods/method_registry.py --ignore-missing-imports --follow-imports=silent
