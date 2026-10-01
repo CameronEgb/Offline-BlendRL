@@ -41,6 +41,37 @@ BUILTINS = {
     "Catppuccin Macchiato": preset("Catppuccin Macchiato", "#24273a #1e2030 #363a4f #494d64 #5b6078 #6e738d #cad3f5 #a5adcb #8087a2 #eed49f #8aadf4 #a6da95 #8bd5ca #c6a0f6 #f5bde6"),
     "Catppuccin Latte": preset("Catppuccin Latte", "#eff1f5 #e6e9ef #ccd0da #bcc0cc #acb0be #9ca0b0 #4c4f69 #6c6f85 #8c8fa1 #8839ef #1e66f5 #40a02b #179299 #fe640b #ea76cb"),
     "Paper": preset("Paper", "#ffffff #f5f7fa #edf0f5 #e2e7ef #c1cad8 #8794a6 #202b3b #526176 #65748a #6246b5 #176b91 #287448 #328a57 #8851c5 #a03876"),
+    # ── Greek / Theta Palettes ────────────────────────────────────────────────
+    # Apollo — Sunlit marble + Attic pottery (Light / Warm)
+    #   base     panel    surface  raised   border   disabled
+    #   text     muted    comment  accent   secondary primary  primary_hover focus  number
+    "Apollo": preset("Apollo",
+        "#f5f0e6 #eae2d3 #dfd6c5 #d9c8a9 #d1c6b4 #9c9485 "
+        "#292722 #817a6d #918a76 #b56d32 #496a8a #637447 #748754 #a34832 #765b7a"),
+    # Athena — White marble + Aegean sky + oxidized bronze (Light / Cool)
+    #   base     panel    surface  raised   border   disabled
+    #   text     muted    comment  accent   secondary primary  primary_hover focus  number
+    "Athena": preset("Athena",
+        "#f1f3f0 #e4e9e7 #d8dfdc #cbdad9 #c8d0cd #939f9e "
+        "#252b2c #737d7d #7b8580 #397b7d #496a8c #55745f #658770 #a96e3f #6d617f"),
+    # Dionysus — Blackened Fig, dark plum, warm ivory, pomegranate & wine (Dark / Warm)
+    #   base     panel    surface  raised   border   disabled
+    #   text     muted    comment  accent   secondary primary  primary_hover focus  number
+    "Dionysus": preset("Dionysus",
+        "#211820 #2d2029 #382833 #4a3040 #42303a #5e5257 "
+        "#e5d8c8 #88787d #71656b #c5a05a #687a9b #71875a #839d69 #c45a5a #a66a91"),
+    # Ares — Charcoal, blackened iron, bone, vermilion blood & fire bronze (Dark / Warm-Iron)
+    #   base     panel    surface  raised   border   disabled
+    #   text     muted    comment  accent   secondary primary  primary_hover focus  number
+    "Ares": preset("Ares",
+        "#171514 #211c1a #2b2522 #38302c #472522 #5a524c "
+        "#e4ddd2 #877d73 #6f6861 #c09a55 #596b7a #697354 #7b8663 #d04a3e #765866"),
+    # Poseidon — Abyss, deep water, submerged stone, sea foam & kelp (Dark / Cool)
+    #   base     panel    surface  raised   border   disabled
+    #   text     muted    comment  accent   secondary primary  primary_hover focus  number
+    "Poseidon": preset("Poseidon",
+        "#080f14 #0d171d #122129 #18343c #1c2b31 #3d4f55 "
+        "#d3dedc #66777c #526369 #3f9698 #527ba3 #527d69 #63947e #b77d4e #716b8c"),
 }
 DEFAULT = BUILTINS["Gruvbox Dark"]
 _LEGACY_ROLES = {value: key for key, (_, value) in ROLES.items()}

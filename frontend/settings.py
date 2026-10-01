@@ -45,7 +45,8 @@ _DEFAULT_TOML = """\
 [appearance]
 # Active color theme.  Built-in choices:
 #   "Gruvbox Dark", "Gruvbox Light", "Nord", "Dracula", "Catppuccin",
-#   "Catppuccin Latte", "Paper"
+#   "Catppuccin Macchiato", "Catppuccin Latte", "Paper",
+#   "Apollo", "Athena", "Ares", "Dionysus", "Poseidon"
 theme = "Catppuccin"
 
 # Enable the rotating 3-D ASCII sculpture on the Settings & About panel.
@@ -212,8 +213,13 @@ class SettingsManager(QObject):
         super().__init__(parent)
 
         # Canonical workspace settings file sits one level above data_dir
-        # (e.g. data_dir=.thetaide/runs  →  .thetaide/settings.toml)
-        self._workspace_path = Path(data_dir).parent / "settings.toml"
+        # (e.g. data_dir=.thetaide/runs  →  .thetaide/settings.toml),
+        # but stays inside data_dir for custom or temporary directories.
+        p = Path(data_dir)
+        if p.name == "runs" or p.parent.name == ".thetaide":
+            self._workspace_path = p.parent / "settings.toml"
+        else:
+            self._workspace_path = p / "settings.toml"
         # User-global settings file (lower priority)
         self._user_path = Path.home() / ".config" / "thetaide" / "settings.toml"
 
