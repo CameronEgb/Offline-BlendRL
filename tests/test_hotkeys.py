@@ -14,7 +14,15 @@ try:
     QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts, True)
     app = QApplication.instance() or QApplication(sys.argv[:1])
     from frontend.app import Window
-    from frontend.hotkeys import HotkeyManager, parse_action_key, PANE_ALIASES
+    from frontend.hotkeys import (
+        HotkeyManager,
+        parse_action_key,
+        PANE_ALIASES,
+        get_ctrl_key,
+        get_ctrl_modifier,
+        get_meta_key,
+        get_meta_modifier,
+    )
     from frontend.settings import SettingsManager
     HAS_PYQT6 = True
 except ImportError:
@@ -75,12 +83,12 @@ class TestKeyParsing(unittest.TestCase):
         self.assertEqual(mod, Qt.KeyboardModifier.AltModifier)
 
         key, mod = parse_action_key("ctrl")
-        self.assertEqual(key, Qt.Key.Key_Control)
-        self.assertEqual(mod, Qt.KeyboardModifier.ControlModifier)
+        self.assertEqual(key, get_ctrl_key())
+        self.assertEqual(mod, get_ctrl_modifier())
 
         key, mod = parse_action_key("cmd")
-        self.assertEqual(key, Qt.Key.Key_Meta)
-        self.assertEqual(mod, Qt.KeyboardModifier.MetaModifier)
+        self.assertEqual(key, get_meta_key())
+        self.assertEqual(mod, get_meta_modifier())
 
         key, mod = parse_action_key("shift")
         self.assertEqual(key, Qt.Key.Key_Shift)
@@ -95,6 +103,7 @@ class TestHotkeyManagerNavigation(unittest.TestCase):
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.window = Window(self.data_dir)
         self.hm = self.window.hotkey_manager
+        self.window.settings_manager.set("hotkeys", "action_key", "caps_lock")
 
     def tearDown(self):
         self.window.close()
@@ -333,10 +342,11 @@ class TestHotkeyManagerNavigation(unittest.TestCase):
 
     def test_subsequent_number_without_action_does_not_switch(self):
         """Action + 1 switches to components, then pressing 3 alone does NOT switch."""
+        self.window.settings_manager.set("hotkeys", "action_key", "ctrl+b")
         self.window.tabs.setCurrentWidget(self.window.config_panel)
 
         # Action + 1 (Ctrl+b + 1)
-        e_ctrl_b = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_B, Qt.KeyboardModifier.ControlModifier)
+        e_ctrl_b = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_B, get_ctrl_modifier())
         self.hm.eventFilter(self.window, e_ctrl_b)
         e_1 = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_1, Qt.KeyboardModifier.NoModifier, "1")
         consumed_1 = self.hm.eventFilter(self.window, e_1)
@@ -367,11 +377,12 @@ class TestHotkeyManagerNavigation(unittest.TestCase):
 
     def test_karabiner_ctrl_b_action_key_moves_to_settings(self):
         """When Caps Lock is remapped to Ctrl+b (Karabiner), Ctrl+b + 0 moves to settings out of terminal."""
+        self.window.settings_manager.set("hotkeys", "action_key", "ctrl+b")
         self.window.tabs.setCurrentWidget(self.window.components_panel)
         self.assertFalse(self.hm.is_in_terminal())
 
         # Press Ctrl+b (emitted by Karabiner when Caps Lock is pressed)
-        e_ctrl_b = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_B, Qt.KeyboardModifier.ControlModifier)
+        e_ctrl_b = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_B, get_ctrl_modifier())
         consumed_b = self.hm.eventFilter(self.window, e_ctrl_b)
         self.assertTrue(consumed_b)
         self.assertTrue(self.hm._leader_active)
@@ -385,11 +396,12 @@ class TestHotkeyManagerNavigation(unittest.TestCase):
 
     def test_karabiner_ctrl_b_in_terminal_passes_to_tmux(self):
         """When in terminal pane, Ctrl+b passes directly to tmux."""
+        self.window.settings_manager.set("hotkeys", "action_key", "ctrl+b")
         self.window.tabs.setCurrentWidget(self.window.terminal_panel)
         self.assertTrue(self.hm.is_in_terminal())
 
         # Press Ctrl+b inside terminal
-        e_ctrl_b = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_B, Qt.KeyboardModifier.ControlModifier)
+        e_ctrl_b = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_B, get_ctrl_modifier())
         consumed_b = self.hm.eventFilter(self.window.terminal_panel, e_ctrl_b)
         self.assertFalse(consumed_b)
 

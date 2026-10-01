@@ -44,31 +44,9 @@ class HubInstaller:
 
     def check_installed(self, component: HubComponent) -> Tuple[bool, Optional[str]]:
         """Check if a component is installed and determine its version."""
-        if component.kind == "plugin":
-            plugins_state = self.data_dir / ".plugins.json"
-            if plugins_state.exists():
-                try:
-                    data = json.loads(plugins_state.read_text(encoding="utf-8"))
-                    uninstalled = set(data.get("uninstalled", []))
-                    check_ids = {component.id, component.id.replace("-", "_"), component.id.replace("_", "-")}
-                    if component.target_path:
-                        check_ids.add(Path(component.target_path).name)
-                    if any(cid in uninstalled for cid in check_ids):
-                        return False, None
-                except Exception:
-                    pass
-
         target_dir = self.resolve_target_dir(component)
         if not target_dir.exists() or not target_dir.is_dir():
-            if component.kind == "plugin":
-                target_name = Path(component.target_path).name if component.target_path else component.id
-                builtin_dir = Path(__file__).parent.parent / "plugins" / target_name
-                if builtin_dir.exists() and builtin_dir.is_dir():
-                    target_dir = builtin_dir
-                else:
-                    return False, None
-            else:
-                return False, None
+            return False, None
 
         # 1. Check .theta_component.json manifest
         meta_file = target_dir / ".theta_component.json"

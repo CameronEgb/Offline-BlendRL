@@ -102,21 +102,26 @@ _MODIFIER_KEY_CODES: frozenset[Qt.Key] = frozenset({
 # always means the physical Control+B the user intends (tmux default).
 # ---------------------------------------------------------------------------
 
-def _ctrl_key() -> Qt.Key:
+def get_ctrl_key() -> Qt.Key:
     """Qt key code for the physical Control key (⌃ on macOS)."""
     return Qt.Key.Key_Meta if sys.platform == "darwin" else Qt.Key.Key_Control
 
-def _ctrl_mod() -> Qt.KeyboardModifier:
+def get_ctrl_modifier() -> Qt.KeyboardModifier:
     """Qt modifier flag for the physical Control key."""
     return Qt.KeyboardModifier.MetaModifier if sys.platform == "darwin" else Qt.KeyboardModifier.ControlModifier
 
-def _meta_key() -> Qt.Key:
+def get_meta_key() -> Qt.Key:
     """Qt key code for the physical Command/Meta key (⌘ on macOS)."""
     return Qt.Key.Key_Control if sys.platform == "darwin" else Qt.Key.Key_Meta
 
-def _meta_mod() -> Qt.KeyboardModifier:
+def get_meta_modifier() -> Qt.KeyboardModifier:
     """Qt modifier flag for the physical Command/Meta key."""
     return Qt.KeyboardModifier.ControlModifier if sys.platform == "darwin" else Qt.KeyboardModifier.MetaModifier
+
+_ctrl_key = get_ctrl_key
+_ctrl_mod = get_ctrl_modifier
+_meta_key = get_meta_key
+_meta_mod = get_meta_modifier
 
 
 # ---------------------------------------------------------------------------
@@ -143,16 +148,16 @@ def parse_action_key(key_name: str) -> tuple[Optional[Qt.Key], Optional[Qt.Keybo
         "caps_lock": (Qt.Key.Key_CapsLock, None),
         "capslock":  (Qt.Key.Key_CapsLock, None),
         "caps":      (Qt.Key.Key_CapsLock, None),
-        "ctrl":      (_ctrl_key(),          None),
-        "control":   (_ctrl_key(),          None),
-        "alt":       (Qt.Key.Key_Alt,       None),
-        "option":    (Qt.Key.Key_Alt,       None),
-        "meta":      (_meta_key(),          None),
-        "cmd":       (_meta_key(),          None),
-        "command":   (_meta_key(),          None),
-        "super":     (_meta_key(),          None),
-        "win":       (_meta_key(),          None),
-        "shift":     (Qt.Key.Key_Shift,     None),
+        "ctrl":      (get_ctrl_key(),      get_ctrl_modifier()),
+        "control":   (get_ctrl_key(),      get_ctrl_modifier()),
+        "alt":       (Qt.Key.Key_Alt,       Qt.KeyboardModifier.AltModifier),
+        "option":    (Qt.Key.Key_Alt,       Qt.KeyboardModifier.AltModifier),
+        "meta":      (get_meta_key(),      get_meta_modifier()),
+        "cmd":       (get_meta_key(),      get_meta_modifier()),
+        "command":   (get_meta_key(),      get_meta_modifier()),
+        "super":     (get_meta_key(),      get_meta_modifier()),
+        "win":       (get_meta_key(),      get_meta_modifier()),
+        "shift":     (Qt.Key.Key_Shift,     Qt.KeyboardModifier.ShiftModifier),
         "space":     (Qt.Key.Key_Space,     None),
         "spacebar":  (Qt.Key.Key_Space,     None),
         "tab":       (Qt.Key.Key_Tab,       None),
@@ -360,7 +365,8 @@ class HotkeyManager(QObject):
             return False
 
         # ── Step 3: only proceed if action mode is active ─────────────────
-        if not (self._leader_active or self._action_key_held):
+        is_modifier_chord = bool(self.action_modifier and (event.modifiers() & self.action_modifier))
+        if not (self._leader_active or self._action_key_held or is_modifier_chord):
             return False
 
         # ── Step 4: Escape cancels action mode ────────────────────────────

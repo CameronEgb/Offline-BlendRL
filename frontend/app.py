@@ -1030,22 +1030,30 @@ class Window(QMainWindow):
         dialog.exec()
 
     def _on_hub_component_changed(self, component_id: str, action: str):
+        comp = self.hub_client.get_component(component_id) if hasattr(self, "hub_client") else None
+        # Non-plugin components (methods, models, envs) are filesystem assets, not UI plugins
+        if comp and comp.kind != "plugin":
+            self.statusBar().showMessage(f"Hub {action} finished: {component_id}", 4000)
+            return
+
         if hasattr(self, "plugin_manager"):
             ids_to_process = {component_id, component_id.replace("-", "_"), component_id.replace("_", "-")}
             for suffix in ("-notes", "_notes", "-sim", "_sim", "-plugin", "_plugin"):
                 if component_id.endswith(suffix):
                     ids_to_process.add(component_id[:-len(suffix)])
 
-            if hasattr(self, "hub_client"):
-                comp = self.hub_client.get_component(component_id)
-                if comp and comp.target_path:
-                    ids_to_process.add(Path(comp.target_path).name)
+            if comp and comp.target_path:
+                ids_to_process.add(Path(comp.target_path).name)
 
             for pid in ids_to_process:
                 if action == "uninstall":
-                    self.plugin_manager.mark_uninstalled(pid)
+                    if hasattr(self.plugin_manager, "mark_uninstalled"):
+                        self.plugin_manager.mark_uninstalled(pid)
+                    else:
+                        self.plugin_manager.disable_plugin(pid)
                 elif action == "install":
-                    self.plugin_manager.unmark_uninstalled(pid)
+                    if hasattr(self.plugin_manager, "unmark_uninstalled"):
+                        self.plugin_manager.unmark_uninstalled(pid)
 
             self.plugin_manager.discover()
             self.refresh_plugins_ui()

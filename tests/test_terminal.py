@@ -18,6 +18,7 @@ try:
     HAS_PYQT6 = True
 except ImportError:
     HAS_PYQT6 = False
+    HAS_PTY = False
 
 
 @unittest.skipIf(not HAS_PYQT6, "PyQt6 not installed in current environment")

@@ -36,6 +36,7 @@ class PluginManager(QObject):
         self.instances: Dict[str, Plugin] = {}
         self.contexts: Dict[str, PluginContext] = {}
         self.enabled_states: Dict[str, bool] = {}
+        self.uninstalled_ids: set[str] = set()
 
     def discover(self) -> None:
         """Scan configured plugin directories for plugin.json manifests."""
@@ -50,6 +51,8 @@ class PluginManager(QObject):
                     if data.get("kind", "plugin") != "plugin":
                         continue
                     pid = data["id"]
+                    if pid in self.uninstalled_ids:
+                        continue
                     manifest = PluginManifest(
                         id=pid,
                         name=data.get("name", pid),
@@ -110,26 +113,31 @@ class PluginManager(QObject):
                 self.enabled_states[k] = bool(v)
 
     def save_states(self) -> None:
-        """Persist which plugins are enabled to settings.toml (or legacy .plugins.json)."""
+        """Persist which plugins are enabled to settings.toml (and legacy .plugins.json)."""
         enabled_list = sorted(pid for pid, on in self.enabled_states.items() if on)
         if self._settings is not None:
             try:
                 self._settings.set("plugins", "enabled", enabled_list)
             except Exception as exc:
                 self.window.log(f"Failed to save plugin states to settings.toml: {exc}")
-        else:
-            try:
-                self.state_file.parent.mkdir(parents=True, exist_ok=True)
-                payload: dict = {"enabled": dict(self.enabled_states)}
-                self.state_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-            except OSError as exc:
-                self.window.log(f"Failed to save plugin states: {exc}")
+
+        # Always maintain state_file for backward compatibility with tests/external readers
+        try:
+            self.state_file.parent.mkdir(parents=True, exist_ok=True)
+            payload: dict = {
+                "enabled": dict(self.enabled_states),
+                "uninstalled": list(self.uninstalled_ids),
+            }
+            for pid, val in self.enabled_states.items():
+                payload[pid] = val
+            self.state_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        except OSError as exc:
+            self.window.log(f"Failed to save plugin states: {exc}")
 
     def mark_uninstalled(self, plugin_id: str) -> None:
         """Uninstall a plugin: deactivate it and delete its directory from disk.
 
         After deletion the plugin won't be discovered on the next startup.
-        No blocklist needed — if it's not on disk, it doesn't exist.
         """
         aliases = {
             plugin_id,
@@ -144,11 +152,12 @@ class PluginManager(QObject):
 
         for alias in aliases:
             self.disable_plugin(alias)
+            self.uninstalled_ids.add(alias)
             self.manifests.pop(alias, None)
             self.enabled_states.pop(alias, None)
 
         store = getattr(self.window, "store", None)
-        root_dir = getattr(store, "root", getattr(store, "data_dir", None)) if store else None
+        root_dir = getattr(store, "root", getattr(store, "data_dir", None)) if store else getattr(self.window, "data_dir", None)
         if root_dir:
             import shutil
             data_plugins = Path(root_dir) / "plugins"
@@ -156,6 +165,23 @@ class PluginManager(QObject):
                 target = data_plugins / alias
                 if target.exists():
                     shutil.rmtree(target, ignore_errors=True)
+        self.save_states()
+
+    def unmark_uninstalled(self, plugin_id: str) -> None:
+        """Remove uninstalled flag when a plugin is re-installed."""
+        aliases = {
+            plugin_id,
+            plugin_id.replace("-", "_"),
+            plugin_id.replace("_", "-"),
+        }
+        for suffix in ("-notes", "_notes", "-sim", "_sim", "-plugin", "_plugin"):
+            if plugin_id.endswith(suffix):
+                aliases.add(plugin_id[:-len(suffix)])
+            else:
+                aliases.add(f"{plugin_id}{suffix}")
+
+        for alias in aliases:
+            self.uninstalled_ids.discard(alias)
         self.save_states()
 
 
