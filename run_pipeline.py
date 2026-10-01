@@ -171,7 +171,7 @@ def main():
                 f"Use the 'methods:' dict instead."
             )
 
-    print(f"Declared Methods:")
+    print("Declared Methods:")
     has_any_tune = is_sweep
     for name, mcfg in methods_dict.items():
         agent_str = f"agent={mcfg.get('agent')}, " if mcfg.get('agent') else ""

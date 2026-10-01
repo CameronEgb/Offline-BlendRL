@@ -21,6 +21,7 @@ if PROJECT_ROOT not in sys.path:
 if os.path.join(PROJECT_ROOT, "src") not in sys.path:
     sys.path.insert(0, os.path.join(PROJECT_ROOT, "src"))
 
+from src.app.pipeline.datasets import resolve_mimic_npz_path
 from src.usr.eval.early_prediction.model import (
     SepsisLSTM,
     SepsisTransformer,
@@ -32,7 +33,6 @@ from src.usr.eval.early_prediction.model import (
     train_lstm_model,
     train_transformer_model,
 )
-from src.app.pipeline.datasets import resolve_mimic_npz_path
 
 
 def compute_metric(y_true, probs, metric_name="auprc"):

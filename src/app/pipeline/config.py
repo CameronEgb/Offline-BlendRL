@@ -1,4 +1,5 @@
 from pathlib import Path
+
 import yaml
 
 
@@ -85,7 +86,7 @@ def resolve_study_best_params(from_study: str, method_name: str, group: str | No
     for cand in candidates:
         if cand.is_file() and cand.suffix in (".yaml", ".yml"):
             try:
-                with open(cand, "r", encoding="utf-8") as f:
+                with open(cand, encoding="utf-8") as f:
                     data = yaml.safe_load(f)
                     if isinstance(data, dict):
                         return data
@@ -93,7 +94,7 @@ def resolve_study_best_params(from_study: str, method_name: str, group: str | No
                 pass
         elif cand.is_dir() and (cand / "best_params.yaml").is_file():
             try:
-                with open(cand / "best_params.yaml", "r", encoding="utf-8") as f:
+                with open(cand / "best_params.yaml", encoding="utf-8") as f:
                     data = yaml.safe_load(f)
                     if isinstance(data, dict):
                         return data
@@ -136,7 +137,7 @@ def find_group_method_config(method_name: str, group: str | None = None) -> dict
     for path in candidates:
         if path.is_file():
             try:
-                with open(path, "r", encoding="utf-8") as f:
+                with open(path, encoding="utf-8") as f:
                     data = yaml.safe_load(f)
                     if isinstance(data, dict):
                         return data
@@ -201,6 +202,7 @@ def load_model_base_config(model_name: str, config_dir=None) -> dict:
     if not model_name:
         return {}
     from pathlib import Path
+
     import yaml
 
     if config_dir is None:
@@ -213,7 +215,7 @@ def load_model_base_config(model_name: str, config_dir=None) -> dict:
     if not target.exists():
         return {}
     try:
-        with open(target, "r") as f:
+        with open(target) as f:
             data = yaml.safe_load(f)
         return dict(data) if isinstance(data, dict) else {}
     except Exception:

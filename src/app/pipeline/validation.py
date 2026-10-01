@@ -15,11 +15,10 @@ from typing import Any
 
 import yaml
 
-
-from src.usr.methods.method_registry import METHOD_STYLE
 from src.app.pipeline.config import normalize_agent_name, parse_methods_dict, resolve_experiment_config_name
 from src.app.pipeline.datasets import resolve_dataset_path
 from src.app.pipeline.exceptions import ConfigurationError
+from src.usr.methods.method_registry import METHOD_STYLE
 
 # ---------------------------------------------------------------------------
 # Paradigm registry loading

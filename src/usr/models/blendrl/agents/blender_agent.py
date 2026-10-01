@@ -1,13 +1,15 @@
 import os
 import pickle
 import random
+
+# from nudge.env import NudgeBaseEnv
+import sys
 from pathlib import Path
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.distributions.categorical import Categorical
 from captum.attr import (
     DeepLift,
     DeepLiftShap,
@@ -17,9 +19,7 @@ from captum.attr import (
     NeuronConductance,
     NoiseTunnel,
 )
-
-# from nudge.env import NudgeBaseEnv
-import sys
+from torch.distributions.categorical import Categorical
 
 PROJECT_ROOT = str(Path(__file__).resolve().parents[5])
 for _p in [

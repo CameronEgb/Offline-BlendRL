@@ -395,7 +395,6 @@ import lightning as L
 from torch.utils.data import DataLoader
 
 
-
 def get_pos_weight(y_train, device):
     n_pos = (y_train == 1).sum()
     n_neg = (y_train == 0).sum()

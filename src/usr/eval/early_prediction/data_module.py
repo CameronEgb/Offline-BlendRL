@@ -14,15 +14,14 @@ import os
 from pathlib import Path
 from typing import Any
 
+import lightning as L
 import numpy as np
 import torch
 from sklearn.model_selection import train_test_split
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 
-import lightning as L
 from src.app.core.interfaces import BaseDataModule
 from src.usr.eval.early_prediction.model import compute_volatility_features, normalize_features
-from torch.utils.data import Dataset
 
 log = logging.getLogger(__name__)
 
