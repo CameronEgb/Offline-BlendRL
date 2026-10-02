@@ -79,6 +79,8 @@ def write_json(path, value):
 _BASE_STYLE = """
 * { color: #ebdbb2; font-family: 'Segoe UI'; font-size: 12px; }
 QMainWindow, QDialog { background: #1d2021; }
+QMainWindow::separator { background: #504945; width: 1px; height: 1px; }
+QWidget#qt_qmainwindow_extended_splitter { background: #504945; }
 QWidget { background: #282828; }
 QMenuBar, QMenu, QToolBar, QStatusBar { background: #1d2021; }
 QMenuBar::item { background: transparent; padding: 7px 12px; }

@@ -4,8 +4,8 @@ from pathlib import Path
 from PyQt6.QtCore import QByteArray, QRectF, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QIcon, QPainter, QPixmap
 from PyQt6.QtSvg import QSvgRenderer
-from PyQt6.QtWidgets import (QApplication, QButtonGroup, QHBoxLayout, QSizePolicy, QStackedWidget, QToolButton,
-                             QVBoxLayout, QWidget)
+from PyQt6.QtWidgets import (QApplication, QButtonGroup, QHBoxLayout, QScrollArea, QSizePolicy, QStackedWidget,
+                             QToolButton, QVBoxLayout, QWidget)
 
 from .theme import theme_color
 
@@ -68,10 +68,18 @@ class SideTabs(QWidget):
         self.group.idClicked.connect(self.setCurrentIndex)
         self.buttons = []
         self.icon_names = []
+        self.pages = []
 
     def addTab(self, widget, text, icon=None, short=None):
         """icon names an SVG in frontend/icons/; short is the label shown under it (text becomes the tooltip)."""
-        index = self.stack.addWidget(widget)
+        # Each page scrolls when cramped. Otherwise the stack's minimum height is the tallest page's, and the
+        # main window pushes the bottom dock (the console) off-screen to honor it on small or scaled displays.
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # keep Tab order and clicks on the page's own widgets
+        scroll.setWidget(widget)
+        self.pages.append(widget)
+        index = self.stack.addWidget(scroll)
         button = QToolButton()
         button.setObjectName("sideTab")
         button.setCheckable(True)
@@ -107,13 +115,13 @@ class SideTabs(QWidget):
         return self.stack.currentIndex()
 
     def currentWidget(self):
-        return self.stack.currentWidget()
+        return self.widget(self.currentIndex())
 
     def widget(self, index):
-        return self.stack.widget(index)
+        return self.pages[index] if 0 <= index < len(self.pages) else None
 
     def indexOf(self, widget):
-        return self.stack.indexOf(widget)
+        return self.pages.index(widget) if widget in self.pages else -1
 
     def setCurrentIndex(self, index):
         if not 0 <= index < self.count():
