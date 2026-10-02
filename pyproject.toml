@@ -47,6 +47,8 @@ dependencies = [
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
+    # Bounds a hung GUI test so CI fails in minutes rather than hours
+    "pytest-timeout>=2.3",
     "ruff>=0.5",
     "mypy>=1.0",
     "pre-commit>=3.0",
