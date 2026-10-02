@@ -18,6 +18,7 @@ class PluginContext:
         self._storage_file = storage_file
         self._registered_tabs: List[str] = []
         self._experiment_listeners: List[Callable[[Optional[str], Optional[str]], None]] = []
+        self._storage_cache: Optional[Dict[str, Any]] = None  # lazy-loaded on first access
 
     # ── Sidebar & UI Contributions ──────────────────────────────────────────
 
@@ -137,14 +138,19 @@ class PluginContext:
     # ── Plugin-Scoped Persistence ────────────────────────────────────────────
 
     def _read_storage(self) -> Dict[str, Any]:
+        if self._storage_cache is not None:
+            return self._storage_cache
         if not self._storage_file.exists():
-            return {}
+            self._storage_cache = {}
+            return self._storage_cache
         try:
-            return json.loads(self._storage_file.read_text(encoding="utf-8"))
+            self._storage_cache = json.loads(self._storage_file.read_text(encoding="utf-8"))
         except Exception:
-            return {}
+            self._storage_cache = {}
+        return self._storage_cache
 
     def _write_storage(self, data: Dict[str, Any]) -> None:
+        self._storage_cache = data
         try:
             self._storage_file.parent.mkdir(parents=True, exist_ok=True)
             self._storage_file.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
@@ -169,3 +175,4 @@ class PluginContext:
         for tab_id in list(self._registered_tabs):
             self.remove_sidebar_tab(tab_id)
         self._experiment_listeners.clear()
+        self._storage_cache = None

@@ -2197,12 +2197,19 @@ class Window(QMainWindow):
             self.stop_run()
         elif self.active:
             self.persist(self.active)  # training keeps running in the backend; reopening reconnects
+        if hasattr(self, "reloader") and self.reloader is not None:
+            self.reloader.stop()
         if hasattr(self, "terminal_panel"):
             self.terminal_panel.terminal.close()
         if hasattr(self, "hotkey_manager"):
             self.hotkey_manager.cleanup()
         self.save_notes()
         event.accept()
+
+    def reload_frontend(self):
+        """Reload the frontend process cleanly."""
+        from .terminal_reloader import reload_frontend
+        reload_frontend(window=self, app=QApplication.instance())
 
 
 def main():
@@ -2211,19 +2218,32 @@ def main():
     parser.add_argument("--api-url", default=os.environ.get("THETAIDE_API_URL", DEFAULT_URL),
                         help="NeSyRL backend API (default: %(default)s)")
     args = parser.parse_args()
+    if sys.platform == "darwin":
+        try:
+            import ctypes
+            libc = ctypes.CDLL(None)
+            if hasattr(libc, "setprogname"):
+                libc.setprogname(b"ThetaIDE")
+        except Exception:
+            pass
+
     QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts, True)
-    app = QApplication(sys.argv[:1])
+    QApplication.setApplicationName("ThetaIDE")
+    QApplication.setApplicationDisplayName("ThetaIDE")
+    QApplication.setDesktopFileName("ThetaIDE")
+    QApplication.setOrganizationName("ThetaIDE")
+    QApplication.setOrganizationDomain("thetaide.org")
+
+    app = QApplication(["ThetaIDE"] + sys.argv[1:])
+    app.setApplicationName("ThetaIDE")
+    app.setApplicationDisplayName("ThetaIDE")
     app.setStyle("Fusion")
     app.setFont(QFont("Segoe UI", 10))
     app.setStyleSheet(STYLE)
 
-    # Clean POSIX signal handling: allow Ctrl+C (SIGINT) and SIGTERM to quit QApplication cleanly
-    import signal
-    signal.signal(signal.SIGINT, lambda *_: app.quit())
-    signal.signal(signal.SIGTERM, lambda *_: app.quit())
-    sigint_timer = QTimer()
-    sigint_timer.start(250)
-    sigint_timer.timeout.connect(lambda: None)
+    icon_path = Path(__file__).resolve().parent / "icons" / "theta_app_icon.svg"
+    if icon_path.is_file():
+        app.setWindowIcon(QIcon(str(icon_path)))
 
     try:
         window = Window(args.data_dir, args.api_url)
@@ -2231,4 +2251,35 @@ def main():
         QMessageBox.critical(None, "Workspace unavailable", f"Could not open local run storage:\n{exc}")
         return 1
     window.show()
-    return app.exec()
+
+    from .terminal_reloader import TerminalReloader
+
+    reloader = TerminalReloader(window=window, app=app)
+    window.reloader = reloader
+    app.aboutToQuit.connect(reloader.stop)
+
+    # Clean POSIX signal handling: allow Ctrl+C (SIGINT) and SIGTERM to quit QApplication cleanly
+    import signal
+
+    def _sig_handler(*_):
+        reloader.stop()
+        app.quit()
+
+    signal.signal(signal.SIGINT, _sig_handler)
+    signal.signal(signal.SIGTERM, _sig_handler)
+    sigint_timer = QTimer()
+    sigint_timer.start(250)
+    sigint_timer.timeout.connect(lambda: None)
+
+    if sys.stdin.isatty():
+        sys.stdout.write(
+            "\033[90m[Theta-IDE] Ready · Press \033[1;36mCtrl+R\033[0m\033[90m in this terminal to reload frontend\033[0m\r\n"
+        )
+        sys.stdout.flush()
+
+    reloader.start()
+
+    try:
+        return app.exec()
+    finally:
+        reloader.stop()
