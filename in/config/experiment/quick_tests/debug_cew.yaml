@@ -13,8 +13,8 @@ seed: 1
 recover: false
 methods:
   cew_dnn:
-    agent: cew
-    model: dnn
+    agent: cql
+    model: cew
     epochs_per_interval: 20
     lr: 1e-3
     cql_alpha: 10.0

@@ -18,10 +18,11 @@ methods:
     model: dnn
     epochs_per_interval: 50
   cew_base:
-    agent: cew
-    model: dnn
+    agent: cql
+    model: cew
     epochs_per_interval: 50
   cew_fyd:
-    agent: cew
-    model: dnn
+    agent: cql
+    model: cew
+    fyd: true
     epochs_per_interval: 50

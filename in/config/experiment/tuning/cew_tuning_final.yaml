@@ -11,8 +11,8 @@ env:
 recover: false
 methods:
   cew_dnn:
-    agent: cew
-    model: dnn
+    agent: cql
+    model: cew
     lr: 3e-4
     batch_size: 32
     epochs_per_interval: 100
@@ -21,8 +21,9 @@ methods:
     kappa: 0.6
     cql_alpha: 1.0
   cew_fyd_dnn:
-    agent: cew_fyd
-    model: dnn
+    agent: cql
+    model: cew
+    fyd: true
     lr: 3e-4
     batch_size: 32
     epochs_per_interval: 100

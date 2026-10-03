@@ -36,7 +36,7 @@ from nudge.agents.neural_agent import ActorCritic, NeuralPPO
 from nudge.torch_utils import softor
 from src.app.core.factories import get_blender, get_neural_agent
 from src.app.core.types import ActionResult
-from src.usr.methods.cew_utils import MultiFLC, rule_creation, run_CLIP, run_ECM, run_FYD
+from src.usr.models.cew.cew_model import CEWModel
 
 
 class BlenderActor(nn.Module):
@@ -335,7 +335,7 @@ class BlenderActor(nn.Module):
                 if hasattr(module, "get_q_values"):
                     q = module.get_q_values(cew_inp)
                 else:
-                    q = module(cew_inp)  # MultiFLC forward returns Q-values
+                    q = module(cew_inp)  # CEWModel forward returns Q-values
             else:
                 # logic (NSFR / Neumann)
                 if hasattr(module, "get_q_values"):
@@ -423,7 +423,9 @@ class BlenderActorCritic(nn.Module):
                     s_dict = {"type": self.reasoner or "nsfr", "rules": symbolic_cfg}
                 else:
                     s_dict = dict(symbolic_cfg) if hasattr(symbolic_cfg, "items") else {}
-                    s_type = _get_val(s_dict, "type", _get_val(s_dict, "name", _get_val(s_dict, "reasoner", self.reasoner or "nsfr")))
+                    s_type = _get_val(
+                        s_dict, "type", _get_val(s_dict, "name", _get_val(s_dict, "reasoner", self.reasoner or "nsfr"))
+                    )
                     s_dict["type"] = s_type
                     if "rules" not in s_dict and s_type in ("nsfr", "neumann"):
                         s_dict["rules"] = self.get_cfg("rules", "default")
@@ -434,7 +436,11 @@ class BlenderActorCritic(nn.Module):
                     n_dict = {"module_type": "neural", "architecture": neural_cfg}
                 else:
                     n_dict = dict(neural_cfg) if hasattr(neural_cfg, "items") else {}
-                    arch = _get_val(n_dict, "architecture", _get_val(n_dict, "type", _get_val(n_dict, "name", self.architecture or "dnn")))
+                    arch = _get_val(
+                        n_dict,
+                        "architecture",
+                        _get_val(n_dict, "type", _get_val(n_dict, "name", self.architecture or "dnn")),
+                    )
                     n_dict["architecture"] = arch
                     n_dict["module_type"] = "neural"
                 modules_list.append(n_dict)
@@ -458,10 +464,18 @@ class BlenderActorCritic(nn.Module):
                     if blender_rules is None:
                         blender_rules = m_rules
                 elif m_type == "cew":
-                    # Placeholder CEW module, will be self-organized later
-                    # Determine input size from env
-                    n_inputs = np.prod(obs.shape[1:])
-                    m = MultiFLC(n_inputs=n_inputs, n_outputs=env.n_actions, antecedents=[], rules=[]).to(device)
+                    # CEWModel handles its own self-organization via CEWSelfOrganizationCallback
+                    n_inputs = int(np.prod(obs.shape[1:]))
+                    ecm_dthr = float(_get_val(m_cfg, "ecm_dthr", 0.1))
+                    fyd = bool(_get_val(m_cfg, "fyd", False))
+                    fyd_top_k = _get_val(m_cfg, "fyd_top_k", None)
+                    m = CEWModel(
+                        n_inputs=n_inputs,
+                        n_actions=env.n_actions,
+                        ecm_dthr=ecm_dthr,
+                        fyd=fyd,
+                        fyd_top_k=fyd_top_k,
+                    ).to(device)
                     self.policy_modules.append(m)
                     self.module_types.append("cew")
                 elif m_type == "neural":
@@ -606,86 +620,6 @@ class BlenderActorCritic(nn.Module):
         if found:
             return val
         return default
-
-    def self_organize_cew_modules(self, dataset_sample_obs):
-        """Triggers self-organization for any CEW modules in the architecture.
-        Returns True if any module was physically replaced (architecture changed).
-        """
-        any_changed = False
-        for i, m in enumerate(self.policy_modules):
-            if self.module_types[i] == "cew":
-                print(f"Self-organizing CEW module {i}...")
-                m_cfg = self.module_cfgs[i] if hasattr(self, "module_cfgs") and i < len(self.module_cfgs) else {}
-
-                def _get_val(cfg_obj, key, fallback=None):
-                    if cfg_obj is None:
-                        return fallback
-                    try:
-                        if hasattr(cfg_obj, key):
-                            val = getattr(cfg_obj, key)
-                            if val is not None:
-                                return val
-                    except Exception:
-                        pass
-                    try:
-                        if isinstance(cfg_obj, dict) or (hasattr(cfg_obj, "__contains__") and key in cfg_obj):
-                            val = cfg_obj[key]
-                            if val is not None:
-                                return val
-                    except Exception:
-                        pass
-                    return fallback
-
-                obs = dataset_sample_obs.cpu().numpy()
-                # Flatten obs if it has more than 2 dimensions (B, entities, features) -> (B, entities*features)
-                if len(obs.shape) > 2:
-                    obs = obs.reshape(obs.shape[0], -1)
-
-                mins = obs.min(axis=0)
-                maxes = obs.max(axis=0)
-
-                # CLIP
-                antecedents = run_CLIP(obs, mins, maxes)
-                # ECM
-                dthr = _get_val(m_cfg, "ecm_dthr", self.get_cfg("ecm_dthr", 0.05))
-                clusters = run_ECM(obs, [], dthr)
-                reduced_X = np.array([c.center for c in clusters])
-                # WM
-                antecedents, rules = rule_creation(reduced_X, antecedents)
-
-                # FYD (optional)
-                use_fyd = _get_val(m_cfg, "fyd", self.get_cfg("fyd", False))
-                if use_fyd:
-                    top_k = _get_val(m_cfg, "fyd_top_k", self.get_cfg("fyd_top_k", None))
-                    n_rules_before = len(rules)
-                    rules, antecedents = run_FYD(rules, obs, antecedents, top_k=top_k)
-                    print(f"FYD pruning for CEW module {i}: {n_rules_before} -> {len(rules)} rules (top_k={top_k})")
-
-                # Check if architecture changed
-                current_rules = getattr(m.flcs[0], "links", None)
-                if current_rules is not None and current_rules.shape[1] == len(rules):
-                    # Simple heuristic: if rule count is same, check if antecedents count is same
-                    if m.flcs[0].transformed_len == sum(len(p_ants) for p_ants in antecedents):
-                        print(f"CEW module {i} architecture stable ({len(rules)} rules). Skipping reset.")
-                        continue
-
-                # Re-initialize MultiFLC in place
-                from src.usr.methods.cew_utils import MultiFLC
-
-                n_in = np.prod(obs.shape[1:])
-                # Determine current device from existing parameters
-                current_device = next(self.parameters()).device
-                new_m = MultiFLC(n_inputs=n_in, n_outputs=self.env.n_actions, antecedents=antecedents, rules=rules).to(
-                    current_device
-                )
-
-                # Replace the module in ModuleList
-                self.policy_modules[i] = new_m
-                # Also update the actor's reference
-                self.actor.policy_modules[i] = new_m
-                print(f"CEW module {i} self-organized with {len(rules)} rules. Weights reset.")
-                any_changed = True
-        return any_changed
 
     def forward(self, neural_state, logic_state=None, action=None):
         return self.get_action_and_value(neural_state, logic_state, action=action)

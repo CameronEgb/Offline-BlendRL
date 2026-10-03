@@ -82,11 +82,12 @@ class BaseAgent(L.LightningModule, ABC):
             val, found = _get_nested(cfg.model, key)
             if found:
                 return val
-            for sub_k, sub_v in cfg.model.items():
-                if isinstance(sub_v, (dict, DictConfig)):
-                    val, found = _get_nested(sub_v, key)
-                    if found:
-                        return val
+            if isinstance(cfg.model, (dict, DictConfig)):
+                for sub_k, sub_v in cfg.model.items():
+                    if isinstance(sub_v, (dict, DictConfig)):
+                        val, found = _get_nested(sub_v, key)
+                        if found:
+                            return val
 
         # Search in env config
         if hasattr(cfg, "env"):
@@ -208,6 +209,32 @@ class OfflineAgentBase(BaseAgent):
             if hasattr(datamodule, "val_reader") and datamodule.val_reader is not None:
                 datamodule.val_reader.device = self.device
 
+    def configure_callbacks(self):
+        """Attach model-registered callbacks to the trainer.
+
+        Returns the CEWSelfOrganizationCallback when a CEWModel is
+        present (standalone or inside a BlenderActorCritic).
+        Any other model that uses the same flag convention gets this
+        for free without additional agent code.
+        """
+        from src.usr.models.cew.cew_callback import CEWSelfOrganizationCallback
+        from src.usr.models.cew.cew_model import CEWModel
+
+        def _has_cew(agent):
+            for attr in ("q_model", "q_network", "model"):
+                m = getattr(agent, attr, None)
+                if isinstance(m, CEWModel):
+                    return True
+            blender = getattr(agent, "model", None)
+            for m in list(getattr(blender, "policy_modules", None) or []):
+                if isinstance(m, CEWModel):
+                    return True
+            return False
+
+        if _has_cew(self):
+            return [CEWSelfOrganizationCallback()]
+        return []
+
     def on_train_epoch_start(self):
         """Set dataset limit based on current training interval.
 
@@ -226,6 +253,7 @@ class OfflineAgentBase(BaseAgent):
                 datamodule.reader.set_limit(min(current_limit, len(datamodule.reader)))
             else:
                 datamodule.reader.set_limit(len(datamodule.reader))
+        self._handle_optimizer_rebind()
 
     def _log_offline_transitions(self):
         """Calculate and log the current transition count for offline training."""
@@ -245,3 +273,81 @@ class OfflineAgentBase(BaseAgent):
             )
         self.log("transitions", float(current_transitions), logger=False, prog_bar=True)
         return current_transitions
+
+    def _handle_optimizer_rebind(self) -> None:
+        """Check all model components for the _request_optimizer_rebind flag.
+
+        Any model (standalone or inside a composite BlenderActorCritic) that
+        sets _request_optimizer_rebind = True on itself during a callback will
+        trigger optimizer rebinding and target-network synchronization here.
+        """
+        # Collect all sub-models that may have set the flag
+        candidates = []
+        for attr in ("q_model", "q_network", "model"):
+            m = getattr(self, attr, None)
+            if m is not None and m not in candidates:
+                candidates.append(m)
+        blender = getattr(self, "model", None)
+        for m in list(getattr(blender, "policy_modules", None) or []):
+            if m not in candidates:
+                candidates.append(m)
+
+        needs_rebind = any(getattr(m, "_request_optimizer_rebind", False) for m in candidates)
+        if not needs_rebind:
+            return
+
+        # Clear flag on all candidates
+        for m in candidates:
+            if getattr(m, "_request_optimizer_rebind", False):
+                m._request_optimizer_rebind = False
+
+        self._rebind_optimizer()
+
+    def _rebind_optimizer(self) -> None:
+        """Rebind optimizer after a model topology change and sync target networks.
+
+        Called whenever a dynamic model (e.g. CEWModel) signals that its
+        parameter tensor shapes have changed and the current optimizer's
+        parameter groups are stale.
+        """
+        # Sync target network if present and topology-aware
+        from src.usr.models.cew.cew_model import CEWModel
+
+        for src_attr, tgt_attr in (
+            ("q_model", "target_q_model"),
+            ("q_network", "target_q_network"),
+            ("model", "target_model"),
+        ):
+            src = getattr(self, src_attr, None)
+            tgt = getattr(self, tgt_attr, None)
+            if isinstance(src, CEWModel) and isinstance(tgt, CEWModel) and src is not tgt:
+                tgt.clone_topology_from(src)
+
+        # Sync CEW modules inside BlenderActorCritic target
+        src_blender = getattr(self, "model", None)
+        tgt_blender = getattr(self, "target_model", None)
+        if src_blender is not None and tgt_blender is not None:
+            src_modules = list(getattr(src_blender, "policy_modules", None) or [])
+            tgt_modules = list(getattr(tgt_blender, "policy_modules", None) or [])
+            for s, t in zip(src_modules, tgt_modules):
+                if isinstance(s, CEWModel) and isinstance(t, CEWModel):
+                    t.clone_topology_from(s)
+
+        # Rebind optimizer
+        try:
+            new_opt = self.configure_optimizers()
+            if isinstance(new_opt, list):
+                opts = new_opt
+            else:
+                opts = [new_opt]
+            strategy_opts = getattr(getattr(self, "trainer", None), "strategy", None)
+            if strategy_opts is not None and hasattr(strategy_opts, "optimizers"):
+                for i, opt in enumerate(opts):
+                    if i < len(strategy_opts.optimizers):
+                        strategy_opts.optimizers[i] = opt
+            if hasattr(self, "opt"):
+                self.opt = opts[0] if opts else self.opt
+        except Exception as e:
+            import logging
+
+            logging.getLogger(__name__).warning("_rebind_optimizer failed: %s", e)

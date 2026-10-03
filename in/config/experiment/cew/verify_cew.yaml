@@ -15,8 +15,8 @@ dataset_path: in/datasets/ungrouped/cp_final/ppo_cp_tuned
 
 methods:
   cew_dnn:
-    agent: cew
-    model: dnn
+    agent: cql
+    model: cew
     epochs_per_interval: 200
     eval_interval_epochs: 10
     batch_size: 64

@@ -16,12 +16,11 @@ class PyreneesEvaluator:
         self.tier_names = [("Low Tier", 0), ("Med Tier", 1), ("High Tier", 2)]
 
     def _load_agent(self, path):
-        from src.usr.methods.cew_agent import CEWAgent
         from src.usr.methods.cql_agent import CQLAgent
         from src.usr.methods.iql_agent import IQLAgent
 
         last_error = None
-        for cls in [CQLAgent, CEWAgent, IQLAgent]:
+        for cls in [CQLAgent, IQLAgent]:
             try:
                 ag = cls.load_from_checkpoint(str(path), map_location=self.device, weights_only=False)
                 ag.to(self.device)

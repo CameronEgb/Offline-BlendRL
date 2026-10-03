@@ -106,20 +106,6 @@ class IQLAgent(OfflineAgentBase):
 
     def on_train_epoch_start(self):
         super().on_train_epoch_start()
-        if self.is_modular and hasattr(self.model, "self_organize_cew_modules"):
-            epochs_per_interval = self.get_cfg("epochs_per_interval", 1)
-            if self.current_epoch % epochs_per_interval == 0:
-                datamodule = self.trainer.datamodule
-                sample_size = min(len(datamodule.reader), 10000)
-                if sample_size > 0:
-                    batch = datamodule.reader.sample(sample_size)
-                    organize_obs = batch["logic_obs"] if batch["logic_obs"] is not None else batch["obs"]
-                    if self.model.self_organize_cew_modules(organize_obs):
-                        lr = self.get_cfg("lr", 3e-4)
-                        actor_params = list(self.model.policy_modules.parameters()) + list(
-                            self.model.blender.parameters()
-                        )
-                        self.trainer.strategy.optimizers[2] = optim.Adam(actor_params, lr=lr)
 
     def training_step(self, batch, batch_idx):
         datamodule = getattr(self.trainer, "datamodule", None)

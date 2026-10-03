@@ -41,8 +41,8 @@ methods:
     cew: *id002
     blendrl: *id003
   cew_fyd:
-    agent: cew
-    model: dnn
+    agent: cql
+    model: cew
     epochs_per_interval: 2
     eval_interval_epochs: 1
     batch_size: 1024
