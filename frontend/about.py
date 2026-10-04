@@ -7,7 +7,7 @@ from PyQt6.QtGui import QColor, QFont, QPainter
 from PyQt6.QtWidgets import QDialog, QHBoxLayout, QPushButton, QVBoxLayout, QWidget
 
 from .widgets import label
-from .theme import theme_color, current_theme
+from .theme import theme_color
 
 
 class AsciiTheta(QWidget):
@@ -118,19 +118,8 @@ class AboutDialog(QDialog):
         title = label("ThetaIDE", "brand")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
-        subtitle = label(f"PyQt6  /  {current_theme()['name']}  /  local research workspace", "muted")
-        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(subtitle)
         self.logo = AsciiTheta(self)
         layout.addWidget(self.logo, 1)
-        for text in (
-            "Working: configuration, synthetic live metrics, stop, saved run records, comparison, and linked notes.",
-            "Not connected: actual training, checkpoints, plugin execution, datasets, IPython, or tmux.",
-            "The demo curve depends on seed and step; other hyperparameters are recorded only.",
-        ):
-            description = label(text, "muted")
-            description.setWordWrap(True)
-            layout.addWidget(description)
         buttons = QHBoxLayout()
         pause = QPushButton("Pause animation")
         pause.setCheckable(True)

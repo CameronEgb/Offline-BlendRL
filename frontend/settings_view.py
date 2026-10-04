@@ -206,25 +206,9 @@ class AsciiThetaSplash(QWidget):
 
         # Header branding
         header_row = QHBoxLayout()
-        title_box = QVBoxLayout()
-        title_box.setSpacing(2)
-
-        title_badge_row = QHBoxLayout()
         title_lbl = label("ThetaIDE", "brand")
         title_lbl.setStyleSheet("font-size: 26px; font-weight: 700;")
-        title_badge_row.addWidget(title_lbl)
-
-        badge = label("v0.1.0-alpha", "badge")
-        title_badge_row.addWidget(badge)
-        title_badge_row.addStretch()
-        title_box.addLayout(title_badge_row)
-
-        sub_lbl = label(
-            "Deep Reinforcement Learning & Neuro-Symbolic IDE  ·  Local Research Workspace",
-            "muted",
-        )
-        title_box.addWidget(sub_lbl)
-        header_row.addLayout(title_box)
+        header_row.addWidget(title_lbl)
         header_row.addStretch()
 
         self.anim_toggle_btn = QPushButton("Pause animation")
@@ -237,18 +221,6 @@ class AsciiThetaSplash(QWidget):
         # 3D ASCII Sculpture
         self.ascii_sculpture = AsciiTheta(self)
         layout.addWidget(self.ascii_sculpture, 1)
-
-        # Helper hint at the bottom
-        footer_row = QHBoxLayout()
-        footer_row.addStretch()
-        hint_lbl = label(
-            "← Select a category on the left to configure settings, or enjoy the sculpture.",
-            "muted",
-        )
-        hint_lbl.setStyleSheet("font-size: 12px; font-style: italic;")
-        footer_row.addWidget(hint_lbl)
-        footer_row.addStretch()
-        layout.addLayout(footer_row)
 
 
 TAB_SIZES = {
@@ -523,16 +495,9 @@ class SettingsView(QWidget):
         sb_layout.setSpacing(6)
 
         # Sidebar title
-        sb_title_box = QVBoxLayout()
-        sb_title_box.setSpacing(2)
         sb_title = label("Settings", "heading")
-        sb_title.setStyleSheet("font-size: 16px; font-weight: 700; padding-left: 6px;")
-        sb_title_box.addWidget(sb_title)
-
-        sb_sub = label("Preferences & Tools", "muted")
-        sb_sub.setStyleSheet("font-size: 11px; padding-left: 6px; margin-bottom: 6px;")
-        sb_title_box.addWidget(sb_sub)
-        sb_layout.addLayout(sb_title_box)
+        sb_title.setStyleSheet("font-size: 16px; font-weight: 700; padding-left: 6px; margin-bottom: 6px;")
+        sb_layout.addWidget(sb_title)
 
         # Navigation tabs list
         for spec in TAB_SPECS:
@@ -543,26 +508,6 @@ class SettingsView(QWidget):
             sb_layout.addWidget(btn)
 
         sb_layout.addStretch()
-
-        # Bottom sidebar: "ASCII Theta" home item + version info
-        self.btn_ascii_home = QToolButton()
-        self.btn_ascii_home.setObjectName("settingsSideTab")
-        self.btn_ascii_home.setText("  ASCII Theta")
-        self.btn_ascii_home.setToolTip("Show the rotating 3D ASCII Theta sculpture")
-        self.btn_ascii_home.setIconSize(QSize(20, 20))
-        self.btn_ascii_home.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.btn_ascii_home.setFixedHeight(36)
-        self.btn_ascii_home.setCursor(Qt.CursorShape.PointingHandCursor)
-        theta_icon = get_settings_icon("theta_logo", 20)
-        if not theta_icon.isNull():
-            self.btn_ascii_home.setIcon(theta_icon)
-        self.btn_ascii_home.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self.btn_ascii_home.clicked.connect(self.hide_overlay)
-        sb_layout.addWidget(self.btn_ascii_home)
-
-        sb_ver = label("ThetaIDE v0.1.0-alpha", "muted")
-        sb_ver.setStyleSheet("font-size: 10px; padding-left: 6px; margin-top: 4px;")
-        sb_layout.addWidget(sb_ver)
 
         layout.addWidget(self.sidebar_frame)
 
@@ -1740,10 +1685,6 @@ class SettingsView(QWidget):
         # Refresh icons on buttons
         for btn in self.tab_buttons.values():
             btn.refresh_icon()
-
-        theta_icon = get_settings_icon("theta_logo", 20)
-        if not theta_icon.isNull():
-            self.btn_ascii_home.setIcon(theta_icon)
 
         if self.active_tab_id:
             spec = next((s for s in TAB_SPECS if s["id"] == self.active_tab_id), None)
