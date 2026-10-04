@@ -180,9 +180,10 @@ def build_trainer(cfg, model=None):
         logger.debug("Unexpected error registering shutdown signal handlers: %s", e)
 
     is_offline_only = cfg.env.get("offline_only", False)
+    is_online = (cfg.get("paradigm") == "online_rl") and not is_offline_only
     callbacks = [SaveInitialCheckpointCallback(ckpt_dir, cfg)]
 
-    if is_offline_only:
+    if not is_online:
         monitor_metric = cfg.env.get("monitor_metric", "val/loss")
         monitor_mode = "max" if any(k in str(monitor_metric).lower() for k in ["f1", "reward", "auc", "acc"]) else "min"
         callbacks.append(
@@ -248,7 +249,7 @@ def build_trainer(cfg, model=None):
             if hasattr(cfg, "agent") and cfg.agent is not None and hasattr(cfg.agent, "get")
             else cfg.get("epochs_per_interval", 1)
         )
-        intervals_count = 1 if is_offline_only else cfg.get("intervals_count", 1)
+        intervals_count = 1 if (is_offline_only or cfg.get("paradigm") == "offline_rl") else cfg.get("intervals_count", 1)
         max_epochs = intervals_count * epochs_per_interval
         eval_interval_epochs = (
             cfg.agent.get("eval_interval_epochs", 1)

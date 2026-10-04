@@ -13,7 +13,6 @@ for p in [
     os.path.join(src_path, "usr", "models"),
     os.path.join(src_path, "usr", "environments"),
     os.path.join(src_path, "usr", "eval"),
-    os.path.join(src_path, "usr", "models", "fyd_repo", "src"),
 ]:
     if os.path.isdir(p) and p not in sys.path:
         sys.path.insert(0, p)
@@ -280,21 +279,20 @@ class BasePlotter:
         output_dir.mkdir(parents=True, exist_ok=True)
         return merged, group, output_dir
 
-    def load_metrics(self, group: str, exp_id: str) -> dict[str, dict[str, pd.DataFrame]]:
-        """
-        Loads metrics.csv files for all runs matching results/logs/[group]/[exp_id]/[method]/*.
-        Filters by active online_methods and offline_methods from experiment config if defined.
-        Returns dict: { method_name: { version_str: df } }
-        """
-        clean_exp = Path(exp_id).stem
-        exp_dir = Path("results/logs") / group / clean_exp
-        if not exp_dir.exists():
-            print(f"Warning: Log directory {exp_dir} not found.")
-            return {}
+    @staticmethod
+    def get_active_aliases(exp_cfg: dict) -> tuple[set[str], bool]:
+        """Extracts active method aliases from experiment config.
 
-        exp_cfg = self.get_experiment_config(exp_id)
+        Checks structured `methods` dictionary, as well as legacy `online_methods`
+        and `offline_methods`. Returns (active_aliases, has_active_filter).
+        """
         active_aliases = set()
         has_active_filter = False
+        methods_dict = exp_cfg.get("methods", {})
+        if methods_dict and isinstance(methods_dict, dict):
+            has_active_filter = True
+            for m in methods_dict.keys():
+                active_aliases.update(get_method_aliases(m))
         for key in ["online_methods", "offline_methods"]:
             val = exp_cfg.get(key, [])
             if val:
@@ -305,19 +303,40 @@ class BasePlotter:
                     methods = [item.strip() for item in str(val).split(",") if item.strip()]
                 for m in methods:
                     active_aliases.update(get_method_aliases(m))
+        return active_aliases, has_active_filter
+
+    @staticmethod
+    def is_method_active(method_name: str, active_aliases: set[str], has_active_filter: bool) -> bool:
+        """Determines if a method directory name matches active aliases (including trial suffixes)."""
+        if not has_active_filter:
+            return True
+        if method_name in active_aliases:
+            return True
+        parts = method_name.rsplit("_", 1)
+        return len(parts) == 2 and parts[0] in active_aliases and parts[1].isdigit()
+
+    def load_metrics(self, group: str, exp_id: str) -> dict[str, dict[str, pd.DataFrame]]:
+        """
+        Loads metrics.csv files for all runs matching results/logs/[group]/[exp_id]/[method]/*.
+        Filters by active methods from experiment config if defined.
+        Returns dict: { method_name: { version_str: df } }
+        """
+        clean_exp = Path(exp_id).stem
+        exp_dir = Path("results/logs") / group / clean_exp
+        if not exp_dir.exists():
+            print(f"Warning: Log directory {exp_dir} not found.")
+            return {}
+
+        exp_cfg = self.get_experiment_config(exp_id)
+        active_aliases, has_active_filter = self.get_active_aliases(exp_cfg)
 
         results = {}
         for method_dir in sorted(exp_dir.iterdir()):
             if not method_dir.is_dir():
                 continue
             raw_method_name = method_dir.name
-            if has_active_filter:
-                parts = raw_method_name.rsplit("_", 1)
-                is_active = (raw_method_name in active_aliases) or (
-                    len(parts) == 2 and parts[0] in active_aliases and parts[1].isdigit()
-                )
-                if not is_active:
-                    continue
+            if not self.is_method_active(raw_method_name, active_aliases, has_active_filter):
+                continue
 
             canon_name = raw_method_name
             if canon_name not in results:

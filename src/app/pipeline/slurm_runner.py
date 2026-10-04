@@ -9,7 +9,7 @@ from pathlib import Path
 
 from src.app.pipeline.commands import build_method_overrides, get_sweep_direction
 from src.app.pipeline.config import normalize_agent_name
-from src.app.pipeline.datasets import fast_purge_dir, resolve_dataset_for_method, resolve_dataset_path
+from src.app.pipeline.datasets import fast_purge_dir, resolve_dataset_for_method
 from src.app.pipeline.optuna_utils import create_optuna_study, delete_optuna_study, get_next_study_name
 from src.app.pipeline.runtime import get_shell_env_block, get_shell_python_cmd
 from src.app.pipeline.slurm import generate_sbatch_header, generate_sbatch_script, submit_sbatch

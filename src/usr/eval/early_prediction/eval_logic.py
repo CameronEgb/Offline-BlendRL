@@ -231,7 +231,12 @@ def discover_ep_checkpoints(ep_ckpt_root):
         return {}
 
     ep_models = {}
-    for pt_file in sorted(root.rglob("*.pt")):
+    candidate_files = sorted(list(root.rglob("*.pt")) + list(root.rglob("*.ckpt")))
+    seen = set()
+    for pt_file in candidate_files:
+        if pt_file in seen:
+            continue
+        seen.add(pt_file)
         name = pt_file.stem  # e.g. lstm_no_v_tau5_split3 or lstm_no_v_split3
         if "_tau" in name:
             parts = name.split("_tau")
@@ -274,11 +279,20 @@ EP_KEY_TO_CONFIG = {
 
 
 def load_ep_model(ckpt_path, device):
-    """Load a single EP model from a .pt checkpoint."""
+    """Load a single EP model from a .pt or .ckpt checkpoint."""
     data = torch.load(ckpt_path, map_location=device, weights_only=False)
-    m_type = data.get("model_type", "lstm")
-    input_dim = data.get("input_dim", 196)
-    params = data.get("hyperparams", {})
+    hparams = data.get("hyper_parameters", {}) if isinstance(data, dict) else {}
+    arch_name = hparams.get("architecture_name", "")
+
+    m_type = data.get("model_type")
+    if not m_type:
+        if arch_name.startswith("transformer") or "transformer" in Path(ckpt_path).stem.lower():
+            m_type = "transformer"
+        else:
+            m_type = "lstm"
+
+    input_dim = data.get("input_dim", hparams.get("input_dim", 196))
+    params = data.get("hyperparams", hparams)
 
     if m_type == "lstm":
         model = SepsisLSTM(
@@ -307,7 +321,20 @@ def load_ep_model(ckpt_path, device):
     else:
         raise ValueError(f"Unknown EP model type: {m_type}")
 
-    model.load_state_dict(data["model_state_dict"])
+    if "model_state_dict" in data:
+        raw_sd = data["model_state_dict"]
+    elif "state_dict" in data:
+        raw_sd = data["state_dict"]
+    else:
+        raw_sd = data
+
+    model_sd = {}
+    for k, v in raw_sd.items():
+        key = k[6:] if k.startswith("model.") else k
+        if not key.startswith("loss_fn."):
+            model_sd[key] = v
+
+    model.load_state_dict(model_sd, strict=False)
     model.eval()
     return model, m_type, input_dim, data.get("opt_thresh", 0.5)
 

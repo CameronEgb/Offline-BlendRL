@@ -296,7 +296,7 @@ class MoveRequest(BaseModel):
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-JOBS_DIR = Path("results/jobs")
+JOBS_DIR = PROJECT_ROOT / "results" / "jobs"
 TERMINAL_STATUSES = ("completed", "failed", "cancelled", "error")
 MAX_LOG_LINES = 20000
 ACTIVE_STATUSES = ("pending", "running")
@@ -307,15 +307,13 @@ queue_order: list[str] = []  # job IDs with status "queued", next to run first
 queue_state = {"running": False}
 _queue_worker: threading.Thread | None = None
 
-job_store = JobStore(PROJECT_ROOT / JOBS_DIR / "jobs.db")
+job_store = JobStore(JOBS_DIR / "jobs.db")
 
-# Hydrate in-memory state from persistent SQLite database
+# Recover dead active jobs before populating in-memory state
+job_store.recover_active_jobs()
 for _stored in job_store.list_jobs():
     jobs[_stored["job_id"]] = _stored
 queue_order.extend(job_store.get_queue())
-for _rec_id in job_store.recover_active_jobs():
-    if _rec_id in jobs:
-        jobs[_rec_id]["status"] = "failed"
 
 
 def _sync_job(job_id: str) -> None:
@@ -429,7 +427,7 @@ def launch_experiment(req: LaunchRequest):
         raise HTTPException(status_code=422, detail=str(e).strip())
 
     cfg = composed.cfg
-    log_dir = Path("results/logs") / cfg.group / cfg.experiment_id
+    log_dir = PROJECT_ROOT / "results" / "logs" / cfg.group / cfg.experiment_id
     if log_dir.exists() and any(log_dir.iterdir()) and not req.overwrite and not cfg.get("recover", False):
         raise HTTPException(
             status_code=409,
@@ -571,14 +569,14 @@ def list_jobs():
 @app.get("/api/experiments/{job_id}/status")
 def check_status(job_id: str, since: int = 0):
     """Job state plus log lines after line number `since` (0-based, counted from job start)."""
-    if job_id not in jobs:
-        stored = job_store.get_job(job_id)
-        if stored:
-            jobs[job_id] = stored
-        else:
-            raise HTTPException(status_code=404, detail="Job not found")
-
     with _jobs_lock:
+        if job_id not in jobs:
+            stored = job_store.get_job(job_id)
+            if stored:
+                jobs[job_id] = stored
+            else:
+                raise HTTPException(status_code=404, detail="Job not found")
+
         job = jobs[job_id]
         log = job.get("_log", [])
         dropped = job.get("log_dropped", 0)
@@ -596,16 +594,17 @@ def job_metrics(job_id: str, since: int = 0, since_byte: int = 0):
     Rows after index `since` are returned. When a file was rewritten with fewer rows (Lightning
     rewrites it when new columns appear) `reset` is true and all rows are returned.
     """
-    if job_id not in jobs:
-        stored = job_store.get_job(job_id)
-        if stored:
-            jobs[job_id] = stored
-        else:
-            raise HTTPException(status_code=404, detail="Job not found")
-    job = jobs[job_id]
+    with _jobs_lock:
+        if job_id not in jobs:
+            stored = job_store.get_job(job_id)
+            if stored:
+                jobs[job_id] = stored
+            else:
+                raise HTTPException(status_code=404, detail="Job not found")
+        job = jobs[job_id]
     agents = {}
     for agent in job.get("agents", []):
-        path = _latest_metrics_csv(Path("results/logs") / job["group"] / job["experiment_id"] / agent)
+        path = _latest_metrics_csv(PROJECT_ROOT / "results" / "logs" / job["group"] / job["experiment_id"] / agent)
         if since_byte > 0 and path:
             rows, next_byte, reset = _read_metrics_incremental(path, last_byte=since_byte)
             agents[agent] = {"source": str(path), "total": len(rows), "next_byte": next_byte, "reset": reset, "rows": rows}
@@ -721,14 +720,14 @@ def _read_metrics_rows(path: Path) -> list[dict[str, float]]:
 @app.get("/api/experiments/{job_id}/telemetry")
 def job_telemetry(job_id: str, since_log: int = 0, since_byte: int = 0):
     """Unified telemetry: job state, incremental log lines, incremental metrics, and hardware stats."""
-    if job_id not in jobs:
-        stored = job_store.get_job(job_id)
-        if stored:
-            jobs[job_id] = stored
-        else:
-            raise HTTPException(status_code=404, detail="Job not found")
-
     with _jobs_lock:
+        if job_id not in jobs:
+            stored = job_store.get_job(job_id)
+            if stored:
+                jobs[job_id] = stored
+            else:
+                raise HTTPException(status_code=404, detail="Job not found")
+
         job = jobs[job_id]
         log = job.get("_log", [])
         dropped = job.get("log_dropped", 0)
@@ -753,7 +752,7 @@ def job_telemetry(job_id: str, since_log: int = 0, since_byte: int = 0):
     # Incremental metrics for each agent
     agents = {}
     for agent in job.get("agents", []):
-        path = _latest_metrics_csv(Path("results/logs") / job["group"] / job["experiment_id"] / agent)
+        path = _latest_metrics_csv(PROJECT_ROOT / "results" / "logs" / job["group"] / job["experiment_id"] / agent)
         if path:
             rows, next_byte, reset = _read_metrics_incremental(path, last_byte=since_byte)
             agents[agent] = {

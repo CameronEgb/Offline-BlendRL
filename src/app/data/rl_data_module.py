@@ -55,8 +55,6 @@ class RLDataModule(L.LightningDataModule, BaseDataModule):
                 import sys
 
                 script = Path("in/envs/pyrenees/tools/preprocess_pyrenees_per_problem.py")
-                if not script.exists():
-                    script = Path("scripts/preprocess_pyrenees_per_problem.py")
                 if script.exists():
                     subprocess.run([sys.executable, str(script)], check=True)
 
@@ -138,4 +136,4 @@ class RLDataModule(L.LightningDataModule, BaseDataModule):
                 persistent_workers=persistent_workers,
                 collate_fn=lambda idxs: self.val_reader.get_batch(idxs, device="cpu"),
             )
-        return DataLoader(self.train_dataset, batch_size=1)
+        return None
