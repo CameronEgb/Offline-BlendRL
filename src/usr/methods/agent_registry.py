@@ -75,7 +75,7 @@ def get_agent_class(algo_name: str):
 
 
 def auto_discover():
-    """Import all modules in src/methods/ to trigger @register_agent decorators.
+    """Import all modules in src/usr/methods/ to trigger @register_agent decorators.
 
     Called once at startup (e.g., in train.py) to ensure all agents are registered
     before get_agent_class() is used.
@@ -95,11 +95,8 @@ def auto_discover():
             continue
         try:
             importlib.import_module(f"src.usr.methods.{module_info.name}")
-        except Exception:
-            try:
-                importlib.import_module(f"methods.{module_info.name}")
-            except Exception as e:
-                print(f"[Warning] Failed to auto-discover agent module '{module_info.name}': {e}")
+        except Exception as e:
+            print(f"[Warning] Failed to auto-discover agent module '{module_info.name}': {e}")
 
 
 def list_registered_agents():

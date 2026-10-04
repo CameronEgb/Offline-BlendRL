@@ -12,19 +12,7 @@ from src.usr.methods.agent_registry import register_agent
 from src.usr.methods.base_agent import BaseAgent
 
 
-@register_agent(
-    "ppo",
-    "ppo_dnn",
-    "blendrl",
-    "ppo_blendrl_human_neural",
-    "blendrl_human_neural",
-    "ppo_blendrl_cp_tuned",
-    "blendrl_cp_tuned",
-    "ppo_blendrl_final_cp",
-    "blendrl_final_cp",
-    "ppo_blendrl_multi_logic",
-    "blendrl_multi_logic",
-)
+@register_agent("ppo", "blendrl")
 class PPOAgent(BaseAgent):
     """Unified Proximal Policy Optimization (PPO) Online RL Agent.
 
@@ -59,7 +47,6 @@ class PPOAgent(BaseAgent):
         self.clip_vloss = self.get_cfg("clip_vloss", True)
 
         self._init_env(n_envs=self.num_envs)
-        algorithm = self.get_cfg("algorithm", self.get_cfg("name", "ppo"))
 
         self.dataset_writer = None
         if getattr(cfg, "save_dataset", False) and getattr(cfg, "dataset_path", None):
@@ -68,9 +55,7 @@ class PPOAgent(BaseAgent):
             self.dataset_writer = DatasetWriter(save_dir=cfg.dataset_path, env_name=cfg.env.name, cfg=cfg)
 
         # Check if modular/hybrid policy is configured
-        has_modules = bool(self.get_cfg("modules", []))
-        is_hybrid = self.get_cfg("actor_mode", "neural") in ["hybrid", "logic"] or "blendrl" in str(algorithm)
-        self.is_modular = has_modules or is_hybrid
+        self.is_modular = self.is_hybrid_configured()
 
         default_rules = getattr(cfg.env, "rules", "default")
         default_reasoner = getattr(cfg.env, "reasoner", "nsfr")
@@ -98,12 +83,19 @@ class PPOAgent(BaseAgent):
         else:
             from src.app.core.model_registry import build_model
 
+            model_arch = self.resolve_model_name(default=default_arch)
+            obs_dim = (
+                self.observation_space[-1]
+                if hasattr(self, "observation_space") and self.observation_space
+                else None
+            )
             self.model = build_model(
-                self.get_cfg("architecture", default_arch),
+                model_arch,
                 env=self.env,
                 n_actions=self.n_actions,
                 device=self.device,
                 hidden_sizes=self.get_cfg("hidden_sizes", [64, 64]),
+                obs_dim=obs_dim,
             )
 
         # Storage for rollouts

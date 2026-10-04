@@ -102,6 +102,92 @@ class BaseAgent(L.LightningModule, ABC):
 
         return default
 
+    def is_hybrid_configured(self) -> bool:
+        """Determine whether a hybrid / symbolic-neural BlendRL policy is configured.
+
+        Checks:
+        1. Explicit actor_mode ('hybrid', 'logic')
+        2. Configured modules list
+        3. Model specification is 'blendrl', 'blender', or 'hybrid'
+        4. Algorithm or agent name contains 'blendrl'
+        """
+        if self.get_cfg("actor_mode", "neural") in ("hybrid", "logic"):
+            return True
+        if bool(self.get_cfg("modules", [])):
+            return True
+
+        # Check model config (Tier 3 Composite Model specification)
+        model_cfg = getattr(self.cfg, "model", None)
+        if isinstance(model_cfg, str) and model_cfg.strip().lower() in ("blendrl", "blender", "hybrid"):
+            return True
+        if isinstance(model_cfg, (dict, DictConfig)):
+            if "blendrl" in model_cfg or "blender" in model_cfg:
+                return True
+            name = (
+                model_cfg.get("name")
+                or model_cfg.get("architecture")
+                or model_cfg.get("type")
+            )
+            if name and str(name).strip().lower() in ("blendrl", "blender", "hybrid"):
+                return True
+
+        # Check algorithm / agent name
+        algo = self.get_cfg("algorithm", self.get_cfg("name", ""))
+        if "blendrl" in str(algo).lower():
+            return True
+        agent_cfg = getattr(self.cfg, "agent", None)
+        if isinstance(agent_cfg, str) and "blendrl" in agent_cfg.lower():
+            return True
+
+        return False
+
+    def resolve_model_name(self, default: str = "mlp") -> str:
+        """Resolve the model architecture name from config across all paradigms."""
+        model_cfg = getattr(self.cfg, "model", None)
+        if isinstance(model_cfg, str) and model_cfg.strip():
+            name = model_cfg.strip()
+            if name.lower() in ("blendrl", "blender", "hybrid"):
+                arch = self.get_cfg("architecture", None)
+                if arch and isinstance(arch, str) and arch.strip().lower() not in ("blendrl", "blender", "hybrid"):
+                    return arch.strip()
+                return default
+            return name
+        if isinstance(model_cfg, (dict, DictConfig)):
+            # If composite model like model: {blendrl: {neural: dueling_resnet, ...}}
+            blendrl_cfg = model_cfg.get("blendrl", model_cfg.get("blender", None))
+            if isinstance(blendrl_cfg, (dict, DictConfig)):
+                neural_arch = blendrl_cfg.get("neural", None)
+                if neural_arch:
+                    if isinstance(neural_arch, (dict, DictConfig)):
+                        keys = [k for k in neural_arch.keys() if not str(k).startswith("_")]
+                        if keys:
+                            return str(keys[0]).strip()
+                    return str(neural_arch).strip()
+            name = (
+                model_cfg.get("architecture")
+                or model_cfg.get("name")
+                or model_cfg.get("type")
+            )
+            if name:
+                name_str = str(name).strip()
+                if name_str.lower() in ("blendrl", "blender", "hybrid"):
+                    return default
+                return name_str
+            # If wrapped under a single key, e.g. {dueling_resnet: {...}}
+            keys = [k for k in model_cfg.keys() if not str(k).startswith("_")]
+            if len(keys) == 1 and isinstance(model_cfg[keys[0]], (dict, DictConfig)):
+                k = str(keys[0]).strip()
+                if k.lower() in ("blendrl", "blender", "hybrid"):
+                    return default
+                return k
+
+        arch = self.get_cfg("architecture", None)
+        if arch and isinstance(arch, str):
+            arch_str = arch.strip()
+            if arch_str.lower() not in ("blendrl", "blender", "hybrid"):
+                return arch_str
+        return default
+
     # ──────────────────────────────────────────────
     # Network Utilities
     # ──────────────────────────────────────────────

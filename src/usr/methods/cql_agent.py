@@ -30,10 +30,7 @@ class CQLAgent(OfflineAgentBase):
         algorithm = self.get_cfg("algorithm", self.get_cfg("name", cfg.env.name))
 
         # Check if modular/hybrid architecture is configured
-        has_modules = bool(self.get_cfg("modules", []))
-        is_hybrid = self.get_cfg("actor_mode", "neural") in ["hybrid", "logic"] or "blendrl" in str(algorithm)
-
-        self.is_modular = has_modules or is_hybrid
+        self.is_modular = self.is_hybrid_configured()
 
         if self.is_modular:
             from src.app.core.model_registry import build_model
@@ -68,21 +65,10 @@ class CQLAgent(OfflineAgentBase):
         else:
             from src.app.core.model_registry import build_model
 
-            model_cfg = getattr(cfg, "model", None)
-            model_name = None
-            if isinstance(model_cfg, str):
-                model_name = model_cfg
-            elif model_cfg is not None:
-                model_name = getattr(
-                    model_cfg, "architecture", getattr(model_cfg, "type", getattr(model_cfg, "name", None))
-                )
-            if not model_name:
-                model_name = self.get_cfg("architecture", None)
-            if not model_name:
-                model_name = self.get_cfg("model", None)
+            model_arch = self.resolve_model_name(default=getattr(cfg.env, "architecture", "mlp"))
 
             is_cew = (
-                model_name == "cew"
+                model_arch == "cew"
                 or self.get_cfg("architecture") == "cew"
                 or self.get_cfg("model") == "cew"
                 or str(self.get_cfg("algorithm", "")).startswith("cew")
@@ -135,7 +121,6 @@ class CQLAgent(OfflineAgentBase):
                     if hasattr(self, "observation_space") and self.observation_space
                     else None
                 )
-                model_arch = model_name or "mlp"
                 self.q_network = build_model(
                     model_arch,
                     env=self.env,

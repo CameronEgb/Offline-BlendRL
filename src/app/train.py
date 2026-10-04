@@ -28,14 +28,16 @@ from omegaconf import DictConfig, OmegaConf
 logger = logging.getLogger(__name__)
 
 try:
-    torch.serialization.add_safe_globals(
-        [
-            omegaconf.dictconfig.DictConfig,
-            omegaconf.listconfig.ListConfig,
-            omegaconf.base.Container,
-            omegaconf.nodes.UntypedNode,
-        ]
-    )
+    safe_types = [
+        omegaconf.dictconfig.DictConfig,
+        omegaconf.listconfig.ListConfig,
+        omegaconf.base.Container,
+    ]
+    for node_name in ["AnyNode", "Node", "ValueNode", "UntypedNode"]:
+        if hasattr(omegaconf.nodes, node_name):
+            safe_types.append(getattr(omegaconf.nodes, node_name))
+    if hasattr(torch.serialization, "add_safe_globals"):
+        torch.serialization.add_safe_globals(safe_types)
 except (AttributeError, TypeError) as e:
     logger.debug("PyTorch safe globals registration skipped: %s", e)
 except Exception as e:

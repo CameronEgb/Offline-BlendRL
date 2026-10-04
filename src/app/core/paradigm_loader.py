@@ -8,13 +8,13 @@ The loader resolves those strings to actual classes at runtime.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Type
 
 # ---------------------------------------------------------------------------
 # Component registry
 # ---------------------------------------------------------------------------
 
-_COMPONENT_REGISTRY: dict[str, type] = {}
+_COMPONENT_REGISTRY: dict[str, Type[Any]] = {}
 _discovered: bool = False
 
 
@@ -34,7 +34,7 @@ def register_component(*names: str):
     return decorator
 
 
-def get_component(name: str | None) -> type | None:
+def get_component(name: str | None) -> Type[Any] | None:
     """Return a registered component class by name, or None if name is None/empty.
 
     Triggers auto-discovery of all paradigm_impls modules exactly once,
@@ -92,9 +92,9 @@ class ParadigmDefinition:
     name: str
     type: str                         # 'base' or 'meta'
     description: str = ""
-    runner_cls: type | None = None
-    data_module_cls: type | None = None
-    eval_protocol_cls: type | None = None
+    runner_cls: Type[Any] | None = None
+    data_module_cls: Type[Any] | None = None
+    eval_protocol_cls: Type[Any] | None = None
     default_callback_names: list[str] = field(default_factory=list)
     raw: dict = field(default_factory=dict)  # full raw YAML for access to extra keys
 

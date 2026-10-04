@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest.mock as mock
+
 import pytest
 import torch
 import torch.nn as nn
@@ -19,9 +20,9 @@ from src.app.core.protocols import (
     HasModelCallbacks,
     walk_model_modules,
 )
+from src.usr.models.blendrl.agents.blender_agent import BlenderActorCritic
 from src.usr.models.cew.cew_callback import CEWSelfOrganizationCallback
 from src.usr.models.cew.cew_model import CEWModel
-from src.usr.models.blendrl.agents.blender_agent import BlenderActorCritic
 
 
 class DummyDynamicModel(nn.Module, DynamicTopologyProtocol, ExtraStateProtocol, HasModelCallbacks):
@@ -82,7 +83,7 @@ def test_registered_standard_neural_models():
     resnet = build_model("dueling_resnet", obs_dim=46, n_actions=2)
     assert isinstance(resnet, DuelingResNetMLP)
 
-    from src.usr.models.neural.transformer import SepsisTransformerPolicy, CrossAttentionSepsisPolicy
+    from src.usr.models.neural.transformer import CrossAttentionSepsisPolicy, SepsisTransformerPolicy
     transformer = build_model("transformer", obs_dim=46, n_actions=2)
     assert isinstance(transformer, SepsisTransformerPolicy)
 
@@ -186,7 +187,7 @@ def test_base_agent_dynamic_rebind_detection():
 
 
 def test_standard_gymnasium_vector_env_resolution():
-    from src.app.core.env_vectorized import VectorizedBaseEnv, StandardGymVectorEnv
+    from src.app.core.env_vectorized import StandardGymVectorEnv, VectorizedBaseEnv
 
     # Resolves any standard Gymnasium environment without needing an in/envs/ folder
     env = VectorizedBaseEnv.from_name("CartPole-v1", n_envs=2)
@@ -204,6 +205,7 @@ def test_standard_gymnasium_vector_env_resolution():
 
 def test_cql_agent_instantiates_with_neural_models():
     from omegaconf import OmegaConf
+
     from src.usr.methods.cql_agent import CQLAgent
     from src.usr.models.neural.architectures import MLPQNetwork
     from src.usr.models.neural.resnet import DuelingResNetMLP
@@ -256,6 +258,7 @@ def test_action_count_harmonization():
 
 def test_paradigm_definition_and_data_modules():
     from omegaconf import OmegaConf
+
     from src.app.core.paradigm_loader import load_paradigm_definition
     from src.app.pipeline.config import get_known_algorithms, get_known_models
 
@@ -290,6 +293,95 @@ def test_paradigm_definition_and_data_modules():
     })
     dm_supervised = supervised_def.data_module_cls(cfg_supervised)
     assert hasattr(dm_supervised, "setup")
+
+
+def test_iql_agent_instantiates_with_neural_models():
+    from omegaconf import OmegaConf
+
+    from src.usr.methods.iql_agent import IQLAgent
+    from src.usr.models.neural.architectures import CNNActor, MLPQNetwork, MLPValueNetwork
+    from src.usr.models.neural.resnet import DuelingResNetMLP
+
+    # 1. Test IQL with standard MLP
+    cfg_mlp = OmegaConf.create({
+        "agent": {"name": "iql_mlp", "algorithm": "iql", "lr": 1e-3, "tau": 0.7, "beta": 3.0},
+        "model": "mlp",
+        "env": {"name": "cartpole", "offline_only": True, "n_actions": 2, "obs_dim": 4},
+    })
+    agent_mlp = IQLAgent(cfg_mlp)
+    assert isinstance(agent_mlp.q_network, MLPQNetwork)
+    assert isinstance(agent_mlp.q_network2, MLPQNetwork)
+    assert isinstance(agent_mlp.target_q_network, MLPQNetwork)
+    assert isinstance(agent_mlp.target_q_network2, MLPQNetwork)
+    assert isinstance(agent_mlp.value_network, MLPValueNetwork)
+    assert isinstance(agent_mlp.actor, MLPQNetwork)
+
+    # Test Q computation
+    dummy_obs = torch.randn(2, 4)
+    q_vals = agent_mlp.get_q_values(dummy_obs)
+    assert q_vals.shape == (2, 2)
+
+    # 2. Test IQL with DuelingResNetMLP
+    cfg_resnet = OmegaConf.create({
+        "agent": {"name": "iql_resnet", "algorithm": "iql", "lr": 1e-3, "tau": 0.7, "beta": 3.0},
+        "model": "dueling_resnet",
+        "env": {"name": "cartpole", "offline_only": True, "n_actions": 2, "obs_dim": 4},
+    })
+    agent_resnet = IQLAgent(cfg_resnet)
+    assert isinstance(agent_resnet.q_network, DuelingResNetMLP)
+    assert isinstance(agent_resnet.target_q_network, DuelingResNetMLP)
+    q_vals_resnet = agent_resnet.get_q_values(dummy_obs)
+    assert q_vals_resnet.shape == (2, 2)
+
+
+def test_hybrid_detection_helpers():
+    from omegaconf import OmegaConf
+
+    from src.usr.methods.base_agent import BaseAgent
+
+    class DummyAgent(BaseAgent):
+        def training_step(self, batch, batch_idx):
+            pass
+
+        def configure_optimizers(self):
+            pass
+
+        def get_action_and_value(self, x, action=None):
+            pass
+
+        def get_value(self, x):
+            pass
+
+    # 1. Hybrid via algorithm name
+    agent1 = DummyAgent(OmegaConf.create({"agent": {"algorithm": "blendrl_ppo"}}))
+    assert agent1.is_hybrid_configured() is True
+    assert agent1.resolve_model_name() == "mlp"
+
+    # 2. Hybrid via model string
+    agent2 = DummyAgent(OmegaConf.create({"agent": {"algorithm": "ppo"}, "model": "blendrl"}))
+    assert agent2.is_hybrid_configured() is True
+    assert agent2.resolve_model_name() == "mlp"
+
+    # 3. Hybrid via composite model dict
+    agent3 = DummyAgent(
+        OmegaConf.create({
+            "agent": {"algorithm": "cql"},
+            "model": {
+                "blendrl": {
+                    "neural": "dueling_resnet",
+                    "symbolic": "cew",
+                }
+            },
+        })
+    )
+    assert agent3.is_hybrid_configured() is True
+    assert agent3.resolve_model_name() == "dueling_resnet"
+
+    # 4. Standard neural model
+    agent4 = DummyAgent(OmegaConf.create({"agent": {"algorithm": "cql"}, "model": "dueling_resnet"}))
+    assert agent4.is_hybrid_configured() is False
+    assert agent4.resolve_model_name() == "dueling_resnet"
+
 
 
 
