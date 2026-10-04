@@ -21,6 +21,7 @@ class PluginManifest:
     icon: Optional[str] = None
     entry_point: str = "Plugin"
     plugin_dir: Optional[Path] = None
+    is_core: bool = False
     extra: Dict[str, Any] = field(default_factory=dict)
 
 

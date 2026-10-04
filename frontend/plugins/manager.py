@@ -25,7 +25,7 @@ class PluginManager(QObject):
                  settings_manager: Optional["SettingsManager"] = None):
         super().__init__()
         self.window = window
-        self.plugin_dirs = plugin_dirs or [Path(__file__).parent]
+        self.plugin_dirs = plugin_dirs or [Path(__file__).parent / "core", Path(__file__).parent]
         self._settings = settings_manager
 
         # Legacy fallback file — used only when settings_manager is unavailable.
@@ -53,15 +53,30 @@ class PluginManager(QObject):
             self._states_loaded = True
 
         self.manifests.clear()
+        discovered_paths = set()
         for pdir in self.plugin_dirs:
             if not pdir.exists():
                 continue
-            for manifest_path in pdir.glob("*/plugin.json"):
+            candidates = list(pdir.glob("*/plugin.json"))
+            if (pdir / "core").is_dir():
+                candidates.extend((pdir / "core").glob("*/plugin.json"))
+
+            for manifest_path in candidates:
+                resolved = manifest_path.resolve()
+                if resolved in discovered_paths:
+                    continue
+                discovered_paths.add(resolved)
                 try:
                     data = json.loads(manifest_path.read_text(encoding="utf-8"))
                     if data.get("kind", "plugin") != "plugin":
                         continue
                     pid = data["id"]
+                    is_core = bool(
+                        data.get("core", False)
+                        or data.get("is_core", False)
+                        or "core" in manifest_path.parts
+                        or manifest_path.is_relative_to(Path(__file__).parent)
+                    )
                     manifest = PluginManifest(
                         id=pid,
                         name=data.get("name", pid),
@@ -72,6 +87,7 @@ class PluginManager(QObject):
                         icon=data.get("icon"),
                         entry_point=data.get("entry_point", "Plugin"),
                         plugin_dir=manifest_path.parent,
+                        is_core=is_core,
                         extra=data,
                     )
                     self.manifests[pid] = manifest
@@ -96,7 +112,10 @@ class PluginManager(QObject):
         or legacy .plugins.json (fallback when no SettingsManager)."""
         if self._settings is not None:
             enabled_list = self._settings.plugins_enabled
+            disabled_list = self._settings.get("plugins", "disabled", default=[])
             self.enabled_states = {pid: True for pid in enabled_list}
+            for pid in disabled_list:
+                self.enabled_states[pid] = False
             self._migrate_legacy_states()
         else:
             self._load_legacy_states()
@@ -135,9 +154,11 @@ class PluginManager(QObject):
     def save_states(self) -> None:
         """Persist enabled plugin state to settings.toml."""
         enabled_list = sorted(pid for pid, on in self.enabled_states.items() if on)
+        disabled_list = sorted(pid for pid, on in self.enabled_states.items() if not on)
         if self._settings is not None:
             try:
                 self._settings.set("plugins", "enabled", enabled_list)
+                self._settings.set("plugins", "disabled", disabled_list)
             except Exception as exc:
                 self.window.log(f"Failed to save plugin states to settings.toml: {exc}")
         else:
@@ -154,6 +175,11 @@ class PluginManager(QObject):
 
     def uninstall_plugin(self, plugin_id: str) -> None:
         """Deactivate a plugin, remove its directory from disk, and update states."""
+        manifest = self.manifests.get(plugin_id)
+        if manifest and getattr(manifest, "is_core", False):
+            self.window.log(f"Cannot uninstall core plugin: {plugin_id}")
+            return
+
         self.disable_plugin(plugin_id)
         manifest = self.manifests.pop(plugin_id, None)
         self.enabled_states.pop(plugin_id, None)
@@ -213,21 +239,24 @@ class PluginManager(QObject):
             try:
                 module = importlib.import_module(f"frontend.plugins.{plugin_id}")
             except (ImportError, ModuleNotFoundError):
-                init_file = plugin_dir / "__init__.py" if plugin_dir else None
-                if init_file and init_file.exists():
-                    mod_name = f"theta_plugin_{plugin_id}"
-                    spec = importlib.util.spec_from_file_location(
-                        mod_name, init_file, submodule_search_locations=[str(plugin_dir)]
-                    )
-                    if spec is None or spec.loader is None:
-                        raise ImportError(f"Cannot load spec from {init_file}")
-                    module = importlib.util.module_from_spec(spec)
-                    module.__path__ = [str(plugin_dir)]
-                    sys.modules[mod_name] = module
-                    sys.modules[f"frontend.plugins.{plugin_id}"] = module
-                    spec.loader.exec_module(module)
-                else:
-                    raise
+                try:
+                    module = importlib.import_module(f"frontend.plugins.core.{plugin_id}")
+                except (ImportError, ModuleNotFoundError):
+                    init_file = plugin_dir / "__init__.py" if plugin_dir else None
+                    if init_file and init_file.exists():
+                        mod_name = f"theta_plugin_{plugin_id}"
+                        spec = importlib.util.spec_from_file_location(
+                            mod_name, init_file, submodule_search_locations=[str(plugin_dir)]
+                        )
+                        if spec is None or spec.loader is None:
+                            raise ImportError(f"Cannot load spec from {init_file}")
+                        module = importlib.util.module_from_spec(spec)
+                        module.__path__ = [str(plugin_dir)]
+                        sys.modules[mod_name] = module
+                        sys.modules[f"frontend.plugins.{plugin_id}"] = module
+                        spec.loader.exec_module(module)
+                    else:
+                        raise
 
             plugin_cls = getattr(module, manifest.entry_point)
             instance: Plugin = plugin_cls(manifest)

@@ -167,9 +167,16 @@ def _write_toml_file(path: Path, data: dict) -> None:
             # Top-level scalar (unusual but tolerated)
             lines.append(f"{section} = {_toml_value(value)}")
         else:
-            lines.append(f"\n[{section}]")
-            for k, v in value.items():
-                lines.append(f"{k} = {_toml_value(v)}")
+            scalars = {k: v for k, v in value.items() if not isinstance(v, dict)}
+            subdicts = {k: v for k, v in value.items() if isinstance(v, dict)}
+            if scalars or not subdicts:
+                lines.append(f"\n[{section}]")
+                for k, v in scalars.items():
+                    lines.append(f"{k} = {_toml_value(v)}")
+            for sub, subval in subdicts.items():
+                lines.append(f"\n[{section}.{sub}]")
+                for k, v in subval.items():
+                    lines.append(f"{k} = {_toml_value(v)}")
     content = "\n".join(lines).lstrip("\n") + "\n"
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".toml.tmp")
@@ -349,6 +356,15 @@ class SettingsManager(QObject):
     @property
     def hotkeys_terminal_precedence(self) -> bool:
         return bool(self.get("hotkeys", "terminal_precedence", default=True))
+
+    @property
+    def hotkey_bindings(self) -> dict[str, str]:
+        v = self.get("hotkeys", "bindings", default=None)
+        if isinstance(v, dict):
+            return dict(v)
+        # Default bindings derived from hotkey_panes
+        panes = self.hotkey_panes
+        return {pid: f"Action + {i}" for i, pid in enumerate(panes)}
 
     @property
     def hotkey_panes(self) -> list[str]:
