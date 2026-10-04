@@ -9,6 +9,7 @@ without hardcoding class checks in base agent loops.
 from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
+
 import torch
 import torch.nn as nn
 

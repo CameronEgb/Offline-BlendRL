@@ -12,6 +12,7 @@ import inspect
 import logging
 from typing import Any
 
+import lightning as L
 import numpy as np
 import torch
 import torch.nn as nn
@@ -29,7 +30,7 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 @register_component("SupervisedDataModule", "CrossValidationDataModule")
-class SupervisedDataModule(BaseDataModule):
+class SupervisedDataModule(L.LightningDataModule, BaseDataModule):
     """Domain-independent data module wrapping train, val, and test DataLoaders."""
 
     def __init__(
@@ -37,25 +38,51 @@ class SupervisedDataModule(BaseDataModule):
         train_loader: DataLoader | None = None,
         val_loader: DataLoader | None = None,
         test_loader: DataLoader | None = None,
+        cfg: Any = None,
     ):
+        super().__init__()
+        if train_loader is not None and not isinstance(train_loader, DataLoader) and cfg is None:
+            cfg = train_loader
+            train_loader = None
+
         self._train_loader = train_loader
         self._val_loader = val_loader
         self._test_loader = test_loader
         self._cfg = None
+        self._delegate = None
+        self.input_dim = 64
+        if cfg is not None:
+            self.setup(cfg)
 
-    def setup(self, cfg) -> None:
+    def setup(self, cfg: Any = None, stage: str | None = None) -> None:
         """Initialize data module from config if loaders were not passed at init."""
-        self._cfg = cfg
+        if cfg is not None and not isinstance(cfg, str):
+            self._cfg = cfg
+        if self._train_loader is None and self._cfg is not None:
+            if hasattr(self._cfg, "get") and (
+                self._cfg.get("early_prediction")
+                or (hasattr(self._cfg, "env") and getattr(self._cfg.env, "name", None) == "mimic")
+            ):
+                from src.usr.eval.early_prediction.data_module import EPSepsisDataModule
+
+                self._delegate = EPSepsisDataModule(self._cfg)
+                self.input_dim = getattr(self._delegate, "input_dim", 64)
 
     def train_dataloader(self) -> DataLoader:
+        if self._delegate is not None:
+            return self._delegate.train_dataloader()
         if self._train_loader is None:
             raise RuntimeError("train_loader has not been set or loaded.")
         return self._train_loader
 
     def val_dataloader(self) -> DataLoader | None:
+        if self._delegate is not None:
+            return self._delegate.val_dataloader()
         return self._val_loader
 
     def test_dataloader(self) -> DataLoader | None:
+        if self._delegate is not None:
+            return self._delegate.test_dataloader()
         return self._test_loader
 
     def set_loaders(
@@ -68,6 +95,7 @@ class SupervisedDataModule(BaseDataModule):
         self._train_loader = train_loader
         self._val_loader = val_loader
         self._test_loader = test_loader
+        self._delegate = None
 
 
 # ---------------------------------------------------------------------------

@@ -9,6 +9,13 @@ import torch
 from src.app.core.utils import load_module
 
 
+class ActionCount(int):
+    """Integer representing action count that can also be called as a nullary function for backwards compatibility."""
+
+    def __call__(self) -> int:
+        return int(self)
+
+
 class VectorizedBaseEnv(ABC):
     """Base abstract class for vectorized benchmark environments.
 
@@ -19,7 +26,6 @@ class VectorizedBaseEnv(ABC):
 
     name: str
     pred2action: dict[str, int] = {}
-    n_actions: int
 
     def __init__(self, mode: str = "ppo"):
         self.mode = mode
@@ -43,8 +49,17 @@ class VectorizedBaseEnv(ABC):
     def get_action_meanings(self) -> Sequence[str]:
         return list(self.pred2action.keys())
 
-    def n_actions(self) -> int:
-        return len(list(set(self.pred2action.items())))
+    @property
+    def n_actions(self) -> ActionCount:
+        if getattr(self, "_n_actions_val", None) is not None:
+            return ActionCount(self._n_actions_val)
+        if hasattr(self, "pred2action") and self.pred2action:
+            return ActionCount(len(list(set(self.pred2action.items()))))
+        return ActionCount(getattr(self, "_n_actions", 2))
+
+    @n_actions.setter
+    def n_actions(self, val: int):
+        self._n_actions_val = int(val)
 
     @staticmethod
     def from_name(name: str, **kwargs):
@@ -126,8 +141,13 @@ class StandardGymVectorEnv(VectorizedBaseEnv):
             infos,
         )
 
-    def n_actions(self) -> int:
-        return self._n_actions
+    @property
+    def n_actions(self) -> ActionCount:
+        return ActionCount(getattr(self, "_n_actions", 2))
+
+    @n_actions.setter
+    def n_actions(self, val: int):
+        self._n_actions = int(val)
 
 
 # Backward-compatibility alias

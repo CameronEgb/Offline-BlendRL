@@ -142,7 +142,10 @@ def build_model(
     # Infer n_actions and obs_dim from env if needed
     env_name = getattr(env, "name", str(env)) if env is not None else "unknown"
     if n_actions is None and env is not None:
-        n_actions = getattr(env, "n_actions", getattr(getattr(env, "action_space", None), "n", None))
+        raw_act = getattr(env, "n_actions", getattr(getattr(env, "action_space", None), "n", None))
+        resolved_act = raw_act() if callable(raw_act) else raw_act
+        if resolved_act is not None:
+            n_actions = int(resolved_act)
     if obs_dim is None and env is not None:
         if hasattr(env, "observation_space"):
             obs_shape = getattr(env.observation_space, "shape", None)

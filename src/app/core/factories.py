@@ -12,21 +12,13 @@ from src.usr.models.neural.architectures import CNNActor, NeuralBlenderActor, Ne
 logger = logging.getLogger(__name__)
 
 
-def _safe_instantiate(module_class, **kwargs):
-    import inspect
-
-    sig = inspect.signature(module_class.__init__)
-    has_var_keyword = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
-    if has_var_keyword:
-        return module_class(**kwargs)
-    valid_kwargs = {k: v for k, v in kwargs.items() if k in sig.parameters}
-    return module_class(**valid_kwargs)
-
-
 def get_neural_agent(
-    env_name, n_actions, device, arch_name=None, hidden_sizes=[64, 64], num_in_features=None, **kwargs
+    env_name, n_actions, device, arch_name=None, hidden_sizes=None, num_in_features=None, **kwargs
 ):
     from src.app.core.model_registry import build_model
+
+    if hidden_sizes is None:
+        hidden_sizes = [64, 64]
 
     return build_model(
         arch_name or "mlp",
@@ -65,6 +57,8 @@ def get_blender(
             net = NeuralBlenderActor(out_size=out_size)
         else:
             obs = env.reset()
+            if isinstance(obs, tuple):
+                obs = obs[0]
             num_in_features = np.prod(obs.shape[1:])
             net = NeuralBlenderMLP(num_in_features=num_in_features, out_size=out_size)
         net.to(device)

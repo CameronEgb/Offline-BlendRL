@@ -8,6 +8,7 @@ _request_optimizer_rebind flag so OfflineAgentBase can react.
 from __future__ import annotations
 
 from typing import Any, Optional
+
 import lightning as L
 
 from src.usr.models.cew.cew_model import CEWModel
@@ -21,7 +22,7 @@ class CEWSelfOrganizationCallback(L.Callback):
     whose policy_modules list contains one or more CEWModel instances).
     """
 
-    def __init__(self, model: Optional[Any] = None):
+    def __init__(self, model: Any | None = None):
         super().__init__()
         self.model = model
 

@@ -70,11 +70,23 @@ def main(cfg: DictConfig):
     if "env" in cfg and "reward_type" in cfg.env:
         os.environ["MIMIC_REWARD_TYPE"] = str(cfg.env.reward_type)
 
-    if cfg.get("paradigm") == "supervised":
-        from src.usr.eval.early_prediction.data_module import EPSepsisDataModule
+    paradigm_name = cfg.get("paradigm", "online_rl")
+    from src.app.core.paradigm_loader import get_component, load_paradigm_definition
+
+    paradigm_def = load_paradigm_definition(paradigm_name)
+
+    # 1. Resolve Data Module from explicit config or paradigm definition
+    dm_name = cfg.get("data_module") or (cfg.env.get("data_module") if hasattr(cfg, "env") else None)
+    DataModuleCls = get_component(dm_name) if dm_name else paradigm_def.data_module_cls
+    if DataModuleCls is None:
+        DataModuleCls = RLDataModule
+
+    datamodule = DataModuleCls(cfg)
+
+    # 2. Build Model / Agent based on paradigm
+    if paradigm_name == "supervised":
         from src.usr.eval.early_prediction.lightning_module import EPSepsisLightningModule
 
-        datamodule = EPSepsisDataModule(cfg)
         input_dim = getattr(datamodule, "input_dim", 64)
 
         model_cfg = cfg.get("model", {})
@@ -115,7 +127,6 @@ def main(cfg: DictConfig):
         if not base_algo_name:
             raise ValueError("Could not extract algorithm name from config.")
 
-        datamodule = RLDataModule(cfg)
         AgentClass = get_agent_class(base_algo_name)
         print(f"Resolved agent class: {AgentClass.__name__}")
         model = AgentClass(cfg)

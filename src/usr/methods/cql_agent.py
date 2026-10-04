@@ -8,8 +8,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
-from src.usr.methods.base_agent import OfflineAgentBase
 from src.usr.methods.agent_registry import register_agent
+from src.usr.methods.base_agent import OfflineAgentBase
 
 
 @register_agent("cql", "blendrl_cql")
@@ -135,8 +135,9 @@ class CQLAgent(OfflineAgentBase):
                     if hasattr(self, "observation_space") and self.observation_space
                     else None
                 )
+                model_arch = model_name or "mlp"
                 self.q_network = build_model(
-                    architecture,
+                    model_arch,
                     env=self.env,
                     n_actions=self.n_actions,
                     device=self.device,
@@ -144,7 +145,7 @@ class CQLAgent(OfflineAgentBase):
                     obs_dim=obs_dim,
                 )
                 self.target_q_network = build_model(
-                    architecture,
+                    model_arch,
                     env=self.env,
                     n_actions=self.n_actions,
                     device=self.device,

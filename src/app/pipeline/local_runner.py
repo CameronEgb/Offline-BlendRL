@@ -9,7 +9,7 @@ from pathlib import Path
 
 from src.app.pipeline.commands import build_method_overrides, get_sweep_direction
 from src.app.pipeline.config import normalize_agent_name
-from src.app.pipeline.datasets import fast_purge_dir, resolve_dataset_path, run_experiment
+from src.app.pipeline.datasets import fast_purge_dir, resolve_dataset_for_method, run_experiment
 from src.app.pipeline.optuna_utils import (
     create_optuna_study,
     delete_optuna_study,
@@ -44,40 +44,6 @@ def _setup_output_dirs(cfg) -> None:
 # Method dispatch
 # ---------------------------------------------------------------------------
 
-def _resolve_dataset_for_method(method_name, method_cfg, cfg):
-    """Resolve the dataset path for an offline method."""
-    explicit_ds = method_cfg.get("dataset_path") or cfg.get("dataset_path")
-    if explicit_ds and Path(explicit_ds).exists():
-        return Path(explicit_ds)
-
-    # For offline paradigms, dataset comes from the environment config
-    env_dataset = None
-    env_name = None
-    if hasattr(cfg, "env"):
-        env_dataset = cfg.env.get("dataset_name", None)
-        env_name = cfg.env.get("name", None)
-        if env_dataset:
-            try:
-                return resolve_dataset_path(
-                    dataset_id=str(env_dataset).replace(".npz", ""),
-                    group=env_name or cfg.get("group", ""),
-                    experiment_id=cfg.get("experiment_id", ""),
-                    yaml_ds_path=str(explicit_ds) if explicit_ds else None,
-                )
-            except FileNotFoundError:
-                pass
-
-    # Fallback: look in standard dataset directories
-    ds_root = Path("in/datasets") / cfg.group / cfg.experiment_id
-    if ds_root.exists():
-        return ds_root
-
-    raise FileNotFoundError(
-        f"Cannot resolve dataset for method '{method_name}'. "
-        f"No dataset_name in env config and no datasets found at {ds_root}."
-    )
-
-
 def run_methods(cfg, context) -> None:
     """Execute all methods declared in cfg.methods."""
     methods = context["methods"]
@@ -87,11 +53,12 @@ def run_methods(cfg, context) -> None:
     paradigm = cfg.get("paradigm", "offline_rl")
 
     for method_name, method_cfg in methods.items():
-        # Convert OmegaConf to plain dict if needed
         if hasattr(method_cfg, "items"):
-            method_cfg = dict(method_cfg)
-        else:
-            method_cfg = dict(method_cfg)
+            from omegaconf import DictConfig, OmegaConf
+            if isinstance(method_cfg, DictConfig):
+                method_cfg = OmegaConf.to_container(method_cfg, resolve=True)
+            else:
+                method_cfg = dict(method_cfg)
 
         agent_name = normalize_agent_name(method_name)
         method_tune = method_cfg.get("tune") or method_cfg.get("search_space") or {}
@@ -105,7 +72,7 @@ def run_methods(cfg, context) -> None:
         dataset_path = None
         if paradigm in ("offline_rl", "supervised"):
             try:
-                dataset_path = _resolve_dataset_for_method(method_name, method_cfg, cfg)
+                dataset_path = resolve_dataset_for_method(method_name, method_cfg, cfg)
             except FileNotFoundError as e:
                 print(f"Error: {e}")
                 sys.exit(1)

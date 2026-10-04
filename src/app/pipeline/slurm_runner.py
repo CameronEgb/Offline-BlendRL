@@ -9,42 +9,10 @@ from pathlib import Path
 
 from src.app.pipeline.commands import build_method_overrides, get_sweep_direction
 from src.app.pipeline.config import normalize_agent_name
-from src.app.pipeline.datasets import fast_purge_dir, resolve_dataset_path
+from src.app.pipeline.datasets import fast_purge_dir, resolve_dataset_for_method, resolve_dataset_path
 from src.app.pipeline.optuna_utils import create_optuna_study, delete_optuna_study, get_next_study_name
 from src.app.pipeline.runtime import get_shell_env_block, get_shell_python_cmd
 from src.app.pipeline.slurm import generate_sbatch_header, generate_sbatch_script, submit_sbatch
-
-
-def _resolve_dataset_for_method(method_name, method_cfg, cfg):
-    """Resolve the dataset path for an offline method."""
-    explicit_ds = method_cfg.get("dataset_path") or cfg.get("dataset_path")
-    if explicit_ds and Path(explicit_ds).exists():
-        return Path(explicit_ds)
-
-    env_dataset = None
-    env_name = None
-    if hasattr(cfg, "env"):
-        env_dataset = cfg.env.get("dataset_name", None)
-        env_name = cfg.env.get("name", None)
-        if env_dataset:
-            try:
-                return resolve_dataset_path(
-                    dataset_id=str(env_dataset).replace(".npz", ""),
-                    group=env_name or cfg.get("group", ""),
-                    experiment_id=cfg.get("experiment_id", ""),
-                    yaml_ds_path=str(explicit_ds) if explicit_ds else None,
-                )
-            except FileNotFoundError:
-                pass
-
-    ds_root = Path("in/datasets") / cfg.group / cfg.experiment_id
-    if ds_root.exists():
-        return ds_root
-
-    raise FileNotFoundError(
-        f"Cannot resolve dataset for method '{method_name}'. "
-        f"No dataset_name in env config and no datasets found at {ds_root}."
-    )
 
 
 def run_slurm_training(cfg, context):
@@ -90,7 +58,7 @@ def run_slurm_training(cfg, context):
             
             if paradigm in ("offline_rl", "supervised"):
                 try:
-                    dataset_path = _resolve_dataset_for_method(method_name, method_cfg, cfg)
+                    dataset_path = resolve_dataset_for_method(method_name, method_cfg, cfg)
                 except FileNotFoundError as e:
                     print(f"Error: {e}")
                     sys.exit(1)
@@ -153,7 +121,7 @@ def run_slurm_training(cfg, context):
         
         if paradigm in ("offline_rl", "supervised"):
             try:
-                dataset_path = _resolve_dataset_for_method(method_name, method_cfg, cfg)
+                dataset_path = resolve_dataset_for_method(method_name, method_cfg, cfg)
             except FileNotFoundError as e:
                 print(f"Error: {e}")
                 sys.exit(1)

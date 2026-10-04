@@ -76,6 +76,11 @@ def _auto_discover_components():
             except Exception:
                 pass
 
+    try:
+        importlib.import_module("src.usr.eval.early_prediction.data_module")
+    except Exception:
+        pass
+
 
 # ---------------------------------------------------------------------------
 # ParadigmDefinition dataclass

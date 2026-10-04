@@ -7,8 +7,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
-from src.usr.methods.base_agent import OfflineAgentBase
 from src.usr.methods.agent_registry import register_agent
+from src.usr.methods.base_agent import OfflineAgentBase
 
 
 @register_agent(

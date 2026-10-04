@@ -22,8 +22,9 @@ _WORKFLOW_CONFIG_DIR = Path("in/config/workflow")
 
 def load_workflow(workflow_ref: Any):
     """Load a WorkflowGraph from in/config/workflow/<workflow_id>.yaml or from dict/DictConfig."""
-    from src.app.pipeline.workflow.model import WorkflowGraph
     from omegaconf import DictConfig, OmegaConf
+
+    from src.app.pipeline.workflow.model import WorkflowGraph
 
     if isinstance(workflow_ref, (dict, DictConfig)):
         w_id = (
@@ -120,6 +121,7 @@ def _execute_node(node, graph, cfg, context, is_interactive: bool) -> None:
 def _run_experiment_node(node, cfg, context, is_interactive: bool) -> None:
     """Run a paradigm experiment node by invoking run_pipeline.py as a subprocess."""
     import subprocess
+
     from src.app.pipeline.runtime import get_python_executable
 
     site_cfg = cfg.get("site", None) if hasattr(cfg, "get") else None
@@ -146,4 +148,4 @@ def _run_experiment_node(node, cfg, context, is_interactive: bool) -> None:
             log.warning("Node '%s' exited with code %d.", node.id, result.returncode)
     else:
         log.info("[Slurm mode] Workflow node '%s' Slurm submission not yet implemented.", node.id)
-        print(f"    [Slurm] Submission for workflow nodes is not yet automated.")
+        print("    [Slurm] Submission for workflow nodes is not yet automated.")

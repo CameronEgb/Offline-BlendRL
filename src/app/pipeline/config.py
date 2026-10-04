@@ -38,7 +38,49 @@ _RESERVED_METHOD_KEYS = {
 
 
 _KNOWN_ALGORITHMS = {"cql", "ppo", "iql"}
-_KNOWN_MODELS = {"dnn", "dueling_resnet", "blendrl", "transformer", "lstm", "cew", "nsfr", "neumann"}
+_KNOWN_MODELS = {
+    "dnn",
+    "mlp",
+    "dueling_resnet",
+    "resnet",
+    "blendrl",
+    "blender",
+    "transformer",
+    "cross_attention",
+    "sepsis_transformer",
+    "sepsis_cross_attention",
+    "lstm",
+    "gru",
+    "cnn",
+    "nature_cnn",
+    "cew",
+    "nsfr",
+    "neumann",
+}
+
+
+def get_known_algorithms() -> set[str]:
+    """Return all known algorithm names, including any registered dynamically."""
+    algos = set(_KNOWN_ALGORITHMS)
+    try:
+        from src.usr.methods.agent_registry import AGENT_REGISTRY
+
+        algos.update(AGENT_REGISTRY.keys())
+    except Exception:
+        pass
+    return algos
+
+
+def get_known_models() -> set[str]:
+    """Return all known model architecture names, including any registered dynamically."""
+    models = set(_KNOWN_MODELS)
+    try:
+        from src.app.core.model_registry import MODEL_REGISTRY
+
+        models.update(MODEL_REGISTRY.keys())
+    except Exception:
+        pass
+    return models
 _MODEL_KEYS = {
     "architecture",
     "modules",
@@ -168,7 +210,7 @@ def _extract_name_and_subparams(
                 subparams = {k: v for k, v in val.items() if k not in name_keys}
                 return ident, subparams
 
-        all_known = set(_KNOWN_ALGORITHMS) | set(_KNOWN_MODELS)
+        all_known = get_known_algorithms() | get_known_models()
         if known_names:
             all_known.update(known_names)
 
@@ -364,10 +406,12 @@ def parse_methods_dict(cfg) -> dict[str, dict]:
 
     # Extract universal global parameters (excluding agent, model, tune, and standalone algo/arch blocks)
     universal_global = {}
+    known_algos = get_known_algorithms()
+    known_models = get_known_models()
     for k, v in shared_params.items():
         if k in ("agent", "model", "tune", "search_space"):
             continue
-        if k in _KNOWN_ALGORITHMS or k in _KNOWN_MODELS:
+        if k in known_algos or k in known_models:
             continue
         universal_global[k] = v
 
@@ -379,7 +423,7 @@ def parse_methods_dict(cfg) -> dict[str, dict]:
         if any(nk in shared_agent for nk in ("name", "algorithm", "type", "algo")):
             default_agent_algo, default_agent_sub = _extract_name_and_subparams(shared_agent)
         else:
-            known_in_agent = [k for k in shared_agent if k in _KNOWN_ALGORITHMS]
+            known_in_agent = [k for k in shared_agent if k in known_algos]
             if len(known_in_agent) == 1:
                 default_agent_algo = known_in_agent[0]
 

@@ -21,6 +21,7 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, Dataset
 
 from src.app.core.interfaces import BaseDataModule
+from src.app.core.paradigm_loader import register_component
 from src.usr.eval.early_prediction.model import compute_volatility_features, normalize_features
 
 log = logging.getLogger(__name__)
@@ -57,6 +58,7 @@ def collate_ep_batch(batch):
     return padded_seqs, torch.stack(labels), lengths, padding_mask
 
 
+@register_component("EPSepsisDataModule", "SepsisDataModule")
 class EPSepsisDataModule(L.LightningDataModule, BaseDataModule):
     """DataModule managing MIMIC clinical trajectory loading and CV splits."""
 

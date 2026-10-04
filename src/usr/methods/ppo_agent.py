@@ -8,8 +8,8 @@ import torch.nn as nn
 import torch.optim as optim
 from omegaconf import DictConfig
 
-from src.usr.methods.base_agent import BaseAgent
 from src.usr.methods.agent_registry import register_agent
+from src.usr.methods.base_agent import BaseAgent
 
 
 @register_agent(

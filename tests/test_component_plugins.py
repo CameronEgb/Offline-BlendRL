@@ -201,3 +201,95 @@ def test_standard_gymnasium_vector_env_resolution():
     assert len(rewards) == 2
     env.close()
 
+
+def test_cql_agent_instantiates_with_neural_models():
+    from omegaconf import OmegaConf
+    from src.usr.methods.cql_agent import CQLAgent
+    from src.usr.models.neural.architectures import MLPQNetwork
+    from src.usr.models.neural.resnet import DuelingResNetMLP
+
+    # 1. Test CQL with standard MLP
+    cfg_mlp = OmegaConf.create({
+        "agent": {"name": "cql_mlp", "algorithm": "cql", "lr": 1e-3, "cql_alpha": 1.0},
+        "model": "mlp",
+        "env": {"name": "cartpole", "offline_only": True, "n_actions": 2, "obs_dim": 4},
+    })
+    agent_mlp = CQLAgent(cfg_mlp)
+    assert isinstance(agent_mlp.q_network, MLPQNetwork)
+    assert isinstance(agent_mlp.target_q_network, MLPQNetwork)
+
+    # 2. Test CQL with DuelingResNetMLP
+    cfg_resnet = OmegaConf.create({
+        "agent": {"name": "cql_resnet", "algorithm": "cql", "lr": 1e-3, "cql_alpha": 1.0},
+        "model": "dueling_resnet",
+        "env": {"name": "cartpole", "offline_only": True, "n_actions": 2, "obs_dim": 4},
+    })
+    agent_resnet = CQLAgent(cfg_resnet)
+    assert isinstance(agent_resnet.q_network, DuelingResNetMLP)
+    assert isinstance(agent_resnet.target_q_network, DuelingResNetMLP)
+
+
+def test_action_count_harmonization():
+    from src.app.core.env_vectorized import ActionCount, VectorizedBaseEnv
+
+    ac = ActionCount(4)
+    assert isinstance(ac, int)
+    assert ac == 4
+    assert callable(ac)
+    assert ac() == 4
+    assert ac * 2 == 8
+
+    # Tensor initialization with ActionCount dimension
+    t = torch.zeros(2, ac)
+    assert t.shape == (2, 4)
+
+    # Verify StandardGymVectorEnv exposes n_actions as ActionCount
+    env = VectorizedBaseEnv.from_name("CartPole-v1", n_envs=1)
+    try:
+        assert isinstance(env.n_actions, int)
+        assert env.n_actions == 2
+        assert env.n_actions() == 2
+        assert callable(env.n_actions)
+    finally:
+        env.close()
+
+
+def test_paradigm_definition_and_data_modules():
+    from omegaconf import OmegaConf
+    from src.app.core.paradigm_loader import load_paradigm_definition
+    from src.app.pipeline.config import get_known_algorithms, get_known_models
+
+    # Verify known models and algorithms helpers
+    models = get_known_models()
+    assert {"mlp", "dnn", "dueling_resnet", "transformer", "cross_attention", "cew"} <= models
+    algos = get_known_algorithms()
+    assert {"cql", "ppo", "iql"} <= algos
+
+    # 1. Online RL paradigm
+    online_def = load_paradigm_definition("online_rl")
+    assert online_def.data_module_cls is not None
+    cfg_online = OmegaConf.create({
+        "paradigm": "online_rl",
+        "agent": {"name": "ppo", "batch_size": 32},
+        "env": {"name": "cartpole", "offline_only": False},
+        "seed": 42,
+    })
+    dm_online = online_def.data_module_cls(cfg_online)
+    assert dm_online.train_dataloader() is not None
+
+    # 2. Offline RL paradigm
+    offline_def = load_paradigm_definition("offline_rl")
+    assert offline_def.data_module_cls is not None
+
+    # 3. Supervised paradigm
+    supervised_def = load_paradigm_definition("supervised")
+    assert supervised_def.data_module_cls is not None
+    cfg_supervised = OmegaConf.create({
+        "paradigm": "supervised",
+        "env": {"name": "test_env", "offline_only": True},
+    })
+    dm_supervised = supervised_def.data_module_cls(cfg_supervised)
+    assert hasattr(dm_supervised, "setup")
+
+
+
