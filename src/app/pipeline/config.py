@@ -676,6 +676,9 @@ def parse_methods_dict(cfg) -> dict[str, dict]:
         if combined_tune:
             resolved_mcfg["tune"] = combined_tune
 
+        if not isinstance(m_dict, dict):
+            m_dict = {}
+
         # Copy non-agent, non-model keys from m_dict (deep-merging if both are dicts)
         for k, v in m_dict.items():
             if k in ("agent", "model", "tune", "search_space", "from_study") or k in consumed_keys:

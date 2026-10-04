@@ -81,9 +81,14 @@ def load_cleanrl_envs(env_id, run_name=None, capture_video=False, num_envs=1):
     return envs
 
 
-def load_cleanrl_agent(pretrained: bool = False, device: str | torch.device = "cpu", model_path: str | None = None):
+def load_cleanrl_agent(
+    pretrained: bool = False,
+    device: str | torch.device = "cpu",
+    model_path: str | None = None,
+    n_actions: int = 18,
+):
     """Load CleanRL CNNActor, optionally restoring weights from a checkpoint path."""
-    agent = CNNActor(n_actions=18)
+    agent = CNNActor(n_actions=n_actions)
     if pretrained:
         if not model_path or not os.path.exists(model_path):
             raise FileNotFoundError(

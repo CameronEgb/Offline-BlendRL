@@ -22,16 +22,20 @@ class IQLAgent(OfflineAgentBase):
         super().__init__(cfg)
         self.save_hyperparameters()
 
+        self.lr = float(self.get_cfg("lr", self.get_cfg("agent.lr", 3e-4)))
+        self.tau = float(self.get_cfg("tau", self.get_cfg("expectile", 0.7)))
+        self.beta = float(self.get_cfg("beta", self.get_cfg("temperature", 3.0)))
+
         self._init_env(n_envs=1)
-        self.gamma = float(self.get_cfg("gamma", getattr(self.cfg.env, "gamma", 0.99)))
+        self.gamma = float(self.get_cfg("gamma", 0.99))
 
         hidden_sizes = self.get_cfg("hidden_sizes", [256, 256])
         if hidden_sizes is not None:
             hidden_sizes = list(hidden_sizes)
 
-        default_rules = getattr(cfg.env, "rules", "default")
-        default_reasoner = getattr(cfg.env, "reasoner", "nsfr")
-        default_arch = getattr(cfg.env, "architecture", "mlp")
+        default_rules = self.get_cfg("rules", "default")
+        default_reasoner = self.get_cfg("reasoner", "nsfr")
+        default_arch = self.get_cfg("architecture", "mlp")
 
         num_in_features = (
             int(np.prod(self.observation_space))
@@ -256,14 +260,15 @@ class IQLAgent(OfflineAgentBase):
         return self._compute_q(self.q_network, obs)
 
     def configure_optimizers(self):
-        opt_q = optim.Adam(list(self.q_network.parameters()) + list(self.q_network2.parameters()), lr=self.cfg.agent.lr)
-        opt_v = optim.Adam(self.value_network.parameters(), lr=self.cfg.agent.lr)
+        lr = self.lr
+        opt_q = optim.Adam(list(self.q_network.parameters()) + list(self.q_network2.parameters()), lr=lr)
+        opt_v = optim.Adam(self.value_network.parameters(), lr=lr)
 
         if self.is_modular:
             actor_params = list(self.model.policy_modules.parameters()) + list(self.model.blender.parameters())
-            opt_a = optim.Adam(actor_params, lr=self.cfg.agent.lr)
+            opt_a = optim.Adam(actor_params, lr=lr)
         else:
-            opt_a = optim.Adam(self.actor.parameters(), lr=self.cfg.agent.lr)
+            opt_a = optim.Adam(self.actor.parameters(), lr=lr)
         return [opt_q, opt_v, opt_a]
 
     def validation_step(self, batch, batch_idx):

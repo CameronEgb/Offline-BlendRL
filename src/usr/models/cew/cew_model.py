@@ -56,8 +56,8 @@ class CEWModel(nn.Module, DynamicTopologyProtocol, ExtraStateProtocol, HasModelC
 
     def __init__(
         self,
-        n_inputs: int,
-        n_actions: int,
+        n_inputs: int = 1,
+        n_actions: int = 2,
         cql_alpha: float = 1.0,
         lr: float = 3e-4,
         ecm_dthr: float = 0.1,
@@ -66,6 +66,7 @@ class CEWModel(nn.Module, DynamicTopologyProtocol, ExtraStateProtocol, HasModelC
         fyd: bool = False,
         fyd_top_k: int | None = None,
         stabilize: bool = True,
+        **kwargs,
     ):
         super().__init__()
         self.n_inputs = n_inputs

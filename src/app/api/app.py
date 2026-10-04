@@ -389,12 +389,13 @@ def run_experiment_task(job_id: str, req: LaunchRequest):
             _sync_job(job_id)
         JOBS_DIR.mkdir(parents=True, exist_ok=True)
         log_file = open(JOBS_DIR / f"{job_id}.log", "w", encoding="utf-8")
-        for line in process.stdout:
-            line = line.rstrip("\r\n")
-            with _jobs_lock:
-                _append_log(job, line)
-            log_file.write(line + "\n")
-            log_file.flush()
+        if process.stdout is not None:
+            for line in process.stdout:
+                line = line.rstrip("\r\n")
+                with _jobs_lock:
+                    _append_log(job, line)
+                log_file.write(line + "\n")
+                log_file.flush()
         process.wait()
         with _jobs_lock:
             job["returncode"] = process.returncode
@@ -865,7 +866,7 @@ def tensorboard_start():
         logdir.mkdir(parents=True, exist_ok=True)
         JOBS_DIR.mkdir(parents=True, exist_ok=True)
         port = _free_port()
-        log_path = PROJECT_ROOT / JOBS_DIR / "tensorboard.log"
+        log_path = JOBS_DIR / "tensorboard.log"
         cmd = [sys.executable, "-m", "tensorboard.main", "--logdir", str(logdir),
                "--host", "127.0.0.1", "--port", str(port), "--reload_interval", "5"]
         popen_kwargs: dict[str, Any] = {}

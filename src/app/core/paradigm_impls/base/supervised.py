@@ -52,13 +52,29 @@ class SupervisedDataModule(L.LightningDataModule, BaseDataModule):
         self._delegate = None
         self.input_dim = 64
         if cfg is not None:
-            self.setup(cfg)
+            self.setup(cfg=cfg)
 
-    def setup(self, cfg: Any = None, stage: str | None = None) -> None:
+    def setup(self, stage: str | None = None, cfg: Any = None) -> None:
         """Initialize data module from config if loaders were not passed at init."""
         if cfg is not None and not isinstance(cfg, str):
             self._cfg = cfg
+        elif stage is not None and not isinstance(stage, str) and cfg is None:
+            self._cfg = stage
         if self._train_loader is None and self._cfg is not None:
+            dm_name = (
+                self._cfg.get("data_module")
+                if hasattr(self._cfg, "get")
+                else getattr(self._cfg, "data_module", None)
+            )
+            if dm_name and dm_name != "SupervisedDataModule":
+                from src.app.core.paradigm_loader import get_component
+
+                cls = get_component(dm_name)
+                if cls is not None:
+                    self._delegate = cls(self._cfg)
+                    self.input_dim = getattr(self._delegate, "input_dim", 64)
+                    return
+
             if hasattr(self._cfg, "get") and (
                 self._cfg.get("early_prediction")
                 or (hasattr(self._cfg, "env") and getattr(self._cfg.env, "name", None) == "mimic")
@@ -263,24 +279,3 @@ class SupervisedRunner(BaseParadigmRunner):
         trainer = L.Trainer(**trainer_kwargs)
         trainer.fit(model, train_dataloaders=train_loader, val_dataloaders=val_loader)
         return trainer
-
-    def run(
-        self,
-        cfg: Any,
-        data_module: BaseDataModule,
-        eval_protocol: BaseEvalProtocol,
-        callbacks: list,
-        context: dict,
-    ) -> None:
-        """Standard execution loop for supervised experiments via methods dict."""
-        from src.app.pipeline.local_runner import (
-            _setup_output_dirs,
-            run_methods,
-            run_plotting_phase,
-        )
-
-        _setup_output_dirs(cfg)
-        run_methods(cfg, context)
-
-        if not cfg.get("no_plot", False):
-            run_plotting_phase(cfg, context)

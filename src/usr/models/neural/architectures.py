@@ -80,6 +80,7 @@ class NeuralBlenderMLP(nn.Module):
 class CNNActor(nn.Module):
     def __init__(self, n_actions=18):
         super().__init__()
+        self.n_actions = n_actions
         self.network = nn.Sequential(
             layer_init(nn.Conv2d(4, 32, 8, stride=4)),
             nn.ReLU(),

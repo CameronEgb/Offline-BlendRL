@@ -87,13 +87,19 @@ def main(cfg: DictConfig):
 
     # 2. Build Model / Agent based on paradigm
     if paradigm_name == "supervised":
-        from src.usr.eval.early_prediction.lightning_module import EPSepsisLightningModule
-
         input_dim = getattr(datamodule, "input_dim", 64)
 
-        model_cfg = cfg.get("model", {})
+        model_cfg = cfg.get("model", {}) if hasattr(cfg, "get") else getattr(cfg, "model", {})
         arch_name = str(model_cfg.get("architecture", model_cfg.get("name", "lstm"))).lower()
         lr = float(model_cfg.get("lr", cfg.get("lr", 1e-3)))
+
+        # Check if an explicit LightningModule component was registered for this architecture
+        target_module_name = model_cfg.get("lightning_module") or model_cfg.get("module") or arch_name
+        SupervisedModelCls = get_component(target_module_name)
+        if SupervisedModelCls is None:
+            from src.usr.eval.early_prediction.lightning_module import EPSepsisLightningModule
+
+            SupervisedModelCls = EPSepsisLightningModule
 
         kwargs = {}
         for k in (
@@ -118,8 +124,8 @@ def main(cfg: DictConfig):
             elif hasattr(cfg, "get") and cfg.get(k) is not None:
                 kwargs[k] = cfg.get(k)
 
-        print(f"Supervised Paradigm: constructing {arch_name.upper()} model (input_dim={input_dim}, lr={lr})")
-        model = EPSepsisLightningModule(architecture_name=arch_name, input_dim=input_dim, lr=lr, **kwargs)
+        print(f"Supervised Paradigm: constructing {SupervisedModelCls.__name__} ({arch_name.upper()}, input_dim={input_dim}, lr={lr})")
+        model = SupervisedModelCls(architecture_name=arch_name, input_dim=input_dim, lr=lr, **kwargs)
     else:
         auto_discover()
         agent_cfg = cfg.agent

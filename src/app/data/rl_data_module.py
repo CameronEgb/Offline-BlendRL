@@ -23,14 +23,16 @@ class RLDataModule(L.LightningDataModule, BaseDataModule):
     def __init__(self, cfg: Any = None):
         super().__init__()
         self.cfg = cfg
-        self.reader = None
-        self.val_reader = None
-        self.train_dataset = None
-        self.val_dataset = None
+        self.reader: DatasetReader | None = None
+        self.val_reader: DatasetReader | None = None
+        self.train_dataset: Dataset | None = None
+        self.val_dataset: Dataset | None = None
 
-    def setup(self, stage: str | None = None, cfg: Any = None):
-        if cfg is not None:
+    def setup(self, stage: str | None = None, cfg: Any = None) -> None:
+        if cfg is not None and not isinstance(cfg, str):
             self.cfg = cfg
+        elif stage is not None and not isinstance(stage, str) and cfg is None:
+            self.cfg = stage
         if self.cfg is None:
             return
 

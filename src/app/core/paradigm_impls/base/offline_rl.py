@@ -48,23 +48,4 @@ class OfflineRLRunner(BaseParadigmRunner):
     Calls run_offline_phase() directly from local_runner, which subprocesses
     train.py for each agent×dataset combination with the correct Hydra overrides.
     """
-
-    def run(
-        self,
-        cfg,
-        data_module: BaseDataModule,
-        eval_protocol: BaseEvalProtocol,
-        callbacks: list,
-        context: dict,
-    ) -> None:
-        from src.app.pipeline.local_runner import (
-            _setup_output_dirs,
-            run_methods,
-            run_plotting_phase,
-        )
-
-        _setup_output_dirs(cfg)
-        run_methods(cfg, context)
-
-        if not cfg.get("no_plot", False):
-            run_plotting_phase(cfg, context)
+    pass

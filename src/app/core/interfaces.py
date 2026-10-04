@@ -17,8 +17,8 @@ class BaseDataModule(ABC):
     """
 
     @abstractmethod
-    def setup(self, cfg) -> None:
-        """Initialize from config (load dataset, build splits, etc.)."""
+    def setup(self, stage: str | None = None, cfg: Any = None) -> None:
+        """Initialize from config or stage (load dataset, build splits, etc.)."""
 
     @abstractmethod
     def train_dataloader(self):
@@ -47,9 +47,27 @@ class BaseParadigmRunner(ABC):
     defined by the paradigm.
     """
 
-    @abstractmethod
-    def run(self, cfg, data_module: BaseDataModule, eval_protocol: BaseEvalProtocol, callbacks: list, context: dict) -> None:
-        """Execute the training loop."""
+    def run(
+        self,
+        cfg: Any,
+        data_module: BaseDataModule | None = None,
+        eval_protocol: BaseEvalProtocol | None = None,
+        callbacks: list | None = None,
+        context: dict | None = None,
+    ) -> None:
+        """Execute the standard paradigm training loop (setup → methods → plot)."""
+        from src.app.pipeline.local_runner import (
+            _setup_output_dirs,
+            run_methods,
+            run_plotting_phase,
+        )
+
+        _setup_output_dirs(cfg)
+        if context is not None:
+            run_methods(cfg, context)
+
+        if not (hasattr(cfg, "get") and cfg.get("no_plot", False)):
+            run_plotting_phase(cfg, context or {})
 
 
 class BaseMetaPipeline(ABC):

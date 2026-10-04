@@ -29,6 +29,10 @@ class BaseAgent(L.LightningModule, ABC):
 
     def __init__(self, cfg: dict[str, Any]):
         super().__init__()
+        from omegaconf import DictConfig, OmegaConf
+
+        if isinstance(cfg, dict) and not isinstance(cfg, DictConfig):
+            cfg = OmegaConf.create(cfg)
         self.cfg = cfg
         self.automatic_optimization = False
 
@@ -218,10 +222,11 @@ class BaseAgent(L.LightningModule, ABC):
         if n_envs is None:
             n_envs = self.get_cfg("num_envs", 4)
 
-        algorithm = self.get_cfg("algorithm", self.get_cfg("name", self.cfg.env.name))
+        env_name = self.get_cfg("env.name", getattr(getattr(self.cfg, "env", None), "name", None) or "cartpole")
+        algorithm = self.get_cfg("algorithm", self.get_cfg("name", env_name))
 
         self.env = VectorizedBaseEnv.from_name(
-            self.cfg.env.name, n_envs=n_envs, mode=algorithm, seed=self.get_cfg("seed", getattr(self.cfg, "seed", 1))
+            env_name, n_envs=n_envs, mode=algorithm, seed=self.get_cfg("seed", getattr(self.cfg, "seed", 1))
         )
 
         obs = self.env.reset()

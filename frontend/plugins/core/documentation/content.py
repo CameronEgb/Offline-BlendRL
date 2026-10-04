@@ -591,7 +591,7 @@ class MyToolPlugin(Plugin):
 <h4>Python Implementation (<code>agent.py</code>)</h4>
 <pre><code>import torch
 from src.usr.methods.base_agent import OfflineAgentBase  # or OnlineAgentBase
-from src.usr.methods.registry import register_agent
+from src.usr.methods.agent_registry import register_agent
 
 @register_agent("my_cql", "my_cql_variant")
 class MyCQLAgent(OfflineAgentBase):

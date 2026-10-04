@@ -47,23 +47,4 @@ class OnlineRLRunner(BaseParadigmRunner):
     Dispatches declared online methods (e.g. PPO, BlendRL online) sequentially
     or via cluster jobs, followed by the automated plotting phase.
     """
-
-    def run(
-        self,
-        cfg,
-        data_module: BaseDataModule,
-        eval_protocol: BaseEvalProtocol,
-        callbacks: list,
-        context: dict,
-    ) -> None:
-        from src.app.pipeline.local_runner import (
-            _setup_output_dirs,
-            run_methods,
-            run_plotting_phase,
-        )
-
-        _setup_output_dirs(cfg)
-        run_methods(cfg, context)
-
-        if not cfg.get("no_plot", False):
-            run_plotting_phase(cfg, context)
+    pass

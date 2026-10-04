@@ -24,13 +24,18 @@ class CQLAgent(OfflineAgentBase):
         super().__init__(cfg)
         self.save_hyperparameters()
         self.lr = self.get_cfg("lr", 3e-4)
-        self.gamma = float(self.get_cfg("gamma", getattr(self.cfg.env, "gamma", 0.99)))
+        self.gamma = float(self.get_cfg("gamma", 0.99))
 
         self._init_env(n_envs=1)
-        algorithm = self.get_cfg("algorithm", self.get_cfg("name", cfg.env.name))
+        env_name = self.get_cfg("env.name", getattr(getattr(self.cfg, "env", None), "name", "cartpole"))
+        algorithm = self.get_cfg("algorithm", self.get_cfg("name", env_name))
 
         # Check if modular/hybrid architecture is configured
         self.is_modular = self.is_hybrid_configured()
+
+        default_rules = self.get_cfg("rules", "default")
+        default_reasoner = self.get_cfg("reasoner", "nsfr")
+        default_arch = self.get_cfg("architecture", "mlp")
 
         if self.is_modular:
             from src.app.core.model_registry import build_model
@@ -39,12 +44,12 @@ class CQLAgent(OfflineAgentBase):
                 "blendrl",
                 env=self.env,
                 device=self.device,
-                rules=self.get_cfg("rules", getattr(cfg.env, "rules", "default")),
+                rules=self.get_cfg("rules", default_rules),
                 actor_mode=self.get_cfg("actor_mode", "hybrid"),
                 blender_mode=self.get_cfg("blender_mode", "neural"),
                 blend_function=self.get_cfg("blend_function", "softmax"),
-                reasoner=self.get_cfg("reasoner", getattr(cfg.env, "reasoner", "nsfr")),
-                architecture=self.get_cfg("architecture", getattr(cfg.env, "architecture", "mlp")),
+                reasoner=self.get_cfg("reasoner", default_reasoner),
+                architecture=self.get_cfg("architecture", default_arch),
                 modules=self.get_cfg("modules", None),
                 cfg=self.cfg,
             )
@@ -52,12 +57,12 @@ class CQLAgent(OfflineAgentBase):
                 "blendrl",
                 env=self.env,
                 device=self.device,
-                rules=self.get_cfg("rules", getattr(cfg.env, "rules", "default")),
+                rules=self.get_cfg("rules", default_rules),
                 actor_mode=self.get_cfg("actor_mode", "hybrid"),
                 blender_mode=self.get_cfg("blender_mode", "neural"),
                 blend_function=self.get_cfg("blend_function", "softmax"),
-                reasoner=self.get_cfg("reasoner", getattr(cfg.env, "reasoner", "nsfr")),
-                architecture=self.get_cfg("architecture", getattr(cfg.env, "architecture", "mlp")),
+                reasoner=self.get_cfg("reasoner", default_reasoner),
+                architecture=self.get_cfg("architecture", default_arch),
                 modules=self.get_cfg("modules", None),
                 cfg=self.cfg,
             )
@@ -65,7 +70,7 @@ class CQLAgent(OfflineAgentBase):
         else:
             from src.app.core.model_registry import build_model
 
-            model_arch = self.resolve_model_name(default=getattr(cfg.env, "architecture", "mlp"))
+            model_arch = self.resolve_model_name(default=default_arch)
 
             is_cew = (
                 model_arch == "cew"

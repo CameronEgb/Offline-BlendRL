@@ -35,8 +35,8 @@ class PPOAgent(BaseAgent):
         if self.num_minibatches is not None:
             self.batch_size = (self.num_envs * self.num_steps) // self.num_minibatches
 
-        self.gamma = float(self.get_cfg("gamma", getattr(self.cfg.env, "gamma", 0.99)))
-        self.gae_lambda = float(self.get_cfg("gae_lambda", getattr(self.cfg.env, "gae_lambda", 0.95)))
+        self.gamma = float(self.get_cfg("gamma", 0.99))
+        self.gae_lambda = float(self.get_cfg("gae_lambda", 0.95))
         self.clip_coef = self.get_cfg("clip_coef", 0.2)
         self.ent_coef = self.get_cfg("ent_coef", 0.01)
         self.blend_ent_coef = self.get_cfg("blend_ent_coef", 0.01)
@@ -49,17 +49,18 @@ class PPOAgent(BaseAgent):
         self._init_env(n_envs=self.num_envs)
 
         self.dataset_writer = None
-        if getattr(cfg, "save_dataset", False) and getattr(cfg, "dataset_path", None):
+        if self.get_cfg("save_dataset", False) and self.get_cfg("dataset_path", None):
             from src.app.dataset_utils import DatasetWriter
 
-            self.dataset_writer = DatasetWriter(save_dir=cfg.dataset_path, env_name=cfg.env.name, cfg=cfg)
+            env_name = self.get_cfg("env.name", getattr(getattr(self.cfg, "env", None), "name", "env"))
+            self.dataset_writer = DatasetWriter(save_dir=self.get_cfg("dataset_path"), env_name=env_name, cfg=self.cfg)
 
         # Check if modular/hybrid policy is configured
         self.is_modular = self.is_hybrid_configured()
 
-        default_rules = getattr(cfg.env, "rules", "default")
-        default_reasoner = getattr(cfg.env, "reasoner", "nsfr")
-        default_arch = getattr(cfg.env, "architecture", "mlp")
+        default_rules = self.get_cfg("rules", "default")
+        default_reasoner = self.get_cfg("reasoner", "nsfr")
+        default_arch = self.get_cfg("architecture", "mlp")
 
         if self.is_modular:
             from src.app.core.model_registry import build_model

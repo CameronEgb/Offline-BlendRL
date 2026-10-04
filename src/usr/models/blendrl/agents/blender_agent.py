@@ -375,17 +375,18 @@ class BlenderActorCritic(nn.Module):
     def __init__(
         self,
         env,
-        rules,
-        actor_mode,
-        blender_mode,
-        blend_function,
-        reasoner,
-        device,
+        rules="default",
+        actor_mode="hybrid",
+        blender_mode="neural",
+        blend_function="softmax",
+        reasoner="nsfr",
+        device=None,
         architecture=None,
         rng=None,
         explain=False,
         modules=None,
         cfg=None,  # For accessing other agent hyperparams
+        **kwargs,
     ):
         super().__init__()
         self.device = device

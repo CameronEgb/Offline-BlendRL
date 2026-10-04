@@ -383,5 +383,71 @@ def test_hybrid_detection_helpers():
     assert agent4.resolve_model_name() == "dueling_resnet"
 
 
+def test_agent_initialization_with_plain_dicts():
+    from src.usr.methods.cql_agent import CQLAgent
+    from src.usr.methods.iql_agent import IQLAgent
+    from src.usr.methods.ppo_agent import PPOAgent
+
+    plain_ppo_cfg = {
+        "agent": {"algorithm": "ppo", "lr": 1e-4, "batch_size": 32},
+        "model": "mlp",
+        "env": {"name": "cartpole", "offline_only": False, "n_actions": 2, "obs_dim": 4},
+    }
+    ppo = PPOAgent(plain_ppo_cfg)
+    assert ppo.lr == 1e-4
+    assert ppo.batch_size == 32
+
+    plain_cql_cfg = {
+        "agent": {"algorithm": "cql", "lr": 2e-4, "gamma": 0.95},
+        "model": "mlp",
+        "env": {"name": "cartpole", "offline_only": True, "n_actions": 2, "obs_dim": 4},
+    }
+    cql = CQLAgent(plain_cql_cfg)
+    assert cql.lr == 2e-4
+    assert cql.gamma == 0.95
+
+    plain_iql_cfg = {
+        "agent": {"algorithm": "iql", "lr": 3e-4, "tau": 0.7, "beta": 3.0},
+        "model": "mlp",
+        "env": {"name": "cartpole", "offline_only": True, "n_actions": 2, "obs_dim": 4},
+    }
+    iql = IQLAgent(plain_iql_cfg)
+    assert iql.lr == 3e-4
+    assert iql.tau == 0.7
+    assert iql.beta == 3.0
+
+
+def test_dynamic_build_model_cew_and_blendrl():
+    from src.usr.models.blendrl.agents.blender_agent import BlenderActorCritic
+    from src.usr.models.cew.cew_model import CEWModel
+
+    m_cew = build_model("cew", n_inputs=3, n_actions=4)
+    assert isinstance(m_cew, CEWModel)
+
+    mock_env = mock.MagicMock()
+    mock_env.name = "cartpole"
+    mock_env.n_actions = 2
+    mock_env.reset.return_value = (torch.zeros(1, 4), {})
+
+    m_blend = build_model(
+        "blendrl",
+        env=mock_env,
+        actor_mode="neural",
+        modules=[{"module_type": "neural", "architecture": "mlp"}],
+    )
+    assert isinstance(m_blend, BlenderActorCritic)
+
+
+def test_load_cleanrl_agent_parameterized_actions():
+    from src.app.core.factories import load_cleanrl_agent
+
+    agent_default = load_cleanrl_agent()
+    assert agent_default.n_actions == 18
+
+    agent_custom = load_cleanrl_agent(n_actions=4)
+    assert agent_custom.n_actions == 4
+
+
+
 
 

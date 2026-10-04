@@ -161,52 +161,18 @@ def build_model(
                 pass
 
     merged_kwargs = {**model_params, **kwargs}
+    clean_name = model_name.lower().strip()
 
-    # Handle blendrl / composite models
-    if model_name.lower() in ("blendrl", "blender", "hybrid"):
-        from src.usr.models.blendrl.agents.blender_agent import BlenderActorCritic
-
-        # Standard defaults for BlendRL
-        actor_mode = merged_kwargs.pop("actor_mode", "hybrid")
-        blender_mode = merged_kwargs.pop("blender_mode", "neural")
-        blend_function = merged_kwargs.pop("blend_function", "softmax")
-        reasoner = merged_kwargs.pop("reasoner", "nsfr")
-        rules = merged_kwargs.pop("rules", "default")
-        modules = merged_kwargs.pop("modules", None)
-        cfg = merged_kwargs.pop("cfg", None)
-
-        return BlenderActorCritic(
-            env=env,
-            rules=rules,
-            actor_mode=actor_mode,
-            blender_mode=blender_mode,
-            blend_function=blend_function,
-            reasoner=reasoner,
-            device=device,
-            modules=modules,
-            cfg=cfg,
-            **merged_kwargs,
-        ).to(device)
-
-    # Handle CEW model
-    if model_name.lower() == "cew":
-        from src.usr.models.cew.cew_model import CEWModel
-
-        return CEWModel(
-            n_inputs=obs_dim or 1,
-            n_actions=n_actions or 2,
-            cql_alpha=float(merged_kwargs.get("cql_alpha", 1.0)),
-            lr=float(merged_kwargs.get("lr", 3e-4)),
-            ecm_dthr=float(merged_kwargs.get("ecm_dthr", 0.1)),
-            eps=float(merged_kwargs.get("eps", 0.1)),
-            kappa=float(merged_kwargs.get("kappa", 0.6)),
-            fyd=bool(merged_kwargs.get("fyd", False)),
-            fyd_top_k=merged_kwargs.get("fyd_top_k", None),
-            stabilize=bool(merged_kwargs.get("stabilize", True)),
-        ).to(device)
+    # Defaults for BlendRL composite actor-critic
+    if clean_name in ("blendrl", "blender", "hybrid"):
+        merged_kwargs.setdefault("actor_mode", "hybrid")
+        merged_kwargs.setdefault("blender_mode", "neural")
+        merged_kwargs.setdefault("blend_function", "softmax")
+        merged_kwargs.setdefault("reasoner", "nsfr")
+        merged_kwargs.setdefault("rules", "default")
 
     # Resolve architecture from MODEL_REGISTRY
-    cls_or_fn = get_model_class(model_name)
+    cls_or_fn = get_model_class(clean_name)
 
     call_kwargs = {}
     if obs_dim is not None:
