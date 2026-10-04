@@ -17,19 +17,24 @@ for p in [
     if os.path.isdir(p) and p not in sys.path:
         sys.path.insert(0, p)
 
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
 import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import yaml
 
-matplotlib.use("Agg")
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-
-import matplotlib.pyplot as plt
-
 # Import styling and alias resolution from the unified method style registry
-from src.usr.methods.method_style_registry import clean_label, get_canonical_method_name, get_method_aliases, get_style_info
+from src.usr.methods.method_style_registry import (
+    clean_label,
+    get_canonical_method_name,
+    get_method_aliases,
+    get_style_info,
+)
 
 
 def moving_average(a: np.ndarray, n: int = 5) -> np.ndarray:

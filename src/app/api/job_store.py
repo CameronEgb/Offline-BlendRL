@@ -8,10 +8,9 @@ import signal
 import sqlite3
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
-
-from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
 
