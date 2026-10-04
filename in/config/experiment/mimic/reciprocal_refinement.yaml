@@ -10,7 +10,7 @@
 
 defaults:
 - mimic/_base
-task: reciprocal_refinement
+workflow: sepsis_reciprocal
 
 methods:
   cql_dnn:

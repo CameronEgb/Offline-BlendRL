@@ -1,14 +1,14 @@
 id: transfer_learning
-name: Transfer Learning (CartPole -> Acrobot)
+name: Transfer Learning (CartPole -> MountainCar)
 description: Trains a source policy on CartPole, then wires the checkpoint weights
-  to warm-start fine-tuning on Acrobot.
+  to warm-start fine-tuning on MountainCar.
 nodes:
   source_trainer:
     id: source_trainer
     label: CartPole PPO (Source)
     category: paradigm
     paradigm: online_rl
-    experiment_ref: cartpole/cartpole_demo
+    experiment_ref: csc510/cartpole_demo
     overrides: []
     pos:
     - 60
@@ -41,12 +41,12 @@ nodes:
       required: false
   target_fine_tuner:
     id: target_fine_tuner
-    label: Acrobot PPO (Target)
+    label: MountainCar PPO (Target)
     category: paradigm
     paradigm: online_rl
     experiment_ref: cartpole/quick_test
     overrides:
-    - ++env=acrobot
+    - env=mountaincar
     - ++train.freeze_backbone=false
     pos:
     - 440

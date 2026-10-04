@@ -197,10 +197,20 @@ def main(cfg: DictConfig):
     if isinstance(ep_cfg, DictConfig):
         ep_cfg = OmegaConf.to_container(ep_cfg, resolve=True)
 
+    ds_path = (
+        ep_cfg.get("dataset_path")
+        or cfg.get("dataset_path")
+        or (cfg.get("env", {}).get("dataset_name") if cfg.get("env") else None)
+    )
+    if ds_path:
+        ds_resolved = str(resolve_mimic_npz_path(ds_path, site_cfg=cfg.get("site", None)))
+    else:
+        ds_resolved = str(resolve_mimic_npz_path(site_cfg=cfg.get("site", None)))
+
     defaults = {
         "n_trials": 30,
         "model_target": "all",
-        "dataset_path": str(resolve_mimic_npz_path()),
+        "dataset_path": ds_resolved,
         "checkpoint": "results/checkpoints/mimic/tune_mimic_cql",
         "window_hours": 12,
         "use_volatility": True,
@@ -218,6 +228,9 @@ def main(cfg: DictConfig):
                 defaults["model_target"] = arg.split("=")[1]
             else:
                 defaults["model_target"] = sys.argv[i + 1]
+
+    if "output_dir" in ep_cfg and "out_dir" not in ep_cfg:
+        ep_cfg["out_dir"] = ep_cfg["output_dir"]
 
     args = Dict2Obj(ep_cfg, defaults)
 
@@ -352,3 +365,8 @@ def main(cfg: DictConfig):
         print(f"Saved optimization history plot to {hist_path}")
     except Exception as e:
         print(f"Warning: Could not save optimization history plot: {e}")
+
+
+if __name__ == "__main__":
+    main()
+

@@ -19,12 +19,12 @@ def create_transfer_learning_preset() -> WorkflowGraph:
     """1. Transfer Learning: Experiment 1 trains a policy, passed into Experiment 2 in a different env."""
     graph = WorkflowGraph(
         id="transfer_learning",
-        name="Transfer Learning (CartPole -> Acrobot)",
-        description="Trains a source policy on CartPole, then wires the checkpoint weights to warm-start fine-tuning on Acrobot.",
+        name="Transfer Learning (CartPole -> MountainCar)",
+        description="Trains a source policy on CartPole, then wires the checkpoint weights to warm-start fine-tuning on MountainCar.",
     )
-    n1 = make_online_rl_node("source_trainer", "CartPole PPO (Source)", experiment_ref="cartpole/cartpole_demo", pos_x=60, pos_y=120)
-    n2 = make_online_rl_node("target_fine_tuner", "Acrobot PPO (Target)", experiment_ref="cartpole/quick_test", pos_x=440, pos_y=120)
-    n2.overrides = ["++env=acrobot", "++train.freeze_backbone=false"]
+    n1 = make_online_rl_node("source_trainer", "CartPole PPO (Source)", experiment_ref="csc510/cartpole_demo", pos_x=60, pos_y=120)
+    n2 = make_online_rl_node("target_fine_tuner", "MountainCar PPO (Target)", experiment_ref="cartpole/quick_test", pos_x=440, pos_y=120)
+    n2.overrides = ["env=mountaincar", "++train.freeze_backbone=false"]
 
     graph.add_node(n1)
     graph.add_node(n2)
@@ -39,7 +39,7 @@ def create_online_vs_offline_preset() -> WorkflowGraph:
         name="Online vs. Offline RL Comparison",
         description="Exploration buffer collected by online PPO is piped to offline IQL, and both performance curves are compared.",
     )
-    n1 = make_online_rl_node("online_ppo", "CartPole PPO (Online)", experiment_ref="cartpole/cartpole_demo", pos_x=60, pos_y=80)
+    n1 = make_online_rl_node("online_ppo", "CartPole PPO (Online)", experiment_ref="csc510/cartpole_demo", pos_x=60, pos_y=80)
     n2 = make_offline_rl_node("offline_iql", "CartPole IQL (Offline)", experiment_ref="cartpole/offline_cartpole", pos_x=440, pos_y=80)
     n3 = make_plot_evaluator_node("comparator", "Convergence Comparator", pos_x=800, pos_y=150)
 

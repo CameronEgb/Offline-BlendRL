@@ -191,23 +191,26 @@ def main():
         "paradigm_def": paradigm_def,
     }
 
-    # Extract task name
-    task_name = cfg.get("task", "rl")
-    if not task_name:
-        task_name = "rl"
+    # Warn if stale task: key is present in config
+    stale_task = cfg.get("task", None)
+    if stale_task:
+        print(
+            f"[Deprecation Warning] 'task: {stale_task}' is no longer used. "
+            f"Routing is now handled by 'paradigm:' and 'workflow:'. "
+            f"Remove 'task:' from your experiment config."
+        )
 
-    from src.app.pipeline.task_registry import get_task
-
-    task_fn = get_task(task_name)
-
-    # Introspect task_fn to see if it accepts args (backwards compatibility for custom tasks)
-    import inspect
-
-    sig = inspect.signature(task_fn)
-    if "args" in sig.parameters:
-        task_fn(cfg, None, context)
+    # Dispatch: workflow engine or direct paradigm runner
+    workflow_id = cfg.get("workflow", None)
+    if workflow_id:
+        from src.app.pipeline.workflow.executor import run_workflow
+        run_workflow(workflow_id, cfg, context)
+    elif is_interactive:
+        from src.app.pipeline.local_runner import run_local_training
+        run_local_training(cfg, context)
     else:
-        task_fn(cfg, context)
+        from src.app.pipeline.slurm_runner import run_slurm_training
+        run_slurm_training(cfg, context)
 
 
 if __name__ == "__main__":

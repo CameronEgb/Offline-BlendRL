@@ -8,7 +8,7 @@ nodes:
     label: CartPole PPO (Online)
     category: paradigm
     paradigm: online_rl
-    experiment_ref: cartpole/cartpole_demo
+    experiment_ref: csc510/cartpole_demo
     overrides: []
     pos:
     - 60

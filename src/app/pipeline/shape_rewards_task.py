@@ -6,13 +6,11 @@ from pathlib import Path
 import torch
 
 from src.app.dataset_utils import DatasetReader, DatasetWriter
-from src.app.pipeline.task_registry import register_task
 
 log = logging.getLogger(__name__)
 
 
-@register_task("shape_rewards")
-def run_shape_rewards(cfg, args, context):
+def run_shape_rewards(cfg, context=None):
     """
     Offline task to shape or transform rewards in a dataset.
     This replaces the old on-the-fly 'transform_rewards' hook.
