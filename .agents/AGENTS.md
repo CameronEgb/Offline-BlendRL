@@ -220,7 +220,7 @@ See `pipeline-crud` skill for adding new plotters.
 - **`src/app/pipeline/slurm.py`**: Slurm header builder (`generate_sbatch_header`), job submission (`submit_sbatch`). Mail: `--mail-type=END,FAIL`, `--mail-user=egbertcm23@gmail.com`.
 - **`src/app/pipeline/local_runner.py`**: Local sequential phase execution (`_setup_output_dirs` → `run_methods` → `run_plotting_phase`).
 - **`src/app/pipeline/slurm_runner.py`**: Cluster batch script generation and job dependency orchestration.
-- **`src/app/pipeline/shape_rewards_task.py`**: Offline ETL utility — `run_shape_rewards(cfg, context=None)`. Not a registered task; called as a library function from workflow transform nodes.
+- **`src/app/pipeline/shape_rewards.py`**: Offline ETL utility — `run_shape_rewards(cfg, context=None)`. Not a registered task; called as a library function from workflow transform nodes.
 - **`src/app/pipeline/optuna_utils.py`**: SQLite URL constants, study management, dashboard launching.
 - **`src/app/pipeline/validation.py`**: Pre-flight paradigm compatibility and config validation.
 
