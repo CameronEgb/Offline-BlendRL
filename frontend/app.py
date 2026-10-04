@@ -1,45 +1,86 @@
-"""Spyder-inspired research workspace. Configs are composed and trained by the NeSyRL backend."""
+"""Spyder-inspired research workspace for deep learning and reinforcement learning experimentation."""
 import argparse
-from dataclasses import asdict, replace
-from datetime import datetime
 import json
 import os
-from pathlib import Path
 import sys
+from dataclasses import asdict, replace
+from datetime import datetime
+from pathlib import Path
 from typing import Optional
+
+import yaml
 
 if sys.platform == "darwin" and "QTWEBENGINE_CHROMIUM_FLAGS" not in os.environ:
     os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--disable-gpu"
 
-from PyQt6.QtCore import Qt, QTimer, QRegularExpression, QUrl
-from PyQt6.QtGui import QAction, QFont, QRegularExpressionValidator, QDesktopServices, QIcon
+from PyQt6.QtCore import QRegularExpression, Qt, QTimer, QUrl
+from PyQt6.QtGui import QAction, QDesktopServices, QFont, QIcon, QRegularExpressionValidator
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QDockWidget, QTabWidget, QPlainTextEdit, QLineEdit, QComboBox, QSpinBox, QCheckBox,
-    QDoubleSpinBox, QPushButton, QTreeWidget, QTreeWidgetItem, QToolBar,
-    QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
-    QProgressBar, QScrollArea, QFileDialog, QMessageBox, QDialog, QSplitter,
-    QFrame, QToolButton, QSlider, QStyle, QLabel,
+    QAbstractItemView,
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QDockWidget,
+    QDoubleSpinBox,
+    QFileDialog,
+    QFormLayout,
+    QFrame,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QPlainTextEdit,
+    QProgressBar,
+    QPushButton,
+    QScrollArea,
+    QSlider,
+    QSpinBox,
+    QSplitter,
+    QStyle,
+    QTableWidget,
+    QTableWidgetItem,
+    QTabWidget,
+    QToolBar,
+    QToolButton,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
-from .api import DEFAULT_URL, Backend
-from .model import (BASE_EXPERIMENT, FINAL_STATUSES, LIVE_STATUSES, Config, Store, available_metrics, example_runs,
-                    latest, metric_points, new_run, sample)
-from .settings import SettingsManager
-from .theme import STYLE, ThemeManager, theme_color
-from .theme_builder import ThemeBuilder
-from .widgets import Chart, MetricCard, ToggleSlider, YamlHighlighter, label
+
 from .about import AboutDialog, AsciiTheta
+from .api import DEFAULT_URL, Backend
+from .components_panel import ComponentsPanel
 from .config_tree import ConfigTreeWidget
 from .config_viewer import ConfigViewer
-from .components_panel import ComponentsPanel
+from .hub import HubClient, HubDialog
+from .model import (
+    BASE_EXPERIMENT,
+    FINAL_STATUSES,
+    LIVE_STATUSES,
+    Config,
+    Store,
+    available_metrics,
+    example_runs,
+    latest,
+    metric_points,
+    new_run,
+    sample,
+)
 from .plots import PlotViewer
+from .plugins import PluginManager
 from .queue_panel import QueuePanel
+from .settings import SettingsManager
 from .sidetabs import SideTabs
 from .tensorboard import TensorBoardPanel
 from .terminal import TerminalPanel
-from .plugins import PluginManager
-from .hub import HubClient, HubDialog
-
+from .theme import STYLE, ThemeManager, theme_color
+from .theme_builder import ThemeBuilder
+from .widgets import Chart, MetricCard, ToggleSlider, YamlHighlighter, label
+from .workflows import WorkflowsPanel
 
 # Metrics the monitor's second chart can show: key -> (card title, chart title, subtitle, value format)
 SECOND_METRICS = {
@@ -73,15 +114,26 @@ class Window(QMainWindow):
         )
         self.pane_sliders = {}
         self.plugin_sliders = {}
+        data_p = Path(data_dir).resolve()
+        if data_p.name == "runs" and data_p.parent.name == ".thetaide":
+            workspace_dir = data_p.parent.parent
+            ide_data_dir = data_p.parent
+        elif data_p.name == ".thetaide":
+            workspace_dir = data_p.parent
+            ide_data_dir = data_p
+        else:
+            workspace_dir = data_p.parent
+            ide_data_dir = data_p
+
         self.plugin_manager = PluginManager(
             self,
-            [Path(__file__).parent / "plugins" / "core", Path(__file__).parent / "plugins", Path(data_dir) / "plugins"],
+            [Path(__file__).parent / "plugins" / "core", Path(__file__).parent / "plugins", ide_data_dir / "plugins"],
             settings_manager=self.settings_manager,
         )
         self.plugin_manager.discover()
         self.hub_client = HubClient(
-            workspace_dir=Path(data_dir).resolve().parent,
-            data_dir=Path(data_dir),
+            workspace_dir=workspace_dir,
+            data_dir=ide_data_dir,
             on_change_callback=self._on_hub_component_changed,
         )
         saved, errors = self.store.load()
@@ -256,7 +308,11 @@ class Window(QMainWindow):
         self.config_panel = config_panel
         self.tabs.addTab(self.config_panel, "Experiment", "config", "Experiment", tab_id="config")
 
-        # 3. Training Monitor Panel
+        # 3. Workflows Panel (String Diagrams)
+        self.workflows_panel = WorkflowsPanel(log_fn=self.log, parent=self)
+        self.tabs.addTab(self.workflows_panel, "Workflows", "workflow", "Workflows", tab_id="workflows")
+
+        # 4. Training Monitor Panel
         monitor = QWidget()
         layout = QVBoxLayout(monitor)
         layout.setContentsMargins(20, 18, 20, 14)
@@ -782,7 +838,7 @@ class Window(QMainWindow):
         self.statusBar().showMessage(f"Uninstalled plugin: {name}", 4000)
 
     def open_plugin_settings(self, plugin_id: str):
-        from PyQt6.QtWidgets import QDialogButtonBox, QVBoxLayout, QMessageBox, QDialog
+        from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QMessageBox, QVBoxLayout
         
         instance = self.plugin_manager.instances.get(plugin_id)
         if not instance:
@@ -815,7 +871,31 @@ class Window(QMainWindow):
 
     def _on_hub_component_changed(self, component_id: str, action: str):
         comp = self.hub_client.get_component(component_id) if hasattr(self, "hub_client") else None
-        # Non-plugin components (methods, models, envs) are filesystem assets only — no UI to update.
+
+        # Determine target category folder in in/config/ (e.g. "agent", "model", "env", "experiment")
+        target_folder = None
+        target_config_rel = None
+        if comp:
+            folder_map = {
+                "method": "agent",
+                "model": "model",
+                "env": "env",
+                "experiment": "experiment",
+            }
+            target_folder = folder_map.get(comp.kind)
+            if target_folder:
+                target_config_rel = f"{target_folder}/{comp.id}.yaml"
+
+        # Refresh components panel and config tree so added or removed YAMLs update immediately without collapsing folders
+        if hasattr(self, "components_panel") and self.components_panel is not None:
+            self.components_panel.reload_components(
+                target_rel_path=target_config_rel if action == "install" else None,
+                ensure_expanded=target_folder,
+            )
+        if hasattr(self, "config_tree") and self.config_tree is not None:
+            self.config_tree.populate(ensure_expanded=target_folder)
+
+        # Non-plugin components (methods, models, envs) are filesystem assets only — no plugin UI to update.
         if comp and comp.kind != "plugin":
             self.statusBar().showMessage(f"Hub {action} finished: {component_id}", 4000)
             return
@@ -847,7 +927,7 @@ class Window(QMainWindow):
         self.save_layout()
         self.statusBar().showMessage(f"Hub {action} finished: {component_id}", 4000)
 
-    def open_hub(self, initial_kind: Optional[str] = None):
+    def open_hub(self, initial_kind: str | None = None):
         if hasattr(self, "hub_client"):
             dialog = HubDialog(self.hub_client, initial_kind=initial_kind, parent=self)
             dialog.exec()
@@ -863,7 +943,18 @@ class Window(QMainWindow):
                 s.setToolTip("Show or hide this panel in the sidebar")
 
     def reset_sidebar_layout(self):
-        default_order = ["components", "config", "monitor", "results", "plots", "tensorboard", "queue", "terminal", "console"]
+        default_order = [
+            "components",
+            "config",
+            "workflows",
+            "monitor",
+            "results",
+            "plots",
+            "tensorboard",
+            "queue",
+            "terminal",
+            "console",
+        ]
         self.tabs.apply_tab_order(default_order)
         for pid, slider in self.pane_sliders.items():
             slider.blockSignals(True)
@@ -942,7 +1033,7 @@ class Window(QMainWindow):
     def toggle_ascii_animation(self, paused):
         if hasattr(self, "settings_ascii"):
             self.settings_ascii.set_paused(paused)
-        if hasattr(self, "anim_toggle_btn"):
+        if hasattr(self, "anim_toggle_btn") and hasattr(self.anim_toggle_btn, "isCheckable") and self.anim_toggle_btn.isCheckable():
             self.anim_toggle_btn.setText("Resume animation" if paused else "Pause animation")
 
     def make_menus(self):
@@ -984,6 +1075,7 @@ class Window(QMainWindow):
         view_menu.addAction("Theme builder…", self.show_theme_builder)
         view_menu.addAction("Components", lambda: self.tabs.setCurrentWidget(self.components_panel))
         view_menu.addAction("Experiment config", lambda: self.tabs.setCurrentWidget(self.config_panel))
+        view_menu.addAction("Workflows", lambda: self.tabs.setCurrentWidget(self.workflows_panel))
         view_menu.addAction("Training monitor", lambda: self.tabs.setCurrentWidget(self.monitor_panel))
         view_menu.addAction("Results browser", lambda: self.tabs.setCurrentWidget(self.results_panel))
         view_menu.addAction("Plot viewer", lambda: self.tabs.setCurrentWidget(self.plot_viewer))
@@ -1147,7 +1239,7 @@ class Window(QMainWindow):
     def set_backend_state(self, connected, error=None):
         if connected:
             self.backend_label.setText(f"BACKEND   ●   {self.backend.base_url}  ")
-            self.backend_label.setToolTip("Configs are composed and validated by the NeSyRL API.")
+            self.backend_label.setToolTip("Configs are composed and validated by the Theta-IDE backend API.")
         else:
             self.backend_label.setText("BACKEND   ○   offline  ")
             self.backend_label.setToolTip(f"{self.backend.base_url}: {error}\nStart it from the repository root with:\n"
@@ -2020,7 +2112,7 @@ def main():
     parser = argparse.ArgumentParser(description="ThetaIDE PyQt frontend proof of concept")
     parser.add_argument("--data-dir", type=Path, default=Path(__file__).resolve().parent.parent / ".thetaide" / "runs")
     parser.add_argument("--api-url", default=os.environ.get("THETAIDE_API_URL", DEFAULT_URL),
-                        help="NeSyRL backend API (default: %(default)s)")
+                        help="Theta-IDE backend API (default: %(default)s)")
     args = parser.parse_args()
     if sys.platform == "darwin":
         try:

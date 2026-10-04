@@ -51,6 +51,11 @@ theme = "Catppuccin"
 
 # Enable the rotating 3-D ASCII sculpture on the Settings & About panel.
 ascii_animation = true
+ascii_speed = 1.0
+ascii_size = 1.0
+ascii_thickness = 1.0
+ascii_tilt = 1.0
+ascii_distance = 4.8
 
 [backend]
 # FastAPI backend that manages training runs and pipelines.
@@ -64,6 +69,7 @@ timeout = 5
 order = [
     "components",
     "config",
+    "workflows",
     "monitor",
     "results",
     "plots",
@@ -78,6 +84,7 @@ order = [
 visible = [
     "components",
     "config",
+    "workflows",
     "monitor",
     "terminal",
     "console",
@@ -318,6 +325,41 @@ class SettingsManager(QObject):
     @property
     def ascii_animation(self) -> bool:
         return bool(self.get("appearance", "ascii_animation", default=True))
+
+    @property
+    def ascii_speed(self) -> float:
+        try:
+            return float(self.get("appearance", "ascii_speed", default=1.0))
+        except (ValueError, TypeError):
+            return 1.0
+
+    @property
+    def ascii_size(self) -> float:
+        try:
+            return float(self.get("appearance", "ascii_size", default=1.0))
+        except (ValueError, TypeError):
+            return 1.0
+
+    @property
+    def ascii_thickness(self) -> float:
+        try:
+            return float(self.get("appearance", "ascii_thickness", default=1.0))
+        except (ValueError, TypeError):
+            return 1.0
+
+    @property
+    def ascii_tilt(self) -> float:
+        try:
+            return float(self.get("appearance", "ascii_tilt", default=1.0))
+        except (ValueError, TypeError):
+            return 1.0
+
+    @property
+    def ascii_distance(self) -> float:
+        try:
+            return float(self.get("appearance", "ascii_distance", default=4.8))
+        except (ValueError, TypeError):
+            return 4.8
 
     @property
     def backend_url(self) -> str:

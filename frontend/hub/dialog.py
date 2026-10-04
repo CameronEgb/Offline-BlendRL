@@ -1,12 +1,23 @@
 """Theta Hub Browser dialog for discovering and installing community components."""
 from __future__ import annotations
+
 from typing import Dict, List, Optional
+
 from PyQt6.QtCore import Qt, QUrl
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
-    QComboBox, QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit,
-    QProgressBar, QPushButton, QScrollArea, QToolButton,
-    QVBoxLayout, QWidget,
+    QComboBox,
+    QDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QProgressBar,
+    QPushButton,
+    QScrollArea,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
 )
 
 from .client import HubClient
@@ -69,6 +80,7 @@ class HubComponentCard(QFrame):
         # Action Button
         self.btn_action = QPushButton()
         self.btn_action.setFixedHeight(28)
+        self.btn_action.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_action.clicked.connect(self._on_action_clicked)
         top_row.addWidget(self.btn_action)
 
@@ -115,16 +127,77 @@ class HubComponentCard(QFrame):
         if self.component.is_installed:
             if self.component.has_update:
                 self.btn_action.setText(f"Update to v{self.component.version}")
-                self.btn_action.setObjectName("primary")
+                self.btn_action.setObjectName("actionUpdate")
+                self.btn_action.setStyleSheet(
+                    "QPushButton {"
+                    "  background-color: #458588;"
+                    "  color: #ebdbb2;"
+                    "  border: 1px solid #83a598;"
+                    "  border-radius: 4px;"
+                    "  font-weight: 700;"
+                    "  padding: 4px 14px;"
+                    "}"
+                    "QPushButton:hover {"
+                    "  background-color: #83a598;"
+                    "  color: #1d2021;"
+                    "  border-color: #83a598;"
+                    "}"
+                    "QPushButton:disabled {"
+                    "  background-color: #32302f;"
+                    "  color: #665c54;"
+                    "  border-color: #3c3836;"
+                    "}"
+                )
                 self.btn_action.setEnabled(True)
             else:
                 self.btn_action.setText("Uninstall")
-                self.btn_action.setObjectName("")
+                self.btn_action.setObjectName("actionUninstall")
+                self.btn_action.setStyleSheet(
+                    "QPushButton {"
+                    "  background-color: #cc241d;"
+                    "  color: #ebdbb2;"
+                    "  border: 1px solid #cc241d;"
+                    "  border-radius: 4px;"
+                    "  font-weight: 700;"
+                    "  padding: 4px 14px;"
+                    "}"
+                    "QPushButton:hover {"
+                    "  background-color: #fb4934;"
+                    "  color: #1d2021;"
+                    "  border-color: #fb4934;"
+                    "}"
+                    "QPushButton:disabled {"
+                    "  background-color: #32302f;"
+                    "  color: #665c54;"
+                    "  border-color: #3c3836;"
+                    "}"
+                )
                 self.btn_action.setEnabled(True)
         else:
             self.btn_action.setText("Install")
-            self.btn_action.setObjectName("primary")
+            self.btn_action.setObjectName("actionInstall")
+            self.btn_action.setStyleSheet(
+                "QPushButton {"
+                "  background-color: #b8bb26;"
+                "  color: #1d2021;"
+                "  border: 1px solid #b8bb26;"
+                "  border-radius: 4px;"
+                "  font-weight: 700;"
+                "  padding: 4px 14px;"
+                "}"
+                "QPushButton:hover {"
+                "  background-color: #c7c94b;"
+                "  border-color: #c7c94b;"
+                "}"
+                "QPushButton:disabled {"
+                "  background-color: #32302f;"
+                "  color: #665c54;"
+                "  border-color: #3c3836;"
+                "}"
+            )
             self.btn_action.setEnabled(True)
+        self.btn_action.style().unpolish(self.btn_action)
+        self.btn_action.style().polish(self.btn_action)
 
     def _on_action_clicked(self):
         self.btn_action.setEnabled(False)
@@ -144,10 +217,10 @@ class HubComponentCard(QFrame):
 class HubDialog(QDialog):
     """Full-featured marketplace dialog for exploring and installing components."""
 
-    def __init__(self, client: HubClient, initial_kind: Optional[str] = None, parent=None):
+    def __init__(self, client: HubClient, initial_kind: str | None = None, parent=None):
         super().__init__(parent)
         self.client = client
-        self.active_kind: Optional[str] = initial_kind
+        self.active_kind: str | None = initial_kind
         self.cards: Dict[str, HubComponentCard] = {}
 
         self.setWindowTitle("Theta Community Hub")

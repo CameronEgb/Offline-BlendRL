@@ -42,6 +42,22 @@ class HubInstaller:
         else:
             return self.workspace_dir / "components" / component.id
 
+    def resolve_config_path(self, component: HubComponent) -> Optional[Path]:
+        """Determine destination path for a component's default configuration in in/config/."""
+        extra_cfg = getattr(component, "extra", {}).get("config_path") if hasattr(component, "extra") else None
+        if extra_cfg:
+            return self.workspace_dir / extra_cfg
+
+        if component.kind == "model":
+            return self.workspace_dir / "in" / "config" / "model" / f"{component.id}.yaml"
+        elif component.kind == "method":
+            return self.workspace_dir / "in" / "config" / "agent" / f"{component.id}.yaml"
+        elif component.kind == "env":
+            return self.workspace_dir / "in" / "config" / "env" / f"{component.id}.yaml"
+        elif component.kind == "experiment":
+            return self.workspace_dir / "in" / "config" / "experiment" / f"{component.id}.yaml"
+        return None
+
     def check_installed(self, component: HubComponent) -> Tuple[bool, Optional[str]]:
         """Check if a component is installed and determine its version."""
         target_dir = self.resolve_target_dir(component)
@@ -82,9 +98,22 @@ class HubInstaller:
         total_downloaded = 0
 
         try:
+            local_candidates = [
+                self.workspace_dir.resolve().parent / "theta-hub" / "packages" / Path(url).name,
+                Path(__file__).resolve().parents[3] / "theta-hub" / "packages" / Path(url).name,
+            ]
+            matching_local = next((p for p in local_candidates if p.is_file()), None)
+
             if url.startswith("file://"):
                 local_source = Path(url[7:])
                 content = local_source.read_bytes()
+                hasher.update(content)
+                tmp_path.write_bytes(content)
+                total_downloaded = len(content)
+                if progress_callback:
+                    progress_callback(total_downloaded, total_downloaded)
+            elif matching_local is not None:
+                content = matching_local.read_bytes()
                 hasher.update(content)
                 tmp_path.write_bytes(content)
                 total_downloaded = len(content)
@@ -159,6 +188,30 @@ class HubInstaller:
             else:
                 source_dir = staging_dir
 
+            # Check for packaged default configuration YAML and deploy to in/config/
+            config_dest = self.resolve_config_path(component)
+            installed_config_rel = None
+            if config_dest:
+                config_candidates = [
+                    source_dir / f"{component.id}.yaml",
+                    source_dir / f"{component.id}.yml",
+                    source_dir / "config.yaml",
+                    source_dir / "config.yml",
+                    source_dir / "default.yaml",
+                    source_dir / "default.yml",
+                    source_dir / "default_config.yaml",
+                ]
+                for yaml_file in sorted(list(source_dir.glob("*.yaml")) + list(source_dir.glob("*.yml"))):
+                    if yaml_file not in config_candidates:
+                        config_candidates.append(yaml_file)
+
+                for cand in config_candidates:
+                    if cand.is_file():
+                        config_dest.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(str(cand), str(config_dest))
+                        installed_config_rel = str(config_dest.relative_to(self.workspace_dir))
+                        break
+
             # Write component tracking metadata
             meta = {
                 "id": component.id,
@@ -167,6 +220,7 @@ class HubInstaller:
                 "version": ver,
                 "installed_from": release.url,
                 "sha256": release.sha256,
+                "config_path": installed_config_rel,
             }
             (source_dir / ".theta_component.json").write_text(
                 json.dumps(meta, indent=2) + "\n", encoding="utf-8"
@@ -220,31 +274,45 @@ class HubInstaller:
                 shutil.rmtree(staging_dir, ignore_errors=True)
 
     def uninstall(self, component: HubComponent) -> bool:
-        """Remove an installed component from disk."""
+        """Remove an installed component and its packaged configuration from disk."""
         target_dir = self.resolve_target_dir(component)
-        if not target_dir.exists():
-            component.is_installed = False
-            component.installed_version = None
-            if self.on_change_callback:
-                self.on_change_callback(component.id, "uninstall")
-                if component.target_path:
-                    tname = Path(component.target_path).name
-                    if tname != component.id:
-                        self.on_change_callback(tname, "uninstall")
-            return True
+        config_path = self.resolve_config_path(component)
 
-        try:
+        # Check .theta_component.json for recorded config path before removing target_dir
+        recorded_config = None
+        meta_file = target_dir / ".theta_component.json"
+        if meta_file.exists():
+            try:
+                mdata = json.loads(meta_file.read_text(encoding="utf-8"))
+                recorded_config = mdata.get("config_path")
+            except Exception:
+                pass
+
+        if target_dir.exists():
             shutil.rmtree(target_dir)
-            component.is_installed = False
-            component.installed_version = None
 
-            if self.on_change_callback:
-                self.on_change_callback(component.id, "uninstall")
-                if component.target_path:
-                    tname = Path(component.target_path).name
-                    if tname != component.id:
-                        self.on_change_callback(tname, "uninstall")
+        # Remove deployed config YAML in in/config/
+        if recorded_config:
+            p = self.workspace_dir / recorded_config
+            if p.is_file():
+                try:
+                    p.unlink()
+                except Exception:
+                    pass
+        elif config_path and config_path.is_file():
+            try:
+                config_path.unlink()
+            except Exception:
+                pass
 
-            return True
-        except Exception as exc:
-            raise OSError(f"Failed to remove {target_dir}: {exc}")
+        component.is_installed = False
+        component.installed_version = None
+
+        if self.on_change_callback:
+            self.on_change_callback(component.id, "uninstall")
+            if component.target_path:
+                tname = Path(component.target_path).name
+                if tname != component.id:
+                    self.on_change_callback(tname, "uninstall")
+
+        return True

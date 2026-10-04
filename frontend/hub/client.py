@@ -90,10 +90,13 @@ class HubClient(QObject):
                 data = json.loads(local_file.read_text(encoding="utf-8"))
         else:
             candidates = [self.registry_url]
-            # Check local theta-hub directory if available
-            local_hub = (self.workspace_dir.parent / "theta-hub" / "dist" / "index.json").resolve()
-            if local_hub.exists():
-                candidates.insert(0, f"file://{local_hub}")
+            local_hub_candidates = [
+                self.workspace_dir.resolve().parent / "theta-hub" / "dist" / "index.json",
+                Path(__file__).resolve().parents[3] / "theta-hub" / "dist" / "index.json",
+            ]
+            matching_hub = next((p for p in local_hub_candidates if p.is_file()), None)
+            if matching_hub is not None:
+                candidates.insert(0, f"file://{matching_hub}")
 
             for alt in [
                 "https://raw.githubusercontent.com/CameronEgb/theta-hub/main/dist/index.json",

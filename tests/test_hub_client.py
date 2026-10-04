@@ -2,11 +2,11 @@
 import hashlib
 import json
 import os
-from pathlib import Path
 import shutil
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from zipfile import ZipFile
 
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
@@ -16,9 +16,7 @@ try:
     from PyQt6.QtWidgets import QApplication
     QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts, True)
     app = QApplication.instance() or QApplication(sys.argv[:1])
-    from frontend.hub import (
-        AuthorInfo, HubClient, HubComponent, HubDialog, HubInstaller, ReleaseInfo
-    )
+    from frontend.hub import AuthorInfo, HubClient, HubComponent, HubComponentCard, HubDialog, HubInstaller, ReleaseInfo
     HAS_PYQT6 = True
 except ImportError:
     HAS_PYQT6 = False
@@ -155,9 +153,11 @@ class TestHubClientAndInstaller(unittest.TestCase):
 
         # Verify files on disk
         dest = self.workspace_dir / "src" / "usr" / "methods" / "sample-rl-agent"
+        deployed_cfg = self.workspace_dir / "in" / "config" / "agent" / "sample-rl-agent.yaml"
         self.assertTrue((dest / "main.py").exists())
         self.assertTrue((dest / "config.yaml").exists())
         self.assertTrue((dest / ".theta_component.json").exists())
+        self.assertTrue(deployed_cfg.exists())
 
         is_installed, ver = installer.check_installed(comp)
         self.assertTrue(is_installed)
@@ -167,6 +167,7 @@ class TestHubClientAndInstaller(unittest.TestCase):
         uninstalled = installer.uninstall(comp)
         self.assertTrue(uninstalled)
         self.assertFalse(dest.exists())
+        self.assertFalse(deployed_cfg.exists())
         is_installed, ver = installer.check_installed(comp)
         self.assertFalse(is_installed)
 
@@ -204,3 +205,43 @@ class TestHubClientAndInstaller(unittest.TestCase):
         self.assertIn("plugin", dialog.pills)
         self.assertIn("method", dialog.pills)
         dialog.close()
+
+    def test_hub_component_card_button_colors_and_state(self):
+        """HubComponentCard displays green Install and red Uninstall buttons and transitions cleanly."""
+        comp = HubComponent(
+            id="test-card-comp",
+            name="Card Comp",
+            kind="method",
+            version="1.0.0",
+            is_installed=False,
+        )
+        card = HubComponentCard(comp, self.client)
+        # Uninstalled component has green Install button
+        self.assertEqual(card.btn_action.text(), "Install")
+        self.assertIn("#b8bb26", card.btn_action.styleSheet())
+        self.assertEqual(card.btn_action.objectName(), "actionInstall")
+
+        # Simulate install completion
+        comp.is_installed = True
+        comp.installed_version = "1.0.0"
+        card.update_action_state()
+
+        # Installed component has red Uninstall button
+        self.assertEqual(card.btn_action.text(), "Uninstall")
+        self.assertIn("#cc241d", card.btn_action.styleSheet())
+        self.assertEqual(card.btn_action.objectName(), "actionUninstall")
+
+        # Update available has update styling
+        comp.version = "2.0.0"
+        self.assertTrue(comp.has_update)
+        card.update_action_state()
+        self.assertIn("Update to v2.0.0", card.btn_action.text())
+        self.assertIn("#458588", card.btn_action.styleSheet())
+
+        # Simulate uninstall completion
+        comp.is_installed = False
+        comp.installed_version = None
+        card.update_action_state()
+        self.assertEqual(card.btn_action.text(), "Install")
+        self.assertIn("#b8bb26", card.btn_action.styleSheet())
+

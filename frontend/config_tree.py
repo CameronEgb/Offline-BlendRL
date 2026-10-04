@@ -1,11 +1,23 @@
 """Tree widget mirroring in/config/ directory for Theta-IDE."""
 from pathlib import Path
+
 import yaml
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QTreeWidget, QTreeWidgetItem,
-    QLineEdit, QPushButton, QLabel, QInputDialog, QMessageBox, QMenu, QToolButton
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QMenu,
+    QMessageBox,
+    QPushButton,
+    QToolButton,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
+
 from .widgets import label
 
 
@@ -144,8 +156,38 @@ class ConfigTreeWidget(QWidget):
         self.footer = label(footer_text, "muted")
         layout.addWidget(self.footer)
 
-    def populate(self):
+    def get_expanded_paths(self) -> set[str]:
+        """Return the set of relative directory paths that are currently expanded."""
+        expanded = set()
+
+        def _collect(parent):
+            count = parent.topLevelItemCount() if isinstance(parent, QTreeWidget) else parent.childCount()
+            for i in range(count):
+                child = parent.topLevelItem(i) if isinstance(parent, QTreeWidget) else parent.child(i)
+                data = child.data(0, Qt.ItemDataRole.UserRole)
+                if data and data.get("type") == "dir":
+                    if child.isExpanded():
+                        rel = str(data.get("rel_path", "")).replace("\\", "/").strip("/")
+                        if rel:
+                            expanded.add(rel)
+                _collect(child)
+
+        _collect(self.tree)
+        return expanded
+
+    def populate(self, ensure_expanded: str | None = None):
         """Recursively scan root_dir and populate the tree based on mode."""
+        expanded_paths = self.get_expanded_paths()
+        if ensure_expanded:
+            clean_exp = str(Path(ensure_expanded)).replace("\\", "/").strip("/")
+            if clean_exp and clean_exp != ".":
+                expanded_paths.add(clean_exp)
+                parts = clean_exp.split("/")
+                for i in range(1, len(parts)):
+                    expanded_paths.add("/".join(parts[:i]))
+
+        has_previous_state = len(expanded_paths) > 0
+
         self.tree.clear()
         if not self.root_dir.exists():
             item = QTreeWidgetItem(self.tree, ["in/config (not found)"])
@@ -159,16 +201,16 @@ class ConfigTreeWidget(QWidget):
             # ONLY display in/config/experiment (or experiments)
             exp_dir = existing_dirs.get("experiment") or existing_dirs.get("experiments") or (self.root_dir / "experiment")
             if exp_dir.exists():
-                self._add_dir_node(self.tree, exp_dir, expand=True)
+                self._add_dir_node(self.tree, exp_dir, expand=True, expanded_set=expanded_paths, has_previous_state=has_previous_state)
         elif self.mode == "components":
             # Display all modular configuration directories and files OUTSIDE experiment
             preferred_comp_order = ["agent", "env", "model", "paradigms", "site", "hydra"]
             for cat in preferred_comp_order:
                 if cat in existing_dirs:
-                    self._add_dir_node(self.tree, existing_dirs[cat], expand=False)
+                    self._add_dir_node(self.tree, existing_dirs[cat], expand=False, expanded_set=expanded_paths, has_previous_state=has_previous_state)
             for name, dir_path in sorted(existing_dirs.items()):
                 if name not in preferred_comp_order and name not in ("experiment", "experiments"):
-                    self._add_dir_node(self.tree, dir_path, expand=False)
+                    self._add_dir_node(self.tree, dir_path, expand=False, expanded_set=expanded_paths, has_previous_state=has_previous_state)
             for f in top_files:
                 self._add_file_node(self.tree, f)
         else:
@@ -176,10 +218,10 @@ class ConfigTreeWidget(QWidget):
             preferred_order = ["experiment", "agent", "env", "model", "paradigms", "site", "hydra"]
             for cat in preferred_order:
                 if cat in existing_dirs:
-                    self._add_dir_node(self.tree, existing_dirs[cat], expand=(cat == "experiment"))
+                    self._add_dir_node(self.tree, existing_dirs[cat], expand=(cat == "experiment"), expanded_set=expanded_paths, has_previous_state=has_previous_state)
             for name, dir_path in sorted(existing_dirs.items()):
                 if name not in preferred_order:
-                    self._add_dir_node(self.tree, dir_path, expand=False)
+                    self._add_dir_node(self.tree, dir_path, expand=False, expanded_set=expanded_paths, has_previous_state=has_previous_state)
             for f in top_files:
                 self._add_file_node(self.tree, f)
 
@@ -187,11 +229,11 @@ class ConfigTreeWidget(QWidget):
         if self.current_rel_path:
             self.select_file(self.current_rel_path)
 
-    def _add_dir_node(self, parent_widget, dir_path: Path, expand=False):
+    def _add_dir_node(self, parent_widget, dir_path: Path, expand=False, expanded_set=None, has_previous_state=False):
         name = dir_path.name
         icon = FOLDER_ICONS.get(name, "📁")
         node = QTreeWidgetItem(parent_widget, [f"{icon}  {name}"])
-        rel_path = str(dir_path.relative_to(self.root_dir))
+        rel_path = str(dir_path.relative_to(self.root_dir)).replace("\\", "/").strip("/")
         node.setData(0, Qt.ItemDataRole.UserRole, {
             "type": "dir",
             "path": str(dir_path),
@@ -206,12 +248,17 @@ class ConfigTreeWidget(QWidget):
         for sub in subdirs:
             # Under experiment, expand group folders like cartpole, mimic
             sub_expand = (name == "experiment")
-            self._add_dir_node(node, sub, expand=sub_expand)
+            self._add_dir_node(node, sub, expand=sub_expand, expanded_set=expanded_set, has_previous_state=has_previous_state)
 
         for f in files:
             self._add_file_node(node, f)
 
-        if expand:
+        if has_previous_state:
+            should_expand = (expanded_set is not None and rel_path in expanded_set)
+        else:
+            should_expand = (expanded_set is not None and rel_path in expanded_set) or expand
+
+        if should_expand:
             node.setExpanded(True)
 
         return node

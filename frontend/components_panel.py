@@ -1,14 +1,23 @@
 """Dedicated Components panel for managing modular configurations (agent, env, model, paradigms, site, hydra, etc.)."""
 from pathlib import Path
+
 import yaml
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
-    QPushButton, QToolButton, QPlainTextEdit, QMessageBox, QFrame
+    QFrame,
+    QHBoxLayout,
+    QMessageBox,
+    QPlainTextEdit,
+    QPushButton,
+    QSplitter,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
 )
-from .widgets import label, YamlHighlighter
+
 from .config_tree import ConfigTreeWidget
 from .config_viewer import ConfigViewer
+from .widgets import YamlHighlighter, label
 
 
 class ComponentsPanel(QWidget):
@@ -188,12 +197,31 @@ class ComponentsPanel(QWidget):
         """Delegate to tree's duplicate dialog."""
         self.components_tree.prompt_duplicate()
 
-    def reload_components(self):
-        """Reload the tree and active file from disk."""
-        curr = self.active_rel_path
-        self.components_tree.populate()
-        if curr:
+    def reload_components(self, target_rel_path: str | None = None, ensure_expanded: str | None = None):
+        """Reload the tree and active file from disk without collapsing folders."""
+        curr = target_rel_path or self.active_rel_path
+        if not ensure_expanded and curr:
+            p = Path(curr).parent
+            if str(p) and str(p) != ".":
+                ensure_expanded = str(p).replace("\\", "/")
+
+        self.components_tree.populate(ensure_expanded=ensure_expanded)
+        if curr and (self.components_tree.root_dir / curr).exists():
             self.components_tree.select_file(curr)
+        else:
+            # If the current active file no longer exists (e.g. was uninstalled),
+            # try to select a sibling file in the same folder first so we don't jump away.
+            selected_alt = False
+            if curr:
+                parent_dir = self.components_tree.root_dir / Path(curr).parent
+                if parent_dir.exists() and parent_dir.is_dir():
+                    siblings = sorted([p for p in parent_dir.iterdir() if p.is_file() and p.suffix in (".yaml", ".yml")])
+                    if siblings:
+                        sibling_rel = str(siblings[0].relative_to(self.components_tree.root_dir)).replace("\\", "/")
+                        if self.components_tree.select_file(sibling_rel):
+                            selected_alt = True
+            if not selected_alt:
+                self.init_default_component()
         self.log_fn("Reloaded component files from disk.")
 
     def toggle_raw_preview(self, checked=None):

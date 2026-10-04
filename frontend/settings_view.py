@@ -29,7 +29,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from .about import AsciiTheta
+from .about import AsciiTheta, AnimationSettingsDialog
 from .hotkeys import parse_action_key
 from .theme import current_theme, theme_color
 from .widgets import ToggleSlider, label
@@ -211,16 +211,25 @@ class AsciiThetaSplash(QWidget):
         header_row.addWidget(title_lbl)
         header_row.addStretch()
 
-        self.anim_toggle_btn = QPushButton("Pause animation")
-        self.anim_toggle_btn.setCheckable(True)
-        self.anim_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.anim_toggle_btn.toggled.connect(self.window.toggle_ascii_animation)
-        header_row.addWidget(self.anim_toggle_btn)
+        self.anim_settings_btn = QPushButton("Animation Settings")
+        self.anim_settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.anim_settings_btn.setToolTip("Configure ASCII Theta animation speed, size, thickness, and 3D effects")
+        self.anim_settings_btn.clicked.connect(self.open_animation_settings)
+        header_row.addWidget(self.anim_settings_btn)
+        self.anim_toggle_btn = self.anim_settings_btn  # Backward-compatible alias
         layout.addLayout(header_row)
 
         # 3D ASCII Sculpture
-        self.ascii_sculpture = AsciiTheta(self)
+        self.ascii_sculpture = AsciiTheta(self, settings_manager=getattr(window, "settings_manager", None))
         layout.addWidget(self.ascii_sculpture, 1)
+
+    def open_animation_settings(self):
+        dialog = AnimationSettingsDialog(
+            target=self.ascii_sculpture,
+            settings_manager=getattr(self.window, "settings_manager", None),
+            parent=self,
+        )
+        dialog.exec()
 
 
 TAB_SIZES = {
@@ -520,8 +529,9 @@ class SettingsView(QWidget):
         self.ascii_splash = AsciiThetaSplash(self.window, self.content_stack)
         self.content_stack.addWidget(self.ascii_splash)
 
-        # Bind Window references so window.settings_ascii and window.anim_toggle_btn work
+        # Bind Window references so window.settings_ascii, window.anim_settings_btn, and window.anim_toggle_btn work
         self.window.settings_ascii = self.ascii_splash.ascii_sculpture
+        self.window.anim_settings_btn = self.ascii_splash.anim_settings_btn
         self.window.anim_toggle_btn = self.ascii_splash.anim_toggle_btn
 
         # Page 1: Settings Detail Window (appears on top when a tab is clicked)
@@ -635,6 +645,7 @@ class SettingsView(QWidget):
         pane_metadata = [
             ("components", "Components"),
             ("config", "Experiment Builder"),
+            ("workflows", "Workflows"),
             ("monitor", "Training Monitor"),
             ("results", "Results Browser"),
             ("plots", "Plot Viewer"),
@@ -697,16 +708,34 @@ class SettingsView(QWidget):
         row_sc.addWidget(anim_slider)
         sc_layout.addLayout(row_sc)
 
+        btn_row = QHBoxLayout()
+        btn_anim_config = QPushButton("Animation Settings…")
+        btn_anim_config.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_anim_config.setToolTip("Configure speed, size, thickness, and 3D projection")
+        btn_anim_config.clicked.connect(self._open_animation_settings_dialog)
+        btn_row.addWidget(btn_anim_config)
+        btn_row.addStretch()
+        sc_layout.addLayout(btn_row)
+
         layout.addWidget(sculpture_card)
         layout.addStretch()
         return container
+
+    def _open_animation_settings_dialog(self):
+        target = getattr(self.window, "settings_ascii", None) or self.ascii_splash.ascii_sculpture
+        dialog = AnimationSettingsDialog(
+            target=target,
+            settings_manager=getattr(self.window, "settings_manager", None),
+            parent=self,
+        )
+        dialog.exec()
 
     def _on_ascii_setting_toggled(self, checked: bool):
         if hasattr(self.window, "settings_manager"):
             self.window.settings_manager.set("appearance", "ascii_animation", checked)
         if hasattr(self.window, "settings_ascii"):
             self.window.settings_ascii.set_paused(not checked)
-        if hasattr(self.window, "anim_toggle_btn"):
+        if hasattr(self.window, "anim_toggle_btn") and hasattr(self.window.anim_toggle_btn, "isCheckable") and self.window.anim_toggle_btn.isCheckable():
             self.window.anim_toggle_btn.setChecked(not checked)
             self.window.anim_toggle_btn.setText("Resume animation" if not checked else "Pause animation")
 

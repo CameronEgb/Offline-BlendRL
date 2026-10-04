@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+
 import yaml
 
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
@@ -18,10 +19,10 @@ try:
     from PyQt6.QtCore import Qt
     from PyQt6.QtWidgets import QApplication
     app = QApplication.instance() or QApplication(sys.argv[:1])
-    from frontend.config_tree import ConfigTreeWidget
-    from frontend.config_viewer import ConfigViewer, ConfigBox
-    from frontend.components_panel import ComponentsPanel
     from frontend.app import Window
+    from frontend.components_panel import ComponentsPanel
+    from frontend.config_tree import ConfigTreeWidget
+    from frontend.config_viewer import ConfigBox, ConfigViewer
     HAS_PYQT6 = True
 except ImportError:
     HAS_PYQT6 = False
@@ -130,6 +131,51 @@ class TestConfigTree(unittest.TestCase):
             self.assertTrue(exp_tree.tree.topLevelItem(0).isExpanded())
         finally:
             exp_tree.close()
+
+    def test_populate_preserves_expanded_folders_on_install_and_uninstall(self):
+        """Folders in the tree do not collapse when new components/configs are installed or uninstalled."""
+        comp_tree = ConfigTreeWidget(root_dir=self.root, mode="components")
+        try:
+            # Locate agent folder item and expand it
+            agent_item = None
+            for i in range(comp_tree.tree.topLevelItemCount()):
+                item = comp_tree.tree.topLevelItem(i)
+                if "agent" in item.text(0):
+                    agent_item = item
+                    item.setExpanded(True)
+                    break
+            self.assertIsNotNone(agent_item)
+            self.assertTrue(agent_item.isExpanded())
+
+            # Simulate install into agent folder
+            (self.root / "agent" / "new_algo.yaml").write_text("algo: new\n", encoding="utf-8")
+            comp_tree.populate(ensure_expanded="agent")
+
+            # Check that agent folder did NOT collapse
+            found_agent = None
+            for i in range(comp_tree.tree.topLevelItemCount()):
+                item = comp_tree.tree.topLevelItem(i)
+                if "agent" in item.text(0):
+                    found_agent = item
+                    break
+            self.assertIsNotNone(found_agent)
+            self.assertTrue(found_agent.isExpanded(), "Folder must not collapse when something is installed into it")
+
+            # Simulate uninstall from agent folder
+            (self.root / "agent" / "new_algo.yaml").unlink()
+            comp_tree.populate(ensure_expanded="agent")
+
+            # Check that agent folder did NOT collapse
+            found_agent_after = None
+            for i in range(comp_tree.tree.topLevelItemCount()):
+                item = comp_tree.tree.topLevelItem(i)
+                if "agent" in item.text(0):
+                    found_agent_after = item
+                    break
+            self.assertIsNotNone(found_agent_after)
+            self.assertTrue(found_agent_after.isExpanded(), "Folder must not collapse when something is uninstalled from it")
+        finally:
+            comp_tree.close()
 
 
 @unittest.skipIf(not HAS_PYQT6, "PyQt6 not installed in current environment")

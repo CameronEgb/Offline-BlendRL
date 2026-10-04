@@ -1,4 +1,4 @@
-"""Rich documentation data and articles covering Theta-IDE and the NeSyRL/BlendRL framework."""
+"""Rich documentation data and articles covering Theta-IDE, a general-purpose ML, DL, and RL experimentation platform."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -20,23 +20,23 @@ ARTICLES: List[DocArticle] = [
         id="overview",
         title="Welcome & Architecture Overview",
         category="Getting Started",
-        summary="High-level architecture of Theta-IDE, the NeSyRL framework, and BlendRL neurosymbolic RL.",
-        keywords=["overview", "architecture", "intro", "welcome", "blendrl", "nesyrl", "reinforcement learning"],
+        summary="High-level architecture of Theta-IDE, the execution pipeline, and general-purpose ML/DL/RL experimentation.",
+        keywords=["overview", "architecture", "intro", "welcome", "reinforcement learning", "deep learning", "machine learning"],
         html_content="""
 <h2>Welcome to Theta-IDE</h2>
-<p><b>Theta-IDE</b> is a specialized development environment and experimentation platform for <b>Reinforcement Learning (RL)</b>, <b>Neural-Symbolic reasoning (BlendRL)</b>, and <b>modular algorithm benchmarking</b>.</p>
+<p><b>Theta-IDE</b> is a general-purpose development environment and experimentation platform for <b>Reinforcement Learning (RL)</b>, <b>Deep Learning (DL)</b>, <b>Machine Learning (ML)</b>, and <b>modular algorithm benchmarking</b>.</p>
 
 <div style="background-color: rgba(254, 128, 25, 0.12); border-left: 4px solid #fe8019; padding: 10px 14px; margin: 12px 0; border-radius: 4px;">
-  <b>Core Philosophy:</b> Unify the entire research experimentation lifecycle into a single workflow — from visual Hydra configuration composition and real-time training telemetry, to Slurm cluster job orchestration, interactive visualization analysis, and an extensible Community Hub.
+  <b>Core Philosophy:</b> Unify the entire research experimentation lifecycle into a single, cohesive workflow &mdash; from visual Hydra configuration composition and real-time training telemetry, to Slurm cluster job orchestration, interactive visualization analysis, and an extensible Component Hub.
 </div>
 
 <h3>Framework Architecture</h3>
 <ul>
   <li><b>Hydra Configuration Layer (<code>in/config/</code>):</b> Declarative, three-tier hierarchical configuration defining environments, agents, models, cluster resources, and experiment recipes.</li>
   <li><b>FastAPI Backend Daemon (<code>src/app/api/</code>):</b> Decoupled API service managing local training subprocesses, Slurm cluster submissions, and job queue states.</li>
-  <li><b>PyTorch Lightning Runtime (<code>src/app/train.py</code>):</b> Standardized training driver providing automated checkpointing, device acceleration, and structured logging.</li>
-  <li><b>Neurosymbolic Reasoners (BlendRL):</b> Joint neural and symbolic forward reasoning policies combining Neural Encoders (MLP, ResNet, Transformer) with First-Order Logic Reasoners (NSFR, Neumann).</li>
-  <li><b>Extensible Plugin System:</b> Core plugins shipping natively with zero overhead when toggled off, plus community plugins installed from the Community Hub.</li>
+  <li><b>PyTorch Lightning Runtime (<code>src/app/train.py</code>):</b> Standardized training driver providing automated checkpointing, device acceleration (CUDA/MPS/CPU), and structured logging.</li>
+  <li><b>Modular Model &amp; Method Architecture:</b> Pluggable interfaces for standard deep learning architectures (MLPs, ResNets, Transformers, LSTMs, diffusion networks) and RL algorithms (PPO, SAC, DQN, CQL, IQL, TD3+BC), as well as composite and domain-specific models.</li>
+  <li><b>Extensible Component Hub &amp; Plugin System:</b> Core plugins shipping natively with zero overhead when toggled off, plus community plugins (UI tabs, RL methods, models, environments, and experiment recipes) installable directly from the Community Hub.</li>
 </ul>
 
 <h3>Key Workflows</h3>
@@ -102,13 +102,11 @@ ARTICLES: List[DocArticle] = [
   <li>Terminal precedence mode: allows tmux prefix keys and terminal hotkeys to pass through uninterrupted.</li>
 </ul>
 
-<h3>6. Community Hub (<code>components</code>)</h3>
-<p>Browse, install, update, and remove modular components:</p>
+<h3>6. Modular Components &amp; Community Hub (<code>components</code>)</h3>
+<p>Manage modular algorithm building blocks and browse community extensions:</p>
 <ul>
-  <li><b>Plugins:</b> Community-contributed tools, visualizers, and extensions.</li>
-  <li><b>Methods:</b> Reinforcement learning algorithms (CQL, IQL, PPO, CEW).</li>
-  <li><b>Models:</b> Neural and symbolic policy architectures.</li>
-  <li><b>Environments:</b> Domain environments and reward wrappers.</li>
+  <li><b>Components Tree &amp; Viewer:</b> Browse and edit modular configurations outside experiments (<code>agent</code> profiles, <code>env</code> definitions, <code>model</code> architectures, <code>paradigms</code>, and <code>site</code> profiles).</li>
+  <li><b>Community Hub Dialog:</b> Marketplace modal to discover, install, update, and uninstall community plugins, RL methods, models, and environments directly into your workspace.</li>
 </ul>
 """,
     ),
@@ -116,8 +114,8 @@ ARTICLES: List[DocArticle] = [
         id="learning_paradigms",
         title="Learning Paradigms & Constraints",
         category="Machine Learning",
-        summary="Explanation of online RL, offline RL, and supervised learning paradigms supported in BlendRL.",
-        keywords=["paradigms", "online", "offline", "supervised", "ppo", "cql", "iql", "dataset"],
+        summary="Explanation of online RL, offline RL, and supervised learning paradigms supported in Theta-IDE.",
+        keywords=["paradigms", "online", "offline", "supervised", "ppo", "cql", "iql", "sac", "dataset"],
         html_content="""
 <h2>Learning Paradigms</h2>
 <p>Theta-IDE strictly validates experiment compatibility using declared <b>paradigms</b>. Every experiment declares <code>paradigm: &lt;name&gt;</code>, which configures the training driver, callbacks, and validation rules.</p>
@@ -125,75 +123,102 @@ ARTICLES: List[DocArticle] = [
 <table border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse; width: 100%; border-color: rgba(255,255,255,0.15);">
   <tr style="background-color: rgba(255,255,255,0.05); font-weight: bold;">
     <td>Paradigm</td>
-    <td>Allowed Agents</td>
+    <td>Allowed Agents / Models</td>
     <td>Evaluation Mechanism</td>
     <td>Key Constraints</td>
   </tr>
   <tr>
     <td><b><code>online_rl</code></b></td>
-    <td>PPO, BlendRL (PPO)</td>
+    <td>Online RL algorithms (e.g. PPO, SAC, DQN)</td>
     <td>Fixed-episode live simulator rollouts via <code>EnvironmentEvaluatorCallback</code></td>
     <td><code>offline_only: false</code>; generates transition datasets</td>
   </tr>
   <tr>
     <td><b><code>offline_rl</code></b></td>
-    <td>CQL, IQL, CEW, BlendRL (IQL/CQL)</td>
+    <td>Offline RL algorithms (e.g. CQL, IQL, TD3+BC, AWAC)</td>
     <td>Replay buffer data module; validation loss and Bellman error via Lightning</td>
     <td><code>intervals_count: 1</code>, <code>eval_episodes: 0</code>; requires static transition dataset</td>
   </tr>
   <tr>
     <td><b><code>supervised</code></b></td>
-    <td>Predictive models (DNN, ResNet, Transformer, ECM)</td>
+    <td>Predictive architectures (DNN, CNN, ResNet, Transformer, ECM)</td>
     <td>Validation cross-entropy / MSE / AUROC on held-out splits</td>
     <td>Standalone RL agents forbidden</td>
   </tr>
 </table>
 
 <h3>Transition Dataset Schema</h3>
-<p>When online agents run or offline datasets are loaded, transitions adhere to the standard schema:</p>
+<p>When online agents collect experience or offline datasets are loaded into replay buffers, transitions adhere to standard Gym / Gymnasium conventions:</p>
+
+<h4>1. Core Standard RL Fields (Required &amp; Native)</h4>
+<p>All standard Gym / Gymnasium environments and baseline offline datasets produce and consume the clean standard RL 5-tuple:</p>
 <pre><code>{
-  "obs": np.ndarray,            # Primary neural observation vector or image
-  "next_obs": np.ndarray,       # Subsequent neural state
-  "logic_obs": np.ndarray,      # Symbolic ground facts for logic reasoner
-  "next_logic_obs": np.ndarray, # Subsequent symbolic facts
-  "action": int | np.ndarray,   # Selected action
+  "obs": np.ndarray,            # Primary observation vector or image tensor
+  "action": int | np.ndarray,   # Selected discrete action index or continuous action vector
   "reward": float,              # Scalar transition reward
+  "next_obs": np.ndarray,       # Subsequent observation state
   "done": bool                  # Episode termination flag
 }</code></pre>
-<p>Online generation automatically writes chunked <code>.pkl</code> archives accompanied by <code>dataset_manifest.json</code> containing git commit hash, random seed, transition count, and environment metadata.</p>
+
+<h4>2. Optional Domain-Specific Extensions</h4>
+<p>Theta-IDE's open architecture allows community plugins and custom models (such as neurosymbolic hybrids, goal-conditioned agents, or multi-modal policies) to store or consume optional auxiliary fields via dataset adapters:</p>
+<pre><code>{
+  "logic_obs": np.ndarray,      # Optional: symbolic facts for logic reasoner plugins (e.g. BlendRL)
+  "next_logic_obs": np.ndarray, # Optional: subsequent symbolic facts
+  "info": dict                  # Optional: environment metadata or diagnostic flags
+}</code></pre>
+
+<div style="background-color: rgba(69, 133, 136, 0.12); border-left: 4px solid #458588; padding: 10px 14px; margin: 12px 0; border-radius: 4px;">
+  <b>Standard Environments vs. Plugin Extensions:</b>
+  <ul style="margin: 6px 0 0 0; padding-left: 18px;">
+    <li><b>Standard environments do NOT emit domain-specific logic natively:</b> Gym, Gymnasium, and standard benchmark environments produce clean observation vectors or images.</li>
+    <li><b>Pure neural algorithms:</b> Baseline algorithms like PPO, SAC, IQL, and CQL train strictly on the core 5 fields and completely ignore auxiliary fields.</li>
+    <li><b>Extensible adapters:</b> Specialized plugins (such as hybrid reasoners) compute relational groundings or custom representations on the fly via their own internal wrappers, leaving the core dataset schema clean and universal.</li>
+  </ul>
+</div>
+
+<p>Online dataset generation via <code>DatasetWriter</code> automatically writes chunked <code>.pkl</code> archives (typically 100,000 transitions per chunk) accompanied by a <code>dataset_manifest.json</code> capturing git provenance, random seed, transition count, and environment metadata.</p>
 """,
     ),
     DocArticle(
         id="blendrl_hybrid",
-        title="BlendRL Hybrid Neural-Symbolic Policy",
+        title="Plugin Case Study: BlendRL Neurosymbolic Policy",
         category="Machine Learning",
-        summary="How neural encoders and first-order logic reasoners are combined into a unified policy.",
-        keywords=["blendrl", "symbolic", "nsfr", "neumann", "neural", "prolog", "logic", "hybrid"],
+        summary="A case study demonstrating how composite models and first-order logic reasoners integrate into Theta-IDE via the Component Plugin system.",
+        keywords=["blendrl", "symbolic", "nsfr", "neumann", "neural", "prolog", "logic", "hybrid", "plugin", "component"],
         html_content="""
-<h2>BlendRL: Neural-Symbolic Hybrid Architecture</h2>
-<p><b>BlendRL</b> bridges deep reinforcement learning with first-order symbolic logic reasoners (NSFR and Neumann) to achieve high sample efficiency, explainability, and verifiable safety constraints.</p>
+<h2>Plugin Case Study: BlendRL Neurosymbolic Architecture</h2>
+<p>Theta-IDE is designed to support any machine learning, deep learning, or reinforcement learning architecture. To illustrate how specialized research algorithms integrate into the IDE without core modification, this article examines <b>BlendRL</b> &mdash; a composite model plugin available on the <b>Community Hub</b>.</p>
 
 <div style="background-color: rgba(184, 187, 38, 0.12); border-left: 4px solid #b8bb26; padding: 10px 14px; margin: 12px 0; border-radius: 4px;">
-  <b>The Core Principle:</b> Both a neural network and a symbolic logic reasoner simultaneously process the incoming state. Their respective action probability distributions are combined through an adaptive, confidence-weighted blending module.
+  <b>Modular Extension in Action:</b> Rather than hardcoding specialized reasoning logic into Theta-IDE, BlendRL is packaged as an installable model and method component. It bridges standard deep neural policies with first-order symbolic logic reasoners (such as NSFR and Neumann) through an adaptive blending module.
 </div>
 
-<h3>Constituent Modules</h3>
+<h3>Composite Architecture Overview</h3>
+<p>As a composite plugin, BlendRL assembles three constituent modules defined in Hydra:</p>
 <ol>
-  <li><b>Neural Encoder (<code>neural</code>):</b> Multi-Layer Perceptrons (MLP), Dueling ResNets, or Transformers that process high-dimensional raw observations (e.g. continuous vectors or image pixels).</li>
+  <li><b>Neural Encoder (<code>neural</code>):</b> Multi-Layer Perceptrons (MLP), Dueling ResNets, or Transformers that process raw continuous or pixel observations.</li>
   <li><b>Symbolic Reasoner (<code>symbolic</code>):</b>
     <ul>
-      <li><b>NSFR (Neural Symbolic Forward Reasoner):</b> Differentiable forward-chaining deduction engine operating on grounded facts and clauses.</li>
-      <li><b>Neumann Reasoner:</b> Fast matrix-based forward reasoner designed for accelerated rule valuation.</li>
+      <li><b>NSFR (Neural Symbolic Forward Reasoner):</b> Differentiable forward-chaining deduction engine operating on grounded facts and rules.</li>
+      <li><b>Neumann Reasoner:</b> Matrix-based forward reasoner designed for accelerated rule valuation.</li>
     </ul>
   </li>
-  <li><b>The Blender (<code>blender</code>):</b> Combines the neural logits \\(\\pi_{neural}(a|s)\\) and symbolic valuation scores \\(\\pi_{logic}(a|s)\\):
-    <pre><code>\\pi_{blended}(a|s) = (1 - \alpha) \\cdot \\pi_{neural}(a|s) + \alpha \\cdot \\pi_{logic}(a|s)</code></pre>
-    where \\(\alpha\\) can be fixed, learned, or dynamically gated by symbolic confidence.
+  <li><b>The Blender (<code>blender</code>):</b> Combines neural logits \\(\\pi_{neural}(a|s)\\) and symbolic valuation scores \\(\\pi_{logic}(a|s)\\):
+    <pre><code>\\pi_{blended}(a|s) = (1 - \\alpha) \\cdot \\pi_{neural}(a|s) + \\alpha \\cdot \\pi_{logic}(a|s)</code></pre>
+    where \\(\\alpha\\) can be fixed, learned, or dynamically gated by symbolic confidence.
   </li>
 </ol>
 
-<h3>Rules & Domain Knowledge</h3>
-<p>Domain knowledge is defined in human-readable logic rules stored in <code>in/rules/</code>. Logic predicates represent domain concepts (e.g., <code>pole_falling_left</code>, <code>cart_near_boundary</code>, <code>hypotensive_episode</code>).</p>
+<h3>Decoupled State Valuation</h3>
+<p>Because native Gym environments do not output logic representations, the BlendRL plugin handles grounding internally:</p>
+<ul>
+  <li>If optional precomputed <code>logic_obs</code> exist in a custom transition dataset, they are utilized directly.</li>
+  <li>Otherwise, the plugin agent's <code>_prepare_logic_obs()</code> automatically grounds raw continuous/discrete state vectors into relational predicates on the fly, evaluating them against domain rules without requiring special environment wrappers.</li>
+</ul>
+
+<h3>Key Takeaway for Component Authors</h3>
+<p>BlendRL serves as a blueprint for researchers building custom models in Theta-IDE: whether developing diffusion-based policies, hierarchical RL agents, or symbolic reasoners, authors can encapsulate their architectures into self-contained plugins that install cleanly through the <b>Community Hub</b>.</p>
 """,
     ),
     DocArticle(
@@ -303,7 +328,10 @@ ARTICLES: List[DocArticle] = [
   cql_baseline:
     agent: cql
     model: mlp
-  cql_blendrl_hybrid:
+  ppo_transformer:
+    agent: ppo
+    model: decision_transformer
+  cql_blendrl_hybrid: # Optional composite model plugin
     agent: cql
     model:
       blendrl:
@@ -429,6 +457,314 @@ class MyPlugin(Plugin):
             self.widget.deleteLater()
             self.widget = None
             self.context = None</code></pre>
+""",
+    ),
+    DocArticle(
+        id="authoring_plugins",
+        title="Authoring Guide: All Component & Plugin Types",
+        category="Extensibility",
+        summary="Comprehensive developer guide for authoring, registering, and packaging UI Plugins, RL Methods, Models, Environments, and Experiment Recipes.",
+        keywords=[
+            "authoring", "developer", "plugin", "method", "model", "env", "experiment",
+            "component", "hub", "packaging", "protocols", "register_agent", "register_model"
+        ],
+        html_content="""
+<h2>Authoring Guide: All Component & Plugin Types</h2>
+<p>Theta-IDE features a modular architecture where nearly every capability &mdash; from UI tabs to RL training algorithms, neural-symbolic models, and benchmark environments &mdash; can be developed, tested, and distributed as an installable component plugin via the <b>Community Hub</b>.</p>
+
+<div style="background-color: rgba(69, 133, 136, 0.12); border-left: 4px solid #83a598; padding: 10px 14px; margin: 12px 0; border-radius: 4px;">
+  <b>Five Modular Component Types:</b> Theta-IDE distinguishes between 5 distinct component kinds. Each kind has its own standard destination path, configuration target, and registration mechanism.
+</div>
+
+<table border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse; width: 100%; border-color: rgba(255,255,255,0.15);">
+  <tr style="background-color: rgba(255,255,255,0.05); font-weight: bold;">
+    <td>Kind</td>
+    <td>Target Directory</td>
+    <td>Config Location</td>
+    <td>Registration Mechanism</td>
+  </tr>
+  <tr>
+    <td><b><code>plugin</code></b></td>
+    <td><code>.thetaide/plugins/&lt;id&gt;/</code></td>
+    <td>N/A (Managed by settings)</td>
+    <td><code>PluginManager</code> scans <code>plugin.json</code></td>
+  </tr>
+  <tr>
+    <td><b><code>method</code></b></td>
+    <td><code>src/usr/methods/&lt;id&gt;/</code></td>
+    <td><code>in/config/agent/&lt;id&gt;.yaml</code></td>
+    <td><code>@register_agent("&lt;prefix&gt;")</code> in <code>registry.py</code></td>
+  </tr>
+  <tr>
+    <td><b><code>model</code></b></td>
+    <td><code>src/usr/models/&lt;id&gt;/</code></td>
+    <td><code>in/config/model/&lt;id&gt;.yaml</code></td>
+    <td><code>@register_model("&lt;name&gt;")</code> in <code>model_registry.py</code></td>
+  </tr>
+  <tr>
+    <td><b><code>env</code></b></td>
+    <td><code>in/envs/&lt;id&gt;/</code></td>
+    <td><code>in/config/env/&lt;id&gt;.yaml</code></td>
+    <td><code>VectorizedBaseEnv.from_name()</code> factory</td>
+  </tr>
+  <tr>
+    <td><b><code>experiment</code></b></td>
+    <td><code>in/config/experiment/&lt;id&gt;/</code></td>
+    <td><code>in/config/experiment/&lt;id&gt;.yaml</code></td>
+    <td>Dispatched via <code>run_pipeline.py</code></td>
+  </tr>
+</table>
+
+<hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 20px 0;" />
+
+<h3>1. Authoring UI / Frontend Plugins (<code>kind: "plugin"</code>)</h3>
+<p>UI plugins extend the Theta-IDE graphical interface by adding custom sidebar workstation tabs, status bar telemetry, or background tools.</p>
+
+<h4>Directory Structure</h4>
+<pre><code>my_tool/
+├── plugin.json       # Manifest metadata
+└── __init__.py       # Plugin class entry point</code></pre>
+
+<h4>Manifest (<code>plugin.json</code>)</h4>
+<pre><code>{
+  "id": "my_tool",
+  "name": "My Custom Tool",
+  "version": "1.0.0",
+  "description": "Interactive analysis tool for reinforcement learning checkpoints.",
+  "author": "Your Name",
+  "default_enabled": false,
+  "icon": "terminal",
+  "kind": "plugin",
+  "entry_point": "MyToolPlugin"
+}</code></pre>
+
+<h4>Python Implementation (<code>__init__.py</code>)</h4>
+<pre><code>from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton
+from frontend.plugins.base import Plugin, PluginManifest
+from frontend.plugins.context import PluginContext
+
+class MyToolPlugin(Plugin):
+    def activate(self, context: PluginContext) -> None:
+        self.context = context
+        
+        # Build your custom PyQt6 widget
+        self.widget = QWidget()
+        layout = QVBoxLayout(self.widget)
+        layout.addWidget(QLabel("Welcome to My Custom Tool"))
+        
+        # Mount your widget into the IDE sidebar
+        context.add_sidebar_tab(
+            tab_id="my_tool",
+            widget=self.widget,
+            title="Custom Tool",
+            icon_name="terminal",
+            short_label="Tool"
+        )
+        
+        # Read or write persistent plugin-scoped data
+        saved_counter = context.storage.get("click_count", 0)
+        
+    def deactivate(self) -> None:
+        # Crucial: Unmount UI and delete widget when toggled off
+        if self.context:
+            self.context.remove_sidebar_tab("my_tool")
+            self.widget.deleteLater()
+            self.widget = None
+            self.context = None</code></pre>
+
+<hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 20px 0;" />
+
+<h3>2. Authoring RL Method Plugins (<code>kind: "method"</code>)</h3>
+<p>Method plugins contribute reinforcement learning algorithms (such as PPO, CQL, IQL, or hybrid agents). They integrate directly into the PyTorch Lightning training driver and Hydra configuration tree.</p>
+
+<h4>Directory Structure</h4>
+<pre><code>my_method/
+├── __init__.py       # REQUIRED: Exposes the agent and triggers @register_agent
+├── agent.py          # PyTorch Lightning module implementation
+├── my_method.yaml    # Default Tier 1 hyperparameters (deployed to in/config/agent/)
+└── plugin.json       # Optional component metadata</code></pre>
+
+<div style="background-color: rgba(254, 128, 25, 0.12); border-left: 4px solid #fe8019; padding: 10px 14px; margin: 12px 0; border-radius: 4px;">
+  <b>Crucial Rule:</b> The directory <i>must</i> contain an <code>__init__.py</code> file. Theta-IDE's agent registry uses <code>pkgutil.iter_modules()</code> to auto-discover modules in <code>src/usr/methods/</code>. Without <code>__init__.py</code>, the subdirectory will not be imported!
+</div>
+
+<h4>Python Implementation (<code>agent.py</code>)</h4>
+<pre><code>import torch
+from src.usr.methods.base_agent import OfflineAgentBase  # or OnlineAgentBase
+from src.usr.methods.registry import register_agent
+
+@register_agent("my_cql", "my_cql_variant")
+class MyCQLAgent(OfflineAgentBase):
+    def __init__(self, obs_dim, n_actions, cfg=None, **kwargs):
+        super().__init__()
+        self.save_hyperparameters()
+        self.cql_alpha = getattr(cfg, "cql_alpha", 5.0)
+        # Initialize policy, critics, and loss criteria...
+
+    def training_step(self, batch, batch_idx):
+        obs, action, reward, next_obs, done = batch
+        # Compute Bellman loss and conservative penalty
+        loss = self.compute_loss(obs, action, reward, next_obs, done)
+        self.log("train/loss", loss, prog_bar=True)
+        return loss
+
+    def configure_optimizers(self):
+        return torch.optim.Adam(self.parameters(), lr=self.hparams.get("lr", 3e-4))</code></pre>
+
+<h4>Export in <code>__init__.py</code></h4>
+<pre><code>from .agent import MyCQLAgent
+
+__all__ = ["MyCQLAgent"]</code></pre>
+
+<h4>Default Configuration (<code>my_method.yaml</code>)</h4>
+<p>Deployed automatically to <code>in/config/agent/my_method.yaml</code>:</p>
+<pre><code># @package _global_
+agent:
+  name: my_cql
+  lr: 3e-4
+  cql_alpha: 5.0
+  batch_size: 256
+  gamma: 0.99</code></pre>
+
+<hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 20px 0;" />
+
+<h3>3. Authoring Model Architecture Plugins (<code>kind: "model"</code>)</h3>
+<p>Model plugins supply neural network architectures, encoders, or composite models. They register with <code>src.app.core.model_registry</code> and can be used standalone or as constituent sub-modules within larger composite pipelines.</p>
+
+<h4>Directory Structure</h4>
+<pre><code>my_transformer/
+├── __init__.py       # Exposes model class and triggers @register_model
+├── model.py          # PyTorch nn.Module implementing protocols
+└── my_transformer.yaml # Default Tier 1 model config (deployed to in/config/model/)</code></pre>
+
+<h4>Implementing Model Protocols</h4>
+<p>Theta-IDE provides protocols in <code>src.app.core.protocols</code> to allow advanced models to communicate with the training pipeline without hardcoded coupling:</p>
+<ul>
+  <li><b><code>DynamicTopologyProtocol</code>:</b> For models that grow or prune rules/neurons during training (e.g. CEW). Tells the agent when topology changes so optimizers can rebind.</li>
+  <li><b><code>ExtraStateProtocol</code>:</b> For saving/loading non-tensor states (e.g. symbolic rules, cluster prototypes) into checkpoints.</li>
+  <li><b><code>HasModelCallbacks</code>:</b> For models that require dedicated PyTorch Lightning callbacks.</li>
+</ul>
+
+<h4>Python Implementation (<code>model.py</code>)</h4>
+<pre><code>import torch.nn as nn
+from src.app.core.model_registry import register_model
+from src.app.core.protocols import DynamicTopologyProtocol, ExtraStateProtocol
+
+@register_model("decision_transformer", "dt")
+class DecisionTransformer(nn.Module, DynamicTopologyProtocol, ExtraStateProtocol):
+    def __init__(self, obs_dim: int = 4, n_actions: int = 2, hidden_dim: int = 128, **kwargs):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(obs_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, n_actions)
+        )
+        self._changed = False
+
+    def forward(self, x):
+        return self.net(x)
+
+    # DynamicTopologyProtocol
+    def has_topology_changed(self) -> bool:
+        return self._changed
+
+    def reset_topology_changed(self) -> None:
+        self._changed = False
+
+    def clone_topology_to(self, target: nn.Module) -> None:
+        target.load_state_dict(self.state_dict())
+
+    # ExtraStateProtocol
+    def extra_state(self) -> dict:
+        return {"custom_metadata": "v1.0"}
+
+    def load_extra_state(self, state: dict) -> None:
+        pass</code></pre>
+
+<hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 20px 0;" />
+
+<h3>4. Authoring Environment Plugins (<code>kind: "env"</code>)</h3>
+<p>Environment plugins package simulator definitions, reward shaping wrappers, and domain valuation logic.</p>
+
+<h4>Directory Structure</h4>
+<pre><code>my_custom_env/
+├── __init__.py       # Registration or simulator hooks
+├── env.py            # Environment wrapper or vectorization
+├── reward.py         # Potential-based reward shaping functions
+└── my_custom_env.yaml# Deployed to in/config/env/my_custom_env.yaml</code></pre>
+
+<h4>Declarative Environment Configuration</h4>
+<p>Every environment declares its operational properties declaratively in its YAML:</p>
+<pre><code># @package _global_
+env:
+  name: my_custom_env
+  offline_only: false          # Set true for static dataset-only environments
+  monitor_metric: "eval/reward" # Target metric for early stopping and tuning
+  preprocess_on_load: false
+  obs_dim: 8
+  n_actions: 4
+  default_plots:
+    - convergence
+    - losses</code></pre>
+
+<hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 20px 0;" />
+
+<h3>5. Authoring Experiment Recipe Plugins (<code>kind: "experiment"</code>)</h3>
+<p>Experiment recipes tie environments, agents, paradigms, and cluster resources into reproducible benchmarks.</p>
+<pre><code># in/config/experiment/benchmark/my_experiment.yaml
+# @package _global_
+defaults:
+  - /env: cartpole
+  - /agent: ppo
+  - /model: dueling_resnet
+
+paradigm: online_rl
+online_methods:
+  - ppo
+  - sac
+
+resources:
+  time: "02:00:00"
+  gpus: 1
+  cores: 8
+  memory: "16G"
+
+total_timesteps: 100000
+eval_episodes: 20</code></pre>
+
+<hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 20px 0;" />
+
+<h3>6. Packaging & Publishing to the Community Hub</h3>
+
+<h4>Creating the Release Archive</h4>
+<p>Compress your component files into a <code>.zip</code> file:</p>
+<pre><code>zip -r my_cql-1.0.0.zip my_method/</code></pre>
+
+<h4>Generating the SHA-256 Checksum</h4>
+<p>Theta-IDE enforces cryptographic integrity verification before extraction:</p>
+<pre><code>shasum -a 256 my_cql-1.0.0.zip
+# Example output: a1b2c3d4e5f6...</code></pre>
+
+<h4>Publishing in the Hub Registry (<code>dist/index.json</code>)</h4>
+<p>Add your component entry to the Hub's index:</p>
+<pre><code>{
+  "id": "my_cql",
+  "name": "Custom Conservative Q-Learning",
+  "kind": "method",
+  "version": "1.0.0",
+  "description": "Robust offline RL with adaptive conservatism penalties.",
+  "author": { "name": "Your Name", "github": "yourhandle" },
+  "tags": ["rl", "offline", "cql"],
+  "releases": {
+    "1.0.0": {
+      "tag": "v1.0.0",
+      "url": "https://github.com/yourhandle/my_cql/releases/download/v1.0.0/my_cql-1.0.0.zip",
+      "sha256": "a1b2c3d4e5f6...",
+      "size_bytes": 14200
+    }
+  }
+}</code></pre>
+<p>Once published, the component is immediately searchable, installable, and updatable via the <b>Community Hub</b> pane in Theta-IDE.</p>
 """,
     ),
     DocArticle(
