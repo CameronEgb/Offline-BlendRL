@@ -261,6 +261,20 @@ TAB_SIZES = {
 }
 
 
+class DynamicStackedWidget(QStackedWidget):
+    """QStackedWidget that constrains horizontal minimumSizeHint to 0 to prevent child sizeHint blowup in QScrollArea."""
+
+    def minimumSizeHint(self) -> QSize:
+        curr = self.currentWidget()
+        h = curr.minimumSizeHint().height() if curr is not None else 0
+        return QSize(0, h)
+
+    def sizeHint(self) -> QSize:
+        curr = self.currentWidget()
+        h = curr.sizeHint().height() if curr is not None else 0
+        return QSize(0, h)
+
+
 class SettingsDetailWindow(QFrame):
     """Settings page overlay displaying the active tab's configuration over the ASCII Theta."""
 
@@ -340,7 +354,7 @@ class SettingsDetailWindow(QFrame):
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
 
-        self.pages_stack = QStackedWidget()
+        self.pages_stack = DynamicStackedWidget()
         self.scroll_area.setWidget(self.pages_stack)
         card_layout.addWidget(self.scroll_area, 1)
 
@@ -359,7 +373,7 @@ class SettingsDetailWindow(QFrame):
 
     def apply_tab_size(self, tab_id: str):
         self.current_tab_id = tab_id
-        self.target_size = TAB_SIZES.get(tab_id, (760, 660))
+        self.target_size = TAB_SIZES.get(tab_id, (840, 680))
         self._update_card_geometry()
 
     def resizeEvent(self, event):
@@ -369,7 +383,7 @@ class SettingsDetailWindow(QFrame):
     def _update_card_geometry(self):
         if not hasattr(self, "card"):
             return
-        tw, th = getattr(self, "target_size", (760, 660))
+        tw, th = getattr(self, "target_size", (840, 680))
         avail_w = self.width()
         avail_h = self.height()
         if avail_w > 0 and avail_h > 0:
@@ -638,6 +652,7 @@ class SettingsView(QWidget):
 
         tc_layout.addWidget(label("Color Theme & Palette", "heading"))
         tc_sub = label("Select an active color palette or create custom theme roles.", "muted")
+        tc_sub.setWordWrap(True)
         tc_layout.addWidget(tc_sub)
 
         theme_row = QHBoxLayout()
@@ -665,6 +680,7 @@ class SettingsView(QWidget):
 
         sb_layout.addWidget(label("Sidebar Panels Visibility", "heading"))
         sb_sub = label("Choose which navigation panels are visible in the left sidebar.", "muted")
+        sb_sub.setWordWrap(True)
         sb_layout.addWidget(sb_sub)
 
         panes_grid = QGridLayout()
@@ -691,6 +707,7 @@ class SettingsView(QWidget):
             item_row = QHBoxLayout()
             item_row.setSpacing(8)
             title_lbl = label(name)
+            title_lbl.setWordWrap(True)
             title_lbl.setStyleSheet("font-weight: 500; font-size: 12px;")
             item_row.addWidget(title_lbl, 1)
 
@@ -725,6 +742,7 @@ class SettingsView(QWidget):
 
         sc_layout.addWidget(label("3D ASCII Sculpture Animation", "heading"))
         sc_sub = label("Configure the software-rendered rotating ASCII Theta sculpture.", "muted")
+        sc_sub.setWordWrap(True)
         sc_layout.addWidget(sc_sub)
 
         row_sc = QHBoxLayout()
@@ -761,6 +779,7 @@ class SettingsView(QWidget):
 
         c_layout.addWidget(label("Built-in Core Plugins", "heading"))
         sub = label("Core extensions bundled natively into Theta-IDE.", "muted")
+        sub.setWordWrap(True)
         c_layout.addWidget(sub)
 
         # Status badge pill
@@ -814,6 +833,7 @@ class SettingsView(QWidget):
         pc_layout.addLayout(header_row)
 
         sub = label("Install, configure, or remove community-created plugins.", "muted")
+        sub.setWordWrap(True)
         pc_layout.addWidget(sub)
 
         # Dynamic plugins grid populated by window.refresh_plugins_ui()
@@ -1459,6 +1479,7 @@ class SettingsView(QWidget):
             "Daemon command:  uvicorn src.app.api.app:app --host 127.0.0.1 --port 8000",
             "muted",
         )
+        tip_lbl.setWordWrap(True)
         tip_lbl.setStyleSheet("font-family: 'Consolas', monospace; font-size: 11px; font-style: italic;")
         bc_layout.addWidget(tip_lbl)
 
@@ -1480,6 +1501,7 @@ class SettingsView(QWidget):
 
         sc_layout.addWidget(label("Workspace & Storage", "heading"))
         sc_sub = label("Manage local experiment databases, filesystems, and layout preferences.", "muted")
+        sc_sub.setWordWrap(True)
         sc_layout.addWidget(sc_sub)
 
         # Storage info
@@ -1492,6 +1514,7 @@ class SettingsView(QWidget):
         lbl_root.setFixedWidth(90)
         row_root.addWidget(lbl_root)
         val_root = label(str(root_path))
+        val_root.setWordWrap(True)
         val_root.setStyleSheet("font-family: 'Consolas', monospace; font-size: 11px;")
         val_root.setToolTip(str(root_path))
         row_root.addWidget(val_root, 1)
@@ -1537,6 +1560,7 @@ class SettingsView(QWidget):
         sc_layout.addLayout(btn_row)
 
         hint = label("Changes to settings.toml are automatically hot-reloaded across the IDE.", "muted")
+        hint.setWordWrap(True)
         hint.setStyleSheet("font-size: 11px; font-style: italic;")
         sc_layout.addWidget(hint)
 
@@ -1690,6 +1714,10 @@ class SettingsView(QWidget):
             }}
             QScrollArea#settingsScrollArea > QWidget > QWidget {{
                 background: transparent;
+            }}
+            QScrollBar:horizontal {{
+                height: 0px;
+                border: none;
             }}
             QKeySequenceEdit {{
                 background-color: {surface_col};

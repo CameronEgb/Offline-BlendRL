@@ -185,6 +185,18 @@ class TestSettingsViewStructureAndNavigation(unittest.TestCase):
         self.assertEqual(self.settings.content_stack.currentIndex(), 0)
         self.assertIsNone(self.settings.active_tab_id)
 
+    def test_no_horizontal_scrollbars_in_settings(self):
+        """Settings scroll area policy is ScrollBarAlwaysOff and no horizontal scroll range exists."""
+        self.assertEqual(
+            self.settings.settings_window.scroll_area.horizontalScrollBarPolicy(),
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff,
+        )
+        for tab_id in ["appearance", "core_plugins", "community_plugins", "backend", "storage"]:
+            self.settings.tab_buttons[tab_id].click()
+            QApplication.processEvents()
+            h_bar = self.settings.settings_window.scroll_area.horizontalScrollBar()
+            self.assertEqual(h_bar.maximum(), 0)
+
 
 @unittest.skipIf(not HAS_PYQT6, "PyQt6 not installed in current environment")
 class TestHotkeysSettingsPage(unittest.TestCase):
