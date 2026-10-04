@@ -35,8 +35,12 @@ class IQLAgent(OfflineAgentBase):
         if hidden_sizes is not None:
             hidden_sizes = list(hidden_sizes)
 
+        default_rules = getattr(cfg.env, "rules", "default")
+        default_reasoner = getattr(cfg.env, "reasoner", "nsfr")
+        default_arch = getattr(cfg.env, "architecture", "mlp")
+
         num_in_features = np.prod(self.observation_space)
-        if cfg.env.architecture == "mlp":
+        if self.get_cfg("architecture", default_arch) == "mlp":
             from src.usr.models.neural.architectures import MLPQNetwork, MLPValueNetwork
 
             self.q_network = MLPQNetwork(
@@ -77,20 +81,20 @@ class IQLAgent(OfflineAgentBase):
 
             self.model = BlenderActorCritic(
                 self.env,
-                self.get_cfg("rules", cfg.env.rules),
+                self.get_cfg("rules", default_rules),
                 self.get_cfg("actor_mode", "hybrid"),
                 self.get_cfg("blender_mode", "neural"),
                 self.get_cfg("blend_function", "softmax"),
-                self.get_cfg("reasoner", cfg.env.reasoner),
+                self.get_cfg("reasoner", default_reasoner),
                 self.device,
-                architecture=self.get_cfg("architecture", cfg.env.architecture),
+                architecture=self.get_cfg("architecture", default_arch),
                 cfg=self.cfg,
             )
         else:
             from src.app.core.factories import get_neural_agent
 
             self.actor = get_neural_agent(
-                cfg.env.name, self.n_actions, self.device, arch_name=cfg.env.architecture, hidden_sizes=hidden_sizes
+                cfg.env.name, self.n_actions, self.device, arch_name=self.get_cfg("architecture", default_arch), hidden_sizes=hidden_sizes
             )
 
     def _prepare_logic_obs(self, obs, logic_obs=None):

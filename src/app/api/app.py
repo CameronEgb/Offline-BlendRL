@@ -523,7 +523,7 @@ def queue_status():
     """The active job(s), the queued jobs in the order they will run, and the ten most recent finished jobs."""
     with _jobs_lock:
         active = [_public(j) for j in jobs.values() if j.get("status") in ACTIVE_STATUSES]
-        queued = [dict(_public(jobs[job_id]), position=n) for n, job_id in enumerate(queue_order)]
+        queued = [dict(_public(jobs[job_id]), position=n) for n, job_id in enumerate(queue_order) if job_id in jobs]
         finished = sorted((j for j in jobs.values() if j.get("status") in TERMINAL_STATUSES),
                           key=lambda j: j.get("finished") or 0, reverse=True)[:10]
         return {"running": queue_state["running"], "active": active, "queued": queued,

@@ -12,6 +12,11 @@ defaults:
 - mimic/_base
 task: reciprocal_refinement
 
+methods:
+  cql_dnn:
+    agent: cql
+    model: dnn
+
 resources:
   time: "48:00:00"
   gpus: 1

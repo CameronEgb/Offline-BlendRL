@@ -72,18 +72,22 @@ class PPOAgent(BaseAgent):
         is_hybrid = self.get_cfg("actor_mode", "neural") in ["hybrid", "logic"] or "blendrl" in str(algorithm)
         self.is_modular = has_modules or is_hybrid
 
+        default_rules = getattr(cfg.env, "rules", "default")
+        default_reasoner = getattr(cfg.env, "reasoner", "nsfr")
+        default_arch = getattr(cfg.env, "architecture", "mlp")
+
         if self.is_modular:
             from src.usr.models.blendrl.agents.blender_agent import BlenderActorCritic
 
             self.model = BlenderActorCritic(
                 self.env,
-                self.get_cfg("rules", cfg.env.rules),
+                self.get_cfg("rules", default_rules),
                 self.get_cfg("actor_mode", "hybrid"),
                 self.get_cfg("blender_mode", "neural"),
                 self.get_cfg("blend_function", "softmax"),
-                self.get_cfg("reasoner", cfg.env.reasoner),
+                self.get_cfg("reasoner", default_reasoner),
                 self.device,
-                architecture=self.get_cfg("architecture", cfg.env.architecture),
+                architecture=self.get_cfg("architecture", default_arch),
                 cfg=self.cfg,
             )
             self.logic_shape = (
@@ -97,7 +101,7 @@ class PPOAgent(BaseAgent):
                 cfg.env.name,
                 self.n_actions,
                 self.device,
-                arch_name=cfg.env.architecture,
+                arch_name=self.get_cfg("architecture", default_arch),
                 hidden_sizes=self.get_cfg("hidden_sizes", [64, 64]),
             )
 

@@ -29,7 +29,7 @@ def test_known_paradigms_load(tree):
 
 
 def test_known_agents_load(tree):
-    assert {"ppo", "cql", "iql", "cew"} <= set(tree.agents)
+    assert {"ppo", "cql", "iql"} <= set(tree.agents)
 
 
 def test_agents_expose_algorithm_and_hyperparameters(tree):
@@ -41,6 +41,7 @@ def test_agents_expose_algorithm_and_hyperparameters(tree):
 
 def test_models_expose_architecture(tree):
     assert "dnn" in tree.models
+    assert "cew" in tree.models
     assert tree.models["dnn"].architecture == "dnn"
     assert "architecture" not in tree.models["dnn"].parameters
 
@@ -70,7 +71,7 @@ def test_online_rl_permits_only_ppo(tree):
 
 def test_offline_rl_permits_offline_algorithms(tree):
     names = {a.name for a in tree.agents_for("offline_rl")}
-    assert names == {"cql", "iql", "cew"}
+    assert names == {"cql", "iql"}
 
 
 def test_offline_rl_rejects_ppo(tree):
@@ -79,7 +80,7 @@ def test_offline_rl_rejects_ppo(tree):
 
 def test_online_rl_rejects_offline_algorithms(tree):
     online = tree.paradigms["online_rl"]
-    for name in ("cql", "iql", "cew"):
+    for name in ("cql", "iql"):
         assert not online.permits_agent(name)
 
 

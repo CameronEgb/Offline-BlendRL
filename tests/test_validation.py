@@ -251,7 +251,7 @@ def test_cew_forbidden_in_online_rl(mock_yaml, mock_cfg_online):
     mock_cfg_online.__dict__["methods"] = {
         "cew_dnn": {"agent": "cew", "model": "dnn"}
     }
-    with pytest.raises(ConfigurationError, match="forbidden in paradigm 'online_rl'"):
+    with pytest.raises(ConfigurationError, match="(forbidden in paradigm 'online_rl'|not allowed in paradigm 'online_rl')"):
         validate_experiment_config(mock_cfg_online, "test_exp")
 
 
