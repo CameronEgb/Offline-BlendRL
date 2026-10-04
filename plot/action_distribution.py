@@ -28,7 +28,7 @@ import matplotlib.pyplot as plt
 from plot.base import BasePlotter, clean_label, get_canonical_method_name, get_method_aliases
 from plot.pyrenees_reporter import PyreneesReporter
 from src.usr.eval.pyrenees_evaluator import PyreneesEvaluator
-from src.usr.methods.method_registry import get_style as get_method_style
+from src.usr.methods.method_style_registry import get_style as get_method_style
 
 
 class ActionDistributionPlotter(BasePlotter):

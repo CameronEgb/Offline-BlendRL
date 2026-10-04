@@ -202,56 +202,53 @@ def build_model(
             stabilize=bool(merged_kwargs.get("stabilize", True)),
         ).to(device)
 
-    # Check MODEL_REGISTRY for registered custom plugins or classes
-    clean_name = model_name.lower().strip()
-    if clean_name in MODEL_REGISTRY:
-        cls_or_fn = MODEL_REGISTRY[clean_name]
-        import inspect
+    # Resolve architecture from MODEL_REGISTRY
+    cls_or_fn = get_model_class(model_name)
+    import inspect
 
-        target_fn = cls_or_fn.__init__ if isinstance(cls_or_fn, type) else cls_or_fn
-        try:
-            sig = inspect.signature(target_fn)
-            params = sig.parameters
-            has_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
-            call_kwargs = {}
-            if "obs_dim" in params or has_var_kw:
-                call_kwargs["obs_dim"] = obs_dim
-            if "n_inputs" in params or has_var_kw:
-                call_kwargs["n_inputs"] = obs_dim
-            if "num_in_features" in params or has_var_kw:
-                call_kwargs["num_in_features"] = obs_dim
-            if "n_actions" in params or has_var_kw:
-                call_kwargs["n_actions"] = n_actions
-            if "out_size" in params or has_var_kw:
-                call_kwargs["out_size"] = n_actions
-            if "device" in params or has_var_kw:
-                call_kwargs["device"] = device
-            if "env" in params or has_var_kw:
-                call_kwargs["env"] = env
-            for k, v in merged_kwargs.items():
-                call_kwargs[k] = v
+    target_fn = cls_or_fn.__init__ if isinstance(cls_or_fn, type) else cls_or_fn
+    try:
+        sig = inspect.signature(target_fn)
+        params = sig.parameters
+        has_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+        call_kwargs = {}
+        if "obs_dim" in params or has_var_kw:
+            call_kwargs["obs_dim"] = obs_dim
+        if "n_inputs" in params or has_var_kw:
+            call_kwargs["n_inputs"] = obs_dim
+        if "num_in_features" in params or has_var_kw:
+            call_kwargs["num_in_features"] = obs_dim
+        if "n_actions" in params or has_var_kw:
+            call_kwargs["n_actions"] = n_actions
+        if "out_size" in params or has_var_kw:
+            call_kwargs["out_size"] = n_actions
+        if "device" in params or has_var_kw:
+            call_kwargs["device"] = device
+        if "env" in params or has_var_kw:
+            call_kwargs["env"] = env
+        for k, v in merged_kwargs.items():
+            call_kwargs[k] = v
 
-            if not has_var_kw:
-                call_kwargs = {k: v for k, v in call_kwargs.items() if k in params}
+        if not has_var_kw:
+            call_kwargs = {k: v for k, v in call_kwargs.items() if k in params}
 
-            res = cls_or_fn(**call_kwargs)
-        except Exception:
-            res = cls_or_fn(obs_dim=obs_dim, n_actions=n_actions, **merged_kwargs)
+        res = cls_or_fn(**call_kwargs)
+    except Exception:
+        res = cls_or_fn(obs_dim=obs_dim, n_actions=n_actions, **merged_kwargs)
 
-        if isinstance(res, nn.Module):
-            res = res.to(device)
-        return res
+    if isinstance(res, nn.Module):
+        res = res.to(device)
+    return res
 
-    # Fallback to existing neural agent factory for standard neural architectures
-    from src.app.core.factories import get_neural_agent
 
-    hidden_sizes = merged_kwargs.get("hidden_sizes", [256, 256])
-    return get_neural_agent(
-        env_name=env_name,
-        n_actions=n_actions or 2,
-        device=device,
-        arch_name=model_name,
-        hidden_sizes=hidden_sizes,
-        num_in_features=obs_dim,
-        **merged_kwargs,
-    )
+def _safe_instantiate(module_class, **kwargs):
+    """Instantiate a class by passing only parameters accepted by its __init__."""
+    import inspect
+
+    sig = inspect.signature(module_class.__init__)
+    has_var_keyword = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+    if has_var_keyword:
+        return module_class(**kwargs)
+    valid_kwargs = {k: v for k, v in kwargs.items() if k in sig.parameters}
+    return module_class(**valid_kwargs)
+

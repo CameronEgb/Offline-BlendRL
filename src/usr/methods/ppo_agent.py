@@ -9,7 +9,7 @@ import torch.optim as optim
 from omegaconf import DictConfig
 
 from src.usr.methods.base_agent import BaseAgent
-from src.usr.methods.registry import register_agent
+from src.usr.methods.agent_registry import register_agent
 
 
 @register_agent(
@@ -96,13 +96,13 @@ class PPOAgent(BaseAgent):
             )
             self.register_buffer("logic_obs", torch.zeros((self.num_steps, self.num_envs) + self.logic_shape))
         else:
-            from src.app.core.factories import get_neural_agent
+            from src.app.core.model_registry import build_model
 
-            self.model = get_neural_agent(
-                cfg.env.name,
-                self.n_actions,
-                self.device,
-                arch_name=self.get_cfg("architecture", default_arch),
+            self.model = build_model(
+                self.get_cfg("architecture", default_arch),
+                env=self.env,
+                n_actions=self.n_actions,
+                device=self.device,
                 hidden_sizes=self.get_cfg("hidden_sizes", [64, 64]),
             )
 

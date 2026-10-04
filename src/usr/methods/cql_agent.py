@@ -9,7 +9,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 from src.usr.methods.base_agent import OfflineAgentBase
-from src.usr.methods.registry import register_agent
+from src.usr.methods.agent_registry import register_agent
 
 
 @register_agent("cql", "blendrl_cql")
@@ -128,29 +128,28 @@ class CQLAgent(OfflineAgentBase):
                 hidden_sizes = self.get_cfg("hidden_sizes", [256, 256])
                 if hidden_sizes is not None:
                     hidden_sizes = list(hidden_sizes)
-                architecture = self.get_cfg("architecture", getattr(cfg.env, "architecture", "mlp"))
-                from src.app.core.factories import get_neural_agent
+                from src.app.core.model_registry import build_model
 
                 obs_dim = (
                     self.observation_space[-1]
                     if hasattr(self, "observation_space") and self.observation_space
                     else None
                 )
-                self.q_network = get_neural_agent(
-                    cfg.env.name,
-                    self.n_actions,
-                    self.device,
-                    arch_name=architecture,
+                self.q_network = build_model(
+                    architecture,
+                    env=self.env,
+                    n_actions=self.n_actions,
+                    device=self.device,
                     hidden_sizes=hidden_sizes,
-                    num_in_features=obs_dim,
+                    obs_dim=obs_dim,
                 )
-                self.target_q_network = get_neural_agent(
-                    cfg.env.name,
-                    self.n_actions,
-                    self.device,
-                    arch_name=architecture,
+                self.target_q_network = build_model(
+                    architecture,
+                    env=self.env,
+                    n_actions=self.n_actions,
+                    device=self.device,
                     hidden_sizes=hidden_sizes,
-                    num_in_features=obs_dim,
+                    obs_dim=obs_dim,
                 )
                 self.target_q_network.load_state_dict(self.q_network.state_dict())
 

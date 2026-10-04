@@ -165,16 +165,16 @@ Priority: CLI flags > experiment `resources:` > site config > hardcoded fallback
 ## 8. Environment Customization & Wrappers
 - **Interface:** All environments wrapped via `VectorizedNudgeBaseEnv` (`src/app/core/env_vectorized.py`).
 - **Evaluation:** `EnvironmentEvaluatorCallback` (`src/app/core/callbacks.py`) executes fixed episode counts (default 100) at transition intervals.
-- **Environment Rules:** `in/envs/[ENV]/` — custom reward shaping (`blenderl_reward.py`) and architecture definitions (`mlp.py`).
+- **Environment Logic:** `in/envs/[ENV]/` — custom reward shaping (`blenderl_reward.py`) and logic valuation (`valuation.py`). Environments do not define models.
 
 ---
 
-## 9. Agent Implementation Guide
-Agents are PyTorch Lightning Modules in `src/usr/methods/`:
+## 9. Agent & Model Implementation Guide
+Agents are PyTorch Lightning Modules in `src/usr/methods/` (registered in `agent_registry.py`):
 - `PPOAgent`: Standard online actor-critic RL.
 - `IQLAgent`: Offline RL using Implicit Q-Learning.
 - `BlendRLAgent` / `BlendRLIQLAgent`: Hybrid logic-neural agents.
-- **Architecture Selection:** `get_neural_agent` (`src/app/core/factories.py`) selects CNN or MLP based on env config.
+- **Model Architecture Selection:** All models live in `src/usr/models/` and are registered via `@register_model`. Instantiated through `build_model()` (`src/app/core/model_registry.py`).
 
 See `pipeline-crud` skill for step-by-step instructions on adding new agents.
 
@@ -188,7 +188,7 @@ See `pipeline-crud` skill for step-by-step instructions on adding new agents.
 ---
 
 ## 11. Method Style Registry
-- **Source of Truth:** `src/usr/methods/method_registry.py` — display names, colors, linestyles, markers.
+- **Source of Truth:** `src/usr/methods/method_style_registry.py` — display names, colors, linestyles, markers.
 - **One entry per architecture.** Both `plot/base.py` and `src/usr/eval/early_prediction/eval_logic.py` import from here.
 - **Prefix Matching:** `get_style("ppo_cp_tuned")` resolves to `"ppo"`. Longest prefix wins.
 

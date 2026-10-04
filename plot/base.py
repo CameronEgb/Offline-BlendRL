@@ -29,8 +29,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 
-# Import styling and alias resolution from the unified method registry
-from src.usr.methods.method_registry import clean_label, get_canonical_method_name, get_method_aliases, get_style_info
+# Import styling and alias resolution from the unified method style registry
+from src.usr.methods.method_style_registry import clean_label, get_canonical_method_name, get_method_aliases, get_style_info
 
 
 def moving_average(a: np.ndarray, n: int = 5) -> np.ndarray:

@@ -43,7 +43,7 @@ except Exception as e:
 
 from src.app.core.lightning_builder import build_trainer, finalize_training
 from src.app.data.rl_data_module import RLDataModule
-from src.usr.methods.registry import auto_discover, get_agent_class
+from src.usr.methods.agent_registry import auto_discover, get_agent_class
 
 
 @hydra.main(version_base=None, config_path="../../in/config", config_name="config")

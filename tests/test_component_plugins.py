@@ -64,6 +64,42 @@ def test_register_and_build_custom_model():
     assert m.out_features == 3
 
 
+def test_registered_standard_neural_models():
+    from src.usr.models.neural.architectures import CNNActor, MLPQNetwork, NeuralBlenderMLP
+
+    mlp = build_model("mlp", obs_dim=6, n_actions=3)
+    assert isinstance(mlp, MLPQNetwork)
+    assert mlp.n_actions == 3
+    assert mlp.num_in_features == 6
+
+    cnn = build_model("cnn", n_actions=4)
+    assert isinstance(cnn, CNNActor)
+
+    blender_mlp = build_model("neural_blender_mlp", obs_dim=8, n_actions=2)
+    assert isinstance(blender_mlp, NeuralBlenderMLP)
+
+    from src.usr.models.neural.resnet import DuelingResNetMLP
+    resnet = build_model("dueling_resnet", obs_dim=46, n_actions=2)
+    assert isinstance(resnet, DuelingResNetMLP)
+
+    from src.usr.models.neural.transformer import SepsisTransformerPolicy, CrossAttentionSepsisPolicy
+    transformer = build_model("transformer", obs_dim=46, n_actions=2)
+    assert isinstance(transformer, SepsisTransformerPolicy)
+
+    cross_attn = build_model("cross_attention", obs_dim=46, n_actions=2)
+    assert isinstance(cross_attn, CrossAttentionSepsisPolicy)
+
+
+def test_factories_get_neural_agent_delegates_to_build_model():
+    from src.app.core.factories import get_neural_agent
+    from src.usr.models.neural.architectures import MLPQNetwork
+
+    agent_model = get_neural_agent("cartpole", n_actions=2, device="cpu", arch_name="mlp", num_in_features=4)
+    assert isinstance(agent_model, MLPQNetwork)
+    assert agent_model.n_actions == 2
+
+
+
 def test_cew_implements_protocols():
     cew = CEWModel(n_inputs=4, n_actions=2)
 

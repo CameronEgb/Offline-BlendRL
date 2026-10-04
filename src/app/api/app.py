@@ -25,11 +25,11 @@ from src.app.pipeline.compose import compose_experiment, effective_config, metho
 from src.app.pipeline.config import normalize_agent_name
 
 try:
-    from src.usr.methods.method_registry import METHOD_STYLE
+    from src.usr.methods.method_style_registry import METHOD_STYLE
 except ImportError:
     METHOD_STYLE = {}
 try:
-    from src.usr.methods.registry import list_registered_agents
+    from src.usr.methods.agent_registry import list_registered_agents
 except ImportError:
 
     def list_registered_agents():

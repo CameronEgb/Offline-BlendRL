@@ -50,7 +50,7 @@ from src.usr.eval.early_prediction.model import (
 # ---------------------------------------------------------------------------
 #  Method Style Registry — imported from the unified source of truth
 # ---------------------------------------------------------------------------
-from src.usr.methods.method_registry import get_style as get_method_style
+from src.usr.methods.method_style_registry import get_style as get_method_style
 
 
 def pretty(name: str) -> str:
@@ -457,7 +457,7 @@ def plot_ep_shock_over_tau(ep_shock_results, report_dir):
         ("Non-Shock Cohort (y=0)", "non_shock", "ep_shock_over_tau_non_shock.png"),
     ]
 
-    from src.usr.methods.method_registry import METHOD_STYLE
+    from src.usr.methods.method_style_registry import METHOD_STYLE
 
     all_colors = [v["color"] for v in METHOD_STYLE.values() if v.get("color")] + [
         "tab:brown",

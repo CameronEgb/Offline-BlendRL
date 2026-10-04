@@ -26,61 +26,17 @@ def _safe_instantiate(module_class, **kwargs):
 def get_neural_agent(
     env_name, n_actions, device, arch_name=None, hidden_sizes=[64, 64], num_in_features=None, **kwargs
 ):
-    if num_in_features is None:
-        from src.app.core.env_vectorized import VectorizedBaseEnv
+    from src.app.core.model_registry import build_model
 
-        try:
-            temp_env = VectorizedBaseEnv.from_name(env_name, n_envs=1, mode="eval")
-            obs = temp_env.reset()
-            num_in_features = obs.shape[-1]
-            temp_env.close()
-        except Exception as e:
-            logger.debug("Could not infer num_in_features by instantiating %s: %s", env_name, e)
-
-    if arch_name in ["cross_attention", "cross_attention_transformer", "sepsis_cross_attention"]:
-        transformer_module_path = f"in/envs/{env_name}/transformer.py"
-        if not os.path.exists(transformer_module_path):
-            raise FileNotFoundError(f"Requested transformer architecture but {transformer_module_path} does not exist.")
-        module = load_module(transformer_module_path)
-        cls = getattr(module, "CrossAttentionPolicy", None) or getattr(module, "CrossAttentionSepsisPolicy")
-        return _safe_instantiate(cls, device=device, out_size=n_actions, num_in_features=num_in_features, **kwargs).to(
-            device
-        )
-
-    if arch_name in ["transformer", "sepsis_transformer"]:
-        transformer_module_path = f"in/envs/{env_name}/transformer.py"
-        if not os.path.exists(transformer_module_path):
-            raise FileNotFoundError(f"Requested transformer architecture but {transformer_module_path} does not exist.")
-        module = load_module(transformer_module_path)
-        cls = getattr(module, "TransformerPolicy", None) or getattr(module, "SepsisTransformerPolicy")
-        return _safe_instantiate(cls, device=device, out_size=n_actions, num_in_features=num_in_features, **kwargs).to(
-            device
-        )
-
-    if arch_name in ["dueling_resnet", "resnet"]:
-        mlp_module_path = f"in/envs/{env_name}/mlp.py"
-        if not os.path.exists(mlp_module_path):
-            raise FileNotFoundError(f"Requested resnet architecture but {mlp_module_path} does not exist.")
-        module = load_module(mlp_module_path)
-        cls = getattr(module, "DuelingResNetMLP", None) or getattr(module, "MLP")
-        return _safe_instantiate(
-            cls, device=device, out_size=n_actions, hidden_sizes=hidden_sizes, num_in_features=num_in_features, **kwargs
-        ).to(device)
-
-    if arch_name in ["mlp", "dnn", "standard_mlp"]:
-        mlp_module_path = f"in/envs/{env_name}/mlp.py"
-        if not os.path.exists(mlp_module_path):
-            raise FileNotFoundError(f"Requested MLP architecture but {mlp_module_path} does not exist.")
-        module = load_module(mlp_module_path)
-        cls = getattr(module, "StandardMLP", None) or getattr(module, "MLP")
-        return _safe_instantiate(
-            cls, device=device, out_size=n_actions, hidden_sizes=hidden_sizes, num_in_features=num_in_features, **kwargs
-        ).to(device)
-
-    if arch_name == "cnn":
-        return CNNActor(n_actions=n_actions).to(device)
-
-    raise ValueError(f"Unknown architecture '{arch_name}' requested for environment '{env_name}'.")
+    return build_model(
+        arch_name or "mlp",
+        env=env_name,
+        n_actions=n_actions,
+        device=device,
+        hidden_sizes=hidden_sizes,
+        num_in_features=num_in_features,
+        **kwargs,
+    )
 
 
 def get_blender(

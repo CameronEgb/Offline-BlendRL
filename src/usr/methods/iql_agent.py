@@ -8,7 +8,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 from src.usr.methods.base_agent import OfflineAgentBase
-from src.usr.methods.registry import register_agent
+from src.usr.methods.agent_registry import register_agent
 
 
 @register_agent(
@@ -92,10 +92,14 @@ class IQLAgent(OfflineAgentBase):
                 cfg=self.cfg,
             )
         else:
-            from src.app.core.factories import get_neural_agent
+            from src.app.core.model_registry import build_model
 
-            self.actor = get_neural_agent(
-                cfg.env.name, self.n_actions, self.device, arch_name=self.get_cfg("architecture", default_arch), hidden_sizes=hidden_sizes
+            self.actor = build_model(
+                self.get_cfg("architecture", default_arch),
+                env=self.env,
+                n_actions=self.n_actions,
+                device=self.device,
+                hidden_sizes=hidden_sizes,
             )
 
     def _prepare_logic_obs(self, obs, logic_obs=None):
