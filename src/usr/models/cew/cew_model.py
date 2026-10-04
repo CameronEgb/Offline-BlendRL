@@ -18,6 +18,12 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from src.app.core.model_registry import register_model
+from src.app.core.protocols import (
+    DynamicTopologyProtocol,
+    ExtraStateProtocol,
+    HasModelCallbacks,
+)
 from src.usr.methods.cew_utils import (
     MultiFLC,
     rule_creation,
@@ -28,7 +34,8 @@ from src.usr.methods.cew_utils import (
 )
 
 
-class CEWModel(nn.Module):
+@register_model("cew")
+class CEWModel(nn.Module, DynamicTopologyProtocol, ExtraStateProtocol, HasModelCallbacks):
     """Self-organizing fuzzy Q-network (Clinical Expert Weighting).
 
     Can be used standalone (agent: cql/iql, model: cew) or as a
@@ -202,6 +209,27 @@ class CEWModel(nn.Module):
         self._rebuild(device=target_device)
         self._flc.load_state_dict(source._flc.state_dict())
         self.is_organized = True
+
+    # ── Protocol implementations ─────────────────────────────────────────
+
+    def has_topology_changed(self) -> bool:
+        """Return True if model requests an optimizer rebind due to topology mutation."""
+        return bool(getattr(self, "_request_optimizer_rebind", False))
+
+    def reset_topology_changed(self) -> None:
+        """Reset topology change flag after optimizer rebinding."""
+        self._request_optimizer_rebind = False
+
+    def clone_topology_to(self, target: nn.Module) -> None:
+        """Synchronize this model's architecture and weights to target network."""
+        if hasattr(target, "clone_topology_from"):
+            target.clone_topology_from(self)
+
+    def get_callbacks(self) -> list:
+        """Return the self-organization callback for this model."""
+        from src.usr.models.cew.cew_callback import CEWSelfOrganizationCallback
+
+        return [CEWSelfOrganizationCallback(self)]
 
     # ── Checkpoint support ────────────────────────────────────────────────
 

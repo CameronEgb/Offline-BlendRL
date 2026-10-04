@@ -7,6 +7,7 @@ _request_optimizer_rebind flag so OfflineAgentBase can react.
 
 from __future__ import annotations
 
+from typing import Any, Optional
 import lightning as L
 
 from src.usr.models.cew.cew_model import CEWModel
@@ -20,23 +21,17 @@ class CEWSelfOrganizationCallback(L.Callback):
     whose policy_modules list contains one or more CEWModel instances).
     """
 
+    def __init__(self, model: Optional[Any] = None):
+        super().__init__()
+        self.model = model
+
     def _collect_cew_models(self, pl_module: L.LightningModule) -> list[CEWModel]:
-        """Find all CEWModel instances attached to the agent."""
-        found = []
-        # Standalone: agent.q_model or agent.model is a CEWModel
-        for attr in ("q_model", "model"):
-            m = getattr(pl_module, attr, None)
-            if isinstance(m, CEWModel):
-                found.append(m)
-                return found  # only one in standalone case
-        # BlendRL composite: agent.model.policy_modules contains CEWModels
-        blender = getattr(pl_module, "model", None)
-        policy_modules = getattr(blender, "policy_modules", None)
-        if policy_modules is not None:
-            for m in policy_modules:
-                if isinstance(m, CEWModel):
-                    found.append(m)
-        return found
+        """Find all CEWModel instances attached to the agent via protocols."""
+        if self.model is not None and isinstance(self.model, CEWModel):
+            return [self.model]
+        from src.app.core.protocols import walk_model_modules
+
+        return [m for m in walk_model_modules(pl_module) if isinstance(m, CEWModel)]
 
     def on_train_epoch_start(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
         epochs_per_interval = pl_module.get_cfg("epochs_per_interval", 1) if hasattr(pl_module, "get_cfg") else 1

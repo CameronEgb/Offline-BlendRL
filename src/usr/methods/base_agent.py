@@ -212,28 +212,25 @@ class OfflineAgentBase(BaseAgent):
     def configure_callbacks(self):
         """Attach model-registered callbacks to the trainer.
 
-        Returns the CEWSelfOrganizationCallback when a CEWModel is
-        present (standalone or inside a BlenderActorCritic).
-        Any other model that uses the same flag convention gets this
-        for free without additional agent code.
+        Discovers and instantiates callbacks requested by any model or sub-module
+        implementing HasModelCallbacks (e.g. CEWModel or BlenderActorCritic).
         """
-        from src.usr.models.cew.cew_callback import CEWSelfOrganizationCallback
-        from src.usr.models.cew.cew_model import CEWModel
+        from src.app.core.protocols import HasModelCallbacks, walk_model_modules
 
-        def _has_cew(agent):
-            for attr in ("q_model", "q_network", "model"):
-                m = getattr(agent, attr, None)
-                if isinstance(m, CEWModel):
-                    return True
-            blender = getattr(agent, "model", None)
-            for m in list(getattr(blender, "policy_modules", None) or []):
-                if isinstance(m, CEWModel):
-                    return True
-            return False
+        callbacks = []
+        for m in walk_model_modules(self):
+            if isinstance(m, HasModelCallbacks) or hasattr(m, "get_callbacks"):
+                callbacks.extend(m.get_callbacks())
 
-        if _has_cew(self):
-            return [CEWSelfOrganizationCallback()]
-        return []
+        # Deduplicate callbacks by class
+        seen_types = set()
+        unique_callbacks = []
+        for cb in callbacks:
+            cb_type = type(cb)
+            if cb_type not in seen_types:
+                seen_types.add(cb_type)
+                unique_callbacks.append(cb)
+        return unique_callbacks
 
     def on_train_epoch_start(self):
         """Set dataset limit based on current training interval.
@@ -275,44 +272,39 @@ class OfflineAgentBase(BaseAgent):
         return current_transitions
 
     def _handle_optimizer_rebind(self) -> None:
-        """Check all model components for the _request_optimizer_rebind flag.
+        """Check all model components for dynamic topology changes.
 
-        Any model (standalone or inside a composite BlenderActorCritic) that
-        sets _request_optimizer_rebind = True on itself during a callback will
-        trigger optimizer rebinding and target-network synchronization here.
+        Any model (standalone or inside a composite model) that implements
+        DynamicTopologyProtocol (or sets _request_optimizer_rebind = True)
+        triggers optimizer rebinding and target-network synchronization here.
         """
-        # Collect all sub-models that may have set the flag
-        candidates = []
-        for attr in ("q_model", "q_network", "model"):
-            m = getattr(self, attr, None)
-            if m is not None and m not in candidates:
-                candidates.append(m)
-        blender = getattr(self, "model", None)
-        for m in list(getattr(blender, "policy_modules", None) or []):
-            if m not in candidates:
-                candidates.append(m)
+        from src.app.core.protocols import walk_model_modules
 
-        needs_rebind = any(getattr(m, "_request_optimizer_rebind", False) for m in candidates)
+        candidates = walk_model_modules(self)
+        needs_rebind = False
+        for m in candidates:
+            if hasattr(m, "has_topology_changed") and m.has_topology_changed():
+                needs_rebind = True
+                break
+            elif getattr(m, "_request_optimizer_rebind", False):
+                needs_rebind = True
+                break
+
         if not needs_rebind:
             return
 
         # Clear flag on all candidates
         for m in candidates:
-            if getattr(m, "_request_optimizer_rebind", False):
+            if hasattr(m, "reset_topology_changed"):
+                m.reset_topology_changed()
+            elif getattr(m, "_request_optimizer_rebind", False):
                 m._request_optimizer_rebind = False
 
         self._rebind_optimizer()
 
     def _rebind_optimizer(self) -> None:
-        """Rebind optimizer after a model topology change and sync target networks.
-
-        Called whenever a dynamic model (e.g. CEWModel) signals that its
-        parameter tensor shapes have changed and the current optimizer's
-        parameter groups are stale.
-        """
+        """Rebind optimizer after a model topology change and sync target networks."""
         # Sync target network if present and topology-aware
-        from src.usr.models.cew.cew_model import CEWModel
-
         for src_attr, tgt_attr in (
             ("q_model", "target_q_model"),
             ("q_network", "target_q_network"),
@@ -320,18 +312,26 @@ class OfflineAgentBase(BaseAgent):
         ):
             src = getattr(self, src_attr, None)
             tgt = getattr(self, tgt_attr, None)
-            if isinstance(src, CEWModel) and isinstance(tgt, CEWModel) and src is not tgt:
-                tgt.clone_topology_from(src)
+            if src is not None and tgt is not None and src is not tgt:
+                if hasattr(src, "clone_topology_to"):
+                    src.clone_topology_to(tgt)
+                elif hasattr(tgt, "clone_topology_from"):
+                    tgt.clone_topology_from(src)
 
-        # Sync CEW modules inside BlenderActorCritic target
+        # Sync any constituent target modules (e.g. inside BlenderActorCritic)
         src_blender = getattr(self, "model", None)
         tgt_blender = getattr(self, "target_model", None)
-        if src_blender is not None and tgt_blender is not None:
-            src_modules = list(getattr(src_blender, "policy_modules", None) or [])
-            tgt_modules = list(getattr(tgt_blender, "policy_modules", None) or [])
-            for s, t in zip(src_modules, tgt_modules):
-                if isinstance(s, CEWModel) and isinstance(t, CEWModel):
-                    t.clone_topology_from(s)
+        if src_blender is not None and tgt_blender is not None and src_blender is not tgt_blender:
+            if hasattr(src_blender, "clone_topology_to"):
+                src_blender.clone_topology_to(tgt_blender)
+            else:
+                src_modules = list(getattr(src_blender, "policy_modules", None) or [])
+                tgt_modules = list(getattr(tgt_blender, "policy_modules", None) or [])
+                for s, t in zip(src_modules, tgt_modules):
+                    if hasattr(s, "clone_topology_to"):
+                        s.clone_topology_to(t)
+                    elif hasattr(t, "clone_topology_from"):
+                        t.clone_topology_from(s)
 
         # Rebind optimizer
         try:

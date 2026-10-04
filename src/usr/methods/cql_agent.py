@@ -36,34 +36,38 @@ class CQLAgent(OfflineAgentBase):
         self.is_modular = has_modules or is_hybrid
 
         if self.is_modular:
-            from src.usr.models.blendrl.agents.blender_agent import BlenderActorCritic
+            from src.app.core.model_registry import build_model
 
-            self.model = BlenderActorCritic(
-                self.env,
-                self.get_cfg("rules", getattr(cfg.env, "rules", "default")),
-                self.get_cfg("actor_mode", "hybrid"),
-                self.get_cfg("blender_mode", "neural"),
-                self.get_cfg("blend_function", "softmax"),
-                self.get_cfg("reasoner", getattr(cfg.env, "reasoner", "nsfr")),
-                self.device,
+            self.model = build_model(
+                "blendrl",
+                env=self.env,
+                device=self.device,
+                rules=self.get_cfg("rules", getattr(cfg.env, "rules", "default")),
+                actor_mode=self.get_cfg("actor_mode", "hybrid"),
+                blender_mode=self.get_cfg("blender_mode", "neural"),
+                blend_function=self.get_cfg("blend_function", "softmax"),
+                reasoner=self.get_cfg("reasoner", getattr(cfg.env, "reasoner", "nsfr")),
                 architecture=self.get_cfg("architecture", getattr(cfg.env, "architecture", "mlp")),
                 modules=self.get_cfg("modules", None),
                 cfg=self.cfg,
             )
-            self.target_model = BlenderActorCritic(
-                self.env,
-                self.get_cfg("rules", getattr(cfg.env, "rules", "default")),
-                self.get_cfg("actor_mode", "hybrid"),
-                self.get_cfg("blender_mode", "neural"),
-                self.get_cfg("blend_function", "softmax"),
-                self.get_cfg("reasoner", getattr(cfg.env, "reasoner", "nsfr")),
-                self.device,
+            self.target_model = build_model(
+                "blendrl",
+                env=self.env,
+                device=self.device,
+                rules=self.get_cfg("rules", getattr(cfg.env, "rules", "default")),
+                actor_mode=self.get_cfg("actor_mode", "hybrid"),
+                blender_mode=self.get_cfg("blender_mode", "neural"),
+                blend_function=self.get_cfg("blend_function", "softmax"),
+                reasoner=self.get_cfg("reasoner", getattr(cfg.env, "reasoner", "nsfr")),
                 architecture=self.get_cfg("architecture", getattr(cfg.env, "architecture", "mlp")),
                 modules=self.get_cfg("modules", None),
                 cfg=self.cfg,
             )
             self.target_model.load_state_dict(self.model.state_dict())
         else:
+            from src.app.core.model_registry import build_model
+
             model_cfg = getattr(cfg, "model", None)
             model_name = None
             if isinstance(model_cfg, str):
@@ -85,17 +89,13 @@ class CQLAgent(OfflineAgentBase):
             )
 
             if is_cew:
-                from src.usr.models.cew.cew_model import CEWModel
-
                 obs_dim = (
                     int(np.prod(self.observation_space))
                     if hasattr(self, "observation_space") and self.observation_space
                     else None
                 )
                 cew_cfg = self.get_cfg("cew", {}) or {}
-                self.q_model = CEWModel(
-                    n_inputs=obs_dim or 1,
-                    n_actions=self.n_actions,
+                cew_kwargs = dict(
                     cql_alpha=float(self.get_cfg("cql_alpha", 1.0)),
                     lr=float(self.get_cfg("lr", 3e-4)),
                     ecm_dthr=float(cew_cfg.get("ecm_dthr", self.get_cfg("ecm_dthr", 0.1))),
@@ -106,18 +106,21 @@ class CQLAgent(OfflineAgentBase):
                     fyd_top_k=self.get_cfg("fyd_top_k", cew_cfg.get("fyd_top_k", None)),
                     stabilize=bool(self.get_cfg("stabilize", True)),
                 )
-                self.target_q_model = CEWModel(
-                    n_inputs=obs_dim or 1,
+                self.q_model = build_model(
+                    "cew",
+                    env=self.env,
+                    device=self.device,
+                    obs_dim=obs_dim,
                     n_actions=self.n_actions,
-                    cql_alpha=float(self.get_cfg("cql_alpha", 1.0)),
-                    lr=float(self.get_cfg("lr", 3e-4)),
-                    ecm_dthr=float(cew_cfg.get("ecm_dthr", self.get_cfg("ecm_dthr", 0.1))),
-                    eps=float(self.get_cfg("eps", 0.1)),
-                    kappa=float(self.get_cfg("kappa", 0.6)),
-                    fyd="fyd" in str(self.get_cfg("algorithm", ""))
-                    or bool(self.get_cfg("fyd", cew_cfg.get("fyd", False))),
-                    fyd_top_k=self.get_cfg("fyd_top_k", cew_cfg.get("fyd_top_k", None)),
-                    stabilize=bool(self.get_cfg("stabilize", True)),
+                    **cew_kwargs,
+                )
+                self.target_q_model = build_model(
+                    "cew",
+                    env=self.env,
+                    device=self.device,
+                    obs_dim=obs_dim,
+                    n_actions=self.n_actions,
+                    **cew_kwargs,
                 )
                 self.q_network = self.q_model
                 self.target_q_network = self.target_q_model
@@ -528,11 +531,22 @@ class CQLAgent(OfflineAgentBase):
         return optim.Adam(params, lr=lr, weight_decay=weight_decay)
 
     def on_save_checkpoint(self, checkpoint: dict[str, Any]) -> None:
-        if hasattr(self, "q_model"):
-            checkpoint["cew_extra"] = self.q_model.extra_state()
+        for attr in ("q_model", "model"):
+            m = getattr(self, attr, None)
+            if hasattr(m, "extra_state"):
+                state = m.extra_state()
+                checkpoint["extra_state"] = state
+                checkpoint["cew_extra"] = state
 
     def on_load_checkpoint(self, checkpoint: dict[str, Any]) -> None:
-        if hasattr(self, "q_model"):
-            self.q_model.load_extra_state(checkpoint.get("cew_extra", {}))
-            if hasattr(self, "target_q_model") and self.target_q_model is not None:
+        extra = checkpoint.get("extra_state", checkpoint.get("cew_extra", {}))
+        for attr in ("q_model", "model"):
+            m = getattr(self, attr, None)
+            if hasattr(m, "load_extra_state") and extra:
+                m.load_extra_state(extra)
+
+        if hasattr(self, "target_q_model") and self.target_q_model is not None and hasattr(self, "q_model"):
+            if hasattr(self.q_model, "clone_topology_to"):
+                self.q_model.clone_topology_to(self.target_q_model)
+            elif hasattr(self.target_q_model, "clone_topology_from"):
                 self.target_q_model.clone_topology_from(self.q_model)

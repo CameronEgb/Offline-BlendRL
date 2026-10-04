@@ -35,8 +35,8 @@ from nudge.agents.logic_agent import NsfrActorCritic
 from nudge.agents.neural_agent import ActorCritic, NeuralPPO
 from nudge.torch_utils import softor
 from src.app.core.factories import get_blender, get_neural_agent
+from src.app.core.model_registry import register_model
 from src.app.core.types import ActionResult
-from src.usr.models.cew.cew_model import CEWModel
 
 
 class BlenderActor(nn.Module):
@@ -156,9 +156,15 @@ class BlenderActor(nn.Module):
         for i, module in enumerate(self.policy_modules):
             m_type = self.module_types[i]
             if m_type == "neural":
-                probs = module.get_action_probs(neural_state)
-            elif m_type == "cew":
-                cew_inp = (
+                if hasattr(module, "get_action_probs"):
+                    probs = module.get_action_probs(neural_state)
+                else:
+                    probs = module(neural_state)
+            elif m_type == "logic":
+                probs = self._map_logic_output(module.get_action_probs(logic_state), module)
+            else:
+                # Custom / plugin submodule (e.g. CEW or other continuous/relational modules)
+                sub_inp = (
                     neural_state
                     if (
                         neural_state.ndim == 2
@@ -167,10 +173,10 @@ class BlenderActor(nn.Module):
                     )
                     else (logic_state if logic_state is not None else neural_state)
                 )
-                probs = self._map_logic_output(module.get_action_probs(cew_inp), module)
-            else:
-                # logic
-                probs = self._map_logic_output(module.get_action_probs(logic_state), module)
+                if hasattr(module, "get_action_probs"):
+                    probs = self._map_logic_output(module.get_action_probs(sub_inp), module)
+                else:
+                    probs = module(sub_inp)
             module_probs.append(probs)
 
         # weights size: B * N_modules
@@ -209,8 +215,13 @@ class BlenderActor(nn.Module):
         action_probs = torch.zeros(logic_state.size(0), self.env.n_actions, device=logic_state.device)
         for i, module in enumerate(self.policy_modules):
             m_type = self.module_types[i]
-            if m_type == "cew":
-                cew_inp = (
+            if m_type == "neural":
+                continue
+            elif m_type == "logic":
+                probs = self._map_logic_output(module.get_action_probs(logic_state), module)
+                action_probs += weights[:, i].unsqueeze(1) * probs
+            else:
+                sub_inp = (
                     dummy_neural
                     if (
                         dummy_neural.ndim == 2
@@ -219,10 +230,10 @@ class BlenderActor(nn.Module):
                     )
                     else (logic_state if logic_state is not None else dummy_neural)
                 )
-                probs = self._map_logic_output(module.get_action_probs(cew_inp), module)
-                action_probs += weights[:, i].unsqueeze(1) * probs
-            elif m_type != "neural":
-                probs = self._map_logic_output(module.get_action_probs(logic_state), module)
+                if hasattr(module, "get_action_probs"):
+                    probs = self._map_logic_output(module.get_action_probs(sub_inp), module)
+                else:
+                    probs = module(sub_inp)
                 action_probs += weights[:, i].unsqueeze(1) * probs
 
         return action_probs, weights
@@ -322,8 +333,16 @@ class BlenderActor(nn.Module):
                         q = module(neural_state)  # Assuming forward returns Q-values for Q-networks
                 else:
                     q = torch.zeros(batch_size, self.env.n_actions, device=neural_state.device)
-            elif m_type == "cew":
-                cew_inp = (
+            elif m_type == "logic":
+                # logic (NSFR / Neumann)
+                if hasattr(module, "get_q_values"):
+                    q = module.get_q_values(logic_state)
+                else:
+                    # Logic modules usually return probs, treat as Q-values [0, 1]
+                    q = self._map_logic_output(module.get_action_probs(logic_state), module)
+            else:
+                # Custom / plugin submodule (e.g. CEW or other continuous/relational modules)
+                sub_inp = (
                     neural_state
                     if (
                         neural_state.ndim == 2
@@ -333,16 +352,9 @@ class BlenderActor(nn.Module):
                     else (logic_state if logic_state is not None else neural_state)
                 )
                 if hasattr(module, "get_q_values"):
-                    q = module.get_q_values(cew_inp)
+                    q = module.get_q_values(sub_inp)
                 else:
-                    q = module(cew_inp)  # CEWModel forward returns Q-values
-            else:
-                # logic (NSFR / Neumann)
-                if hasattr(module, "get_q_values"):
-                    q = module.get_q_values(logic_state)
-                else:
-                    # Logic modules usually return probs, treat as Q-values [0, 1]
-                    q = self._map_logic_output(module.get_action_probs(logic_state), module)
+                    q = module(sub_inp)
             module_q_values.append(q)
 
         weights = self.to_blender_policy_distribution(neural_state, logic_state)
@@ -354,6 +366,7 @@ class BlenderActor(nn.Module):
         return q_values
 
 
+@register_model("blendrl", "blender")
 class BlenderActorCritic(nn.Module):
     """
     BlendeRL actor-critic that supports heterogeneous policy modules.
@@ -463,21 +476,19 @@ class BlenderActorCritic(nn.Module):
                     self.module_types.append("logic")
                     if blender_rules is None:
                         blender_rules = m_rules
-                elif m_type == "cew":
-                    # CEWModel handles its own self-organization via CEWSelfOrganizationCallback
-                    n_inputs = int(np.prod(obs.shape[1:]))
-                    ecm_dthr = float(_get_val(m_cfg, "ecm_dthr", 0.1))
-                    fyd = bool(_get_val(m_cfg, "fyd", False))
-                    fyd_top_k = _get_val(m_cfg, "fyd_top_k", None)
-                    m = CEWModel(
-                        n_inputs=n_inputs,
+                elif m_type not in ("nsfr", "neumann", "neural"):
+                    # Dynamically instantiate from MODEL_REGISTRY without hardcoded classes
+                    from src.app.core.model_registry import build_model
+
+                    m = build_model(
+                        m_cfg,
+                        env=env,
+                        device=device,
+                        obs_dim=int(np.prod(obs.shape[1:])),
                         n_actions=env.n_actions,
-                        ecm_dthr=ecm_dthr,
-                        fyd=fyd,
-                        fyd_top_k=fyd_top_k,
                     ).to(device)
                     self.policy_modules.append(m)
-                    self.module_types.append("cew")
+                    self.module_types.append(m_type)
                 elif m_type == "neural":
                     arch = _get_val(m_cfg, "architecture", _get_val(m_cfg, "type", self.architecture))
                     if arch == "neural" or not arch:

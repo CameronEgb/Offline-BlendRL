@@ -77,16 +77,17 @@ class PPOAgent(BaseAgent):
         default_arch = getattr(cfg.env, "architecture", "mlp")
 
         if self.is_modular:
-            from src.usr.models.blendrl.agents.blender_agent import BlenderActorCritic
+            from src.app.core.model_registry import build_model
 
-            self.model = BlenderActorCritic(
-                self.env,
-                self.get_cfg("rules", default_rules),
-                self.get_cfg("actor_mode", "hybrid"),
-                self.get_cfg("blender_mode", "neural"),
-                self.get_cfg("blend_function", "softmax"),
-                self.get_cfg("reasoner", default_reasoner),
-                self.device,
+            self.model = build_model(
+                "blendrl",
+                env=self.env,
+                device=self.device,
+                rules=self.get_cfg("rules", default_rules),
+                actor_mode=self.get_cfg("actor_mode", "hybrid"),
+                blender_mode=self.get_cfg("blender_mode", "neural"),
+                blend_function=self.get_cfg("blend_function", "softmax"),
+                reasoner=self.get_cfg("reasoner", default_reasoner),
                 architecture=self.get_cfg("architecture", default_arch),
                 cfg=self.cfg,
             )
