@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-scripts/prepare_mayo_cchs_datasets.py
+in/datasets/prepare_mayo_cchs.py
 
 Processes raw Mayo and CCHS CSV trajectories into:
 1. Unified .npz trajectory archives for VectorizedEnv (`mayo.npz`, `cchs.npz`).

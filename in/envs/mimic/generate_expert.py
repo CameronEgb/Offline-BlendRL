@@ -1,13 +1,16 @@
 import numpy as np
 import os
 import sys
+from pathlib import Path
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 from sklearn.model_selection import train_test_split
 
 # Dynamic dataset directory detection
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 from src.app.pipeline.datasets import resolve_mimic_npz_path
 
 src_path = str(resolve_mimic_npz_path("mimic_lazy_0_interventions_balanced.npz"))

@@ -8,7 +8,7 @@ from sklearn.preprocessing import MinMaxScaler
 
 # Ensure project root and src are in sys.path
 SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = SCRIPT_DIR.parent
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 

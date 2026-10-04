@@ -42,7 +42,9 @@ class RLDataModule(L.LightningDataModule):
                 import subprocess
                 import sys
 
-                script = Path("scripts/preprocess_pyrenees_per_problem.py")
+                script = Path("in/envs/pyrenees/tools/preprocess_pyrenees_per_problem.py")
+                if not script.exists():
+                    script = Path("scripts/preprocess_pyrenees_per_problem.py")
                 if script.exists():
                     subprocess.run([sys.executable, str(script)], check=True)
 

@@ -89,3 +89,27 @@ def test_writer_round_trip(writer, tmp_path):
 def test_writer_empty_flush(writer, tmp_path):
     writer.flush()
     assert len(list((tmp_path / "dataset").glob("*.pkl"))) == 0
+
+
+def test_convert_mimic_npz_to_transitions(tmp_path):
+    from src.app.dataset_utils import convert_mimic_npz_to_transitions
+
+    npz_file = tmp_path / "mock_mimic.npz"
+    # Create mock MIMIC dataset with 2 patients, 5 timesteps each
+    N, T, D = 2, 5, 49
+    X = np.random.randn(N, T, D).astype(np.float32)
+    # Action columns (47: antibiotics)
+    X[:, :, 47] = 1.0
+    y = np.array([[0], [1]], dtype=np.int64)
+    mask = np.ones((N, T, 1), dtype=np.float32)
+
+    np.savez(npz_file, X=X, y=y, mask=mask)
+
+    out_dir = tmp_path / "mock_out"
+    total = convert_mimic_npz_to_transitions(npz_file, out_dir=out_dir, chunk_size=100)
+
+    assert total == N * T
+    pkl_files = list(out_dir.glob("*.pkl"))
+    assert len(pkl_files) > 0
+    assert (out_dir / "dataset_manifest.json").exists()
+

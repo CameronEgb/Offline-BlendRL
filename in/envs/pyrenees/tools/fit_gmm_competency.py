@@ -17,7 +17,7 @@ Key enhancements:
        so valuation.py can return exact P(Cluster = Low|Med|High | s) in [0, 1].
 
 Usage:
-    python scripts/fit_gmm_competency.py
+    python in/envs/pyrenees/tools/fit_gmm_competency.py
 """
 
 import os

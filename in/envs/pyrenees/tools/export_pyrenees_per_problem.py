@@ -7,7 +7,7 @@ compiles standalone ONNX graphs with matching action dimensions (3 for problem, 
 and saves drop-in ONNX models & scalers to Pyrenees-python/app/models/policies/Blend-RL/.
 
 Usage:
-  python scripts/export_pyrenees_per_problem.py [--ckpt-root CKPT_ROOT] [--verify]
+  python in/envs/pyrenees/tools/export_pyrenees_per_problem.py [--ckpt-root CKPT_ROOT] [--verify]
 """
 
 import os
@@ -20,7 +20,7 @@ import numpy as np
 import torch
 from sklearn.preprocessing import MinMaxScaler
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 if str(PROJECT_ROOT / "src") not in sys.path:

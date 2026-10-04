@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-scripts/plot_pyrenees_3way_best.py — Plot best Optuna trial runs across all 3 methods and 11 problems.
+in/envs/pyrenees/tools/plot_pyrenees_3way_best.py — Plot best Optuna trial runs across all 3 methods and 11 problems.
 """
 
 import os
@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
 
 METHODS = [
     ("cql_blendrl_human_neural", "CQL (Neural Baseline)", "#e74c3c", "--"),
