@@ -1,10 +1,12 @@
-"""Unit tests for the Run History Navigator, Baseline Pinning, and Curve Smoothing in ThetaIDE."""
 import json
 import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+import pytest
+
+pytest.importorskip("PyQt6")
 
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 

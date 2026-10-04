@@ -19,7 +19,7 @@ for p in [
     if p not in sys.path:
         sys.path.insert(0, p)
 
-collect_ignore_glob = ["in/envs/*", "src/usr/models/fyd_repo/*", "src/usr/models/cew_repo/*"]
+collect_ignore_glob = ["in/envs/*"]
 
 # Qt requires QtWebEngineWidgets to be imported before any QApplication exists.
 # Test modules build one at import time, so whichever module pytest collects
