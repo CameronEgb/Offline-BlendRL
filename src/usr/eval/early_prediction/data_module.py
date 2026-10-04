@@ -125,15 +125,23 @@ class EPSepsisDataModule(L.LightningDataModule, BaseDataModule):
         self.mask = data["mask"]
         self.patient_lengths = np.array([(self.mask[i].squeeze() != -1).sum() for i in range(len(self.X))])
 
-        self.window_hours = ep_cfg.get("window_hours", 12)
+        data_cfg = cfg.get("data", {}) if hasattr(cfg, "get") else {}
+        if hasattr(data_cfg, "__iter__") and not isinstance(data_cfg, dict):
+            from omegaconf import OmegaConf
+
+            data_cfg = OmegaConf.to_container(data_cfg, resolve=True)
+        if not isinstance(data_cfg, dict):
+            data_cfg = {}
+
+        self.window_hours = ep_cfg.get("window_hours", data_cfg.get("window_hours", 12))
         self.w_steps = 2 * self.window_hours
-        self.tau_train = ep_cfg.get("tau_train", 12)
-        self.tau_max = ep_cfg.get("tau_max", 33)
-        self.use_volatility = ep_cfg.get("use_volatility", True)
-        self.use_norm = ep_cfg.get("use_norm", True)
-        self.use_all_history = ep_cfg.get("use_all_history", False)
-        self.use_all_trajectories = ep_cfg.get("use_all_trajectories", False)
-        self.n_splits = ep_cfg.get("n_splits", 20)
+        self.tau_train = ep_cfg.get("tau_train", data_cfg.get("tau_train", 12))
+        self.tau_max = ep_cfg.get("tau_max", data_cfg.get("tau_max", 33))
+        self.use_volatility = ep_cfg.get("use_volatility", data_cfg.get("use_volatility", True))
+        self.use_norm = ep_cfg.get("use_norm", data_cfg.get("use_norm", True))
+        self.use_all_history = ep_cfg.get("use_all_history", data_cfg.get("use_all_history", False))
+        self.use_all_trajectories = ep_cfg.get("use_all_trajectories", data_cfg.get("use_all_trajectories", False))
+        self.n_splits = ep_cfg.get("n_splits", data_cfg.get("n_splits", 20))
 
         # Precompute CQL policy values V(s) if checkpoint is supplied
         checkpoint = ep_cfg.get("checkpoint")

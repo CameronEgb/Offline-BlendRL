@@ -69,7 +69,10 @@ class SupervisedDataModule(L.LightningDataModule, BaseDataModule):
             if dm_name and dm_name != "SupervisedDataModule":
                 from src.app.core.paradigm_loader import get_component
 
-                cls = get_component(dm_name)
+                try:
+                    cls = get_component(dm_name)
+                except KeyError:
+                    cls = None
                 if cls is not None:
                     self._delegate = cls(self._cfg)
                     self.input_dim = getattr(self._delegate, "input_dim", 64)
