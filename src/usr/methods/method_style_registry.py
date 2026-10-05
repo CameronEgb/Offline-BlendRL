@@ -21,6 +21,10 @@ METHOD_STYLE = {
     "lstm": {"label": "LSTM", "color": "#2ca02c", "marker": "s", "linestyle": "-"},
     "ep_lstm": {"label": "EP LSTM", "color": "#2ca02c", "marker": "s", "linestyle": "-"},
     "ep_transformer": {"label": "EP Transformer", "color": "#e377c2", "marker": "p", "linestyle": "-"},
+    "LSTM (no V)": {"label": "LSTM (no V)", "color": "#2ca02c", "marker": "s", "linestyle": "-"},
+    "LSTM (with V)": {"label": "LSTM (with V)", "color": "#1b9e77", "marker": "^", "linestyle": "--"},
+    "Transformer (no V)": {"label": "Transformer (no V)", "color": "#e377c2", "marker": "p", "linestyle": "-"},
+    "Transformer (with V)": {"label": "Transformer (with V)", "color": "#7570b3", "marker": "D", "linestyle": "--"},
     "cql_blendrl_human_neural": {
         "label": "BlendRL (MLP, Human, MLP)",
         "color": "#fdbf6f",

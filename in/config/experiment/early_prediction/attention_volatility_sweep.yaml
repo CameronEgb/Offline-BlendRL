@@ -15,7 +15,5 @@ early_prediction:
   epochs: 20
 
 plots:
+  - losses
   - ep_dl_sweep
-  - ep_agreement
-  - ep_trajectories
-  - ep_counterfactual_table

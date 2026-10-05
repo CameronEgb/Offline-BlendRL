@@ -1,17 +1,17 @@
 # @package _global_
 defaults:
 - mimic/_base
-no_plot: true
+no_plot: false
 
 trainer:
-  limit_train_batches: 2
-  limit_val_batches: 2
+  limit_train_batches: 10
+  limit_val_batches: 10
 methods:
   cql_dnn:
     agent: cql
     model: dnn
     batch_size: 256
-    epochs_per_interval: 1
+    epochs_per_interval: 5
     eval_interval_epochs: 1
     lr: 1e-4
     cql_alpha: 2.0

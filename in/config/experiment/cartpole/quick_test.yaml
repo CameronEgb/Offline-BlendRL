@@ -2,16 +2,16 @@
 defaults:
 - cartpole/_base
 total_timesteps: 64000
-intervals_count: 1
+intervals_count: 5
 eval_episodes: 2
-no_plot: true
+no_plot: false
 env:
   num_envs: 10
   num_steps: 64
 trainer:
   accelerator: cpu
-  max_epochs: 1
-  check_val_every_n_epoch: 3
+  max_epochs: 5
+  check_val_every_n_epoch: 1
 methods:
   ppo_blendrl_human_neural:
     agent: ppo

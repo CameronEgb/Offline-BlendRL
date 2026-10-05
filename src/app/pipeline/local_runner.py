@@ -119,10 +119,15 @@ def run_plotting_phase(cfg, context) -> None:
     from src.app.pipeline.datasets import run_plotting
 
     site_cfg = getattr(cfg, "site", None)
+    qualified_exp = (
+        f"{cfg.group}/{cfg.experiment_id}"
+        if getattr(cfg, "group", None) and "/" not in str(cfg.experiment_id)
+        else str(cfg.experiment_id)
+    )
     run_plotting(
-        cfg.experiment_id,
+        qualified_exp,
         style=cfg.get("plot_style", None),
-        base_experiment=cfg.get("experiment_name", ""),
+        base_experiment=cfg.get("experiment_name", qualified_exp),
         site_cfg=site_cfg,
     )
 

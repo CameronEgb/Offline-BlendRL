@@ -18,6 +18,10 @@ DISP_MAP = {
     "lstm_with_v": "LSTM (with V)",
     "transformer_no_v": "Transformer (no V)",
     "transformer_with_v": "Transformer (with V)",
+    "ep_lstm": "EP LSTM",
+    "ep_transformer": "EP Transformer",
+    "lstm": "LSTM",
+    "transformer": "Transformer",
 }
 
 
@@ -128,4 +132,8 @@ class EpDlSweepPlotter(BasePlotter):
         plt.tight_layout()
         plot_4panel_path = output_dir / "4panel.png"
         plt.savefig(plot_4panel_path, dpi=200)
+        plot_sweep_path = output_dir / "ep_dl_sweep.png"
+        plt.savefig(plot_sweep_path, dpi=200)
         plt.close()
+        print(f"  Saved DL sweep plot: {plot_4panel_path}")
+        print(f"  Saved DL sweep plot: {plot_sweep_path}")

@@ -64,26 +64,36 @@ class LossesPlotter(BasePlotter):
                         valid_df = df.dropna(subset=[metric])
                         if not valid_df.empty:
                             x_vals = None
+                            is_transitions = False
                             if x_axis_col in df.columns and df[x_axis_col].notna().any():
                                 full_x = df[x_axis_col].interpolate(method="linear").ffill().bfill()
                                 s_x = full_x.loc[valid_df.index]
                                 if not s_x.empty and s_x.nunique() > 1 and not s_x.isna().any():
                                     x_vals = s_x.values
+                                    is_transitions = True
                                     if used_xlabel is None:
                                         used_xlabel = cfg.get("xlabel", x_axis_col.replace("_", " ").title())
                             if x_vals is None:
-                                if "step" in valid_df.columns and valid_df["step"].nunique() > 1:
-                                    x_vals = valid_df["step"].values
-                                    if used_xlabel is None:
-                                        used_xlabel = cfg.get("xlabel", "Training Steps")
-                                elif "epoch" in valid_df.columns and valid_df["epoch"].nunique() > 1:
+                                if "epoch" in valid_df.columns and valid_df["epoch"].notna().any() and valid_df["epoch"].nunique() > 1:
                                     x_vals = valid_df["epoch"].values
                                     if used_xlabel is None:
-                                        used_xlabel = cfg.get("xlabel", "Epoch")
+                                        used_xlabel = "Epoch"
+                                elif "step" in valid_df.columns and valid_df["step"].notna().any() and valid_df["step"].nunique() > 1:
+                                    x_vals = valid_df["step"].values
+                                    if used_xlabel is None:
+                                        used_xlabel = "Training Steps"
+                                elif "epoch" in valid_df.columns and valid_df["epoch"].notna().any():
+                                    x_vals = valid_df["epoch"].values
+                                    if used_xlabel is None:
+                                        used_xlabel = "Epoch"
+                                elif "step" in valid_df.columns and valid_df["step"].notna().any():
+                                    x_vals = valid_df["step"].values
+                                    if used_xlabel is None:
+                                        used_xlabel = "Training Steps"
                                 else:
                                     x_vals = valid_df.index.values
                                     if used_xlabel is None:
-                                        used_xlabel = cfg.get("xlabel", "Index")
+                                        used_xlabel = "Index"
                             y_vals = valid_df[metric].values
                             all_x.append(x_vals)
                             all_y.append(y_vals)
@@ -99,16 +109,16 @@ class LossesPlotter(BasePlotter):
                         y_smoothed = moving_average(y_mean, window)
                         sem_smoothed = moving_average(y_sem, window)
                         x_plot = all_x[0][: len(y_smoothed)]
-                        plt.plot(x_plot, y_smoothed, label=display_name, color=color, linestyle=ls, linewidth=2.0)
+                        plt.plot(x_plot, y_smoothed, label=display_name, color=color, linestyle=ls, linewidth=2.0, marker=marker or "o", markersize=4)
                         plt.fill_between(
                             x_plot, y_smoothed - sem_smoothed, y_smoothed + sem_smoothed, color=color, alpha=0.15
                         )
                     else:
                         y_smoothed = moving_average(all_y[0], window)
                         x_plot = all_x[0][: len(y_smoothed)]
-                        plt.plot(x_plot, y_smoothed, label=display_name, color=color, linestyle=ls, linewidth=2.0)
+                        plt.plot(x_plot, y_smoothed, label=display_name, color=color, linestyle=ls, linewidth=2.0, marker=marker or "o", markersize=4)
 
-                    xlabel = cfg.get("xlabel") or used_xlabel or "Training Steps"
+                    xlabel = cfg.get("xlabel") if is_transitions else (used_xlabel or cfg.get("xlabel") or "Training Steps")
                     plt.xlabel(xlabel)
                     
                     metric_clean_name = metric.split("/")[-1].replace("_", " ").title()

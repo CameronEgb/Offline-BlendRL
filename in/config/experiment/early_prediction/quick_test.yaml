@@ -2,23 +2,24 @@
 defaults:
   - early_prediction/_base
 
-no_plot: true
+no_plot: false
 
 eval_protocol:
-  horizons: [1]
+  horizons: [1, 3, 5]
 
 early_prediction:
   output_dir: results/plots/early_prediction/quick_test
   checkpoint: null
   use_volatility: false
-  target_model: lstm_no_v
+  target_model: all
   n_splits: 1
-  epochs: 1
+  epochs: 5
   tau_min: 1
-  tau_max: 1
-  tau_step: 1
+  tau_max: 5
+  tau_step: 2
   tau_train: 1
   batch_size: 128
 
 plots:
   - losses
+  - ep_dl_sweep

@@ -244,13 +244,20 @@ def build_trainer(cfg, model=None):
         limit_val_batches = 0
         check_val_every_n_epoch = 1000000
     else:
+        ep_epochs = None
+        if hasattr(cfg, "early_prediction") and hasattr(cfg.early_prediction, "get"):
+            ep_epochs = cfg.early_prediction.get("epochs")
+        elif hasattr(cfg, "get") and isinstance(cfg.get("early_prediction"), dict):
+            ep_epochs = cfg.get("early_prediction").get("epochs")
+
         epochs_per_interval = (
-            cfg.agent.get("epochs_per_interval", 1)
-            if hasattr(cfg, "agent") and cfg.agent is not None and hasattr(cfg.agent, "get")
-            else cfg.get("epochs_per_interval", 1)
+            (cfg.agent.get("epochs_per_interval") if hasattr(cfg, "agent") and cfg.agent is not None and hasattr(cfg.agent, "get") else None)
+            or cfg.get("epochs")
+            or ep_epochs
+            or cfg.get("epochs_per_interval", 1)
         )
-        intervals_count = 1 if (is_offline_only or cfg.get("paradigm") == "offline_rl") else cfg.get("intervals_count", 1)
-        max_epochs = intervals_count * epochs_per_interval
+        intervals_count = 1 if (is_offline_only or cfg.get("paradigm") in ("offline_rl", "supervised")) else cfg.get("intervals_count", 1)
+        max_epochs = intervals_count * int(epochs_per_interval)
         eval_interval_epochs = (
             cfg.agent.get("eval_interval_epochs", 1)
             if hasattr(cfg, "agent") and cfg.agent is not None and hasattr(cfg.agent, "get")

@@ -157,8 +157,140 @@ def main(cfg: DictConfig):
     print(f"\n[Training Complete] Total execution time: {training_time:.2f} seconds ({training_time / 60:.2f} minutes)")
 
     metric = finalize_training(trainer, cfg, ckpt_dir, training_time, start_time, end_time)
+
+    if paradigm_name == "supervised":
+        _run_supervised_evaluation(cfg, model, datamodule, paradigm_def)
+
     return metric
+
+
+def _run_supervised_evaluation(cfg, model, datamodule, paradigm_def):
+    """Post-training horizon evaluation for supervised tasks (e.g. Sepsis lead-time sweep)."""
+    import json
+    from pathlib import Path
+    from src.app.core.lightning_builder import get_method_name
+
+    delegate = getattr(datamodule, "_delegate", datamodule)
+    if not hasattr(delegate, "get_eval_dataloader"):
+        return
+
+    ep_cfg = cfg.get("early_prediction", {}) if hasattr(cfg, "get") else {}
+    if hasattr(ep_cfg, "__iter__") and not isinstance(ep_cfg, dict):
+        from omegaconf import OmegaConf
+
+        ep_cfg = OmegaConf.to_container(ep_cfg, resolve=True)
+    if not isinstance(ep_cfg, dict):
+        ep_cfg = {}
+
+    eval_cfg = cfg.get("eval_protocol", {}) if hasattr(cfg, "get") else {}
+    if hasattr(eval_cfg, "__iter__") and not isinstance(eval_cfg, dict):
+        from omegaconf import OmegaConf
+
+        eval_cfg = OmegaConf.to_container(eval_cfg, resolve=True)
+    if not isinstance(eval_cfg, dict):
+        eval_cfg = {}
+
+    horizons = eval_cfg.get("horizons")
+    if not horizons:
+        tau_min = ep_cfg.get("tau_min")
+        tau_max = ep_cfg.get("tau_max")
+        tau_step = ep_cfg.get("tau_step", 1)
+        if tau_min is not None and tau_max is not None:
+            horizons = list(range(int(tau_min), int(tau_max) + 1, int(tau_step)))
+    if not horizons:
+        horizons = [1, 5, 9, 13, 17, 21, 25, 29, 33]
+
+    eval_protocol_cls = (
+        paradigm_def.eval_protocol_cls
+        if (paradigm_def and paradigm_def.eval_protocol_cls)
+        else None
+    )
+    if eval_protocol_cls is None:
+        from src.app.core.paradigm_impls.base.supervised import ClassificationEvalProtocol
+
+        eval_protocol = ClassificationEvalProtocol()
+    else:
+        eval_protocol = eval_protocol_cls()
+
+    device = next(model.parameters()).device if hasattr(model, "parameters") else torch.device("cpu")
+    model.eval()
+
+    # Determine decision threshold on validation or training data
+    opt_thresh = 0.5
+    calib_loader = datamodule.val_dataloader() or datamodule.train_dataloader()
+    if calib_loader:
+        try:
+            calib_res = eval_protocol.evaluate(model, calib_loader, device=device)
+            opt_thresh = calib_res.get("opt_thresh", 0.5)
+        except Exception as e:
+            logger.warning("Could not compute optimal threshold on validation loader: %s", e)
+
+    tr_idxs, _ = delegate.get_split_indices(0) if hasattr(delegate, "get_split_indices") else ([], [])
+    if hasattr(delegate, "get_training_sequences"):
+        seqs, input_dim = delegate.get_training_sequences()
+        x_train = [seqs[i] for i in tr_idxs]
+    else:
+        x_train = None
+        input_dim = getattr(delegate, "input_dim", 64)
+
+    use_v = False
+    if hasattr(cfg, "model") and hasattr(cfg.model, "get"):
+        use_v = bool(cfg.model.get("use_v", False))
+
+    tau_results = {
+        "tau": [],
+        "auc": [],
+        "auc_sem": [],
+        "auprc": [],
+        "auprc_sem": [],
+        "f1_opt": [],
+        "f1_opt_sem": [],
+        "f1_05": [],
+        "f1_05_sem": [],
+    }
+
+    for tau in horizons:
+        try:
+            eval_loader = delegate.get_eval_dataloader(
+                split_idx=0,
+                tau=int(tau),
+                x_train=x_train,
+                use_v=use_v,
+                input_dim=input_dim,
+            )
+            if eval_loader is None:
+                continue
+            m = eval_protocol.evaluate(model, eval_loader, device=device, opt_thresh=opt_thresh)
+            tau_results["tau"].append(int(tau))
+            for k in ["auc", "auprc", "f1_opt", "f1_05"]:
+                tau_results[k].append(float(m.get(k, 0.0)))
+                tau_results[f"{k}_sem"].append(0.0)
+        except Exception as e:
+            logger.warning("Horizon evaluation failed for tau=%s: %s", tau, e)
+
+    if not tau_results["tau"]:
+        logger.warning("No horizon evaluation data was collected.")
+        return
+
+    clean_exp = Path(cfg.experiment_id).stem
+    plot_dir = Path("results/plots") / str(cfg.group) / clean_exp
+    plot_dir.mkdir(parents=True, exist_ok=True)
+
+    method_name = get_method_name(cfg)
+    clean_key = method_name.lower().replace(" ", "_").replace("(", "").replace(")", "")
+    json_path = plot_dir / f"metrics_{clean_key}.json"
+    with open(json_path, "w") as f:
+        json.dump(tau_results, f, indent=2)
+    print(f"\n[Supervised Horizon Eval] Saved lead-time sweep metrics ({len(tau_results['tau'])} horizons) to: {json_path}")
+
+    # Also save with canonical model keys for compatibility with DISP_MAP
+    if clean_key.startswith("ep_"):
+        alt_key = clean_key.replace("ep_", "") + ("_with_v" if use_v else "_no_v")
+        alt_json_path = plot_dir / f"metrics_{alt_key}.json"
+        with open(alt_json_path, "w") as f:
+            json.dump(tau_results, f, indent=2)
 
 
 if __name__ == "__main__":
     main()
+

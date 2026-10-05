@@ -27,7 +27,5 @@ early_prediction:
   use_volatility: true
 
 plots:
-- ep_dl_sweep
-- ep_agreement
-- ep_trajectories
-- ep_counterfactual_table
+  - losses
+  - ep_dl_sweep
