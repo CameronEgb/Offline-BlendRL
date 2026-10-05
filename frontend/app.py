@@ -904,7 +904,7 @@ class Window(QMainWindow):
             return
 
         if action == "uninstall":
-            # Resolve the plugin id from the component's target_path (e.g. "plugins/doom" → "doom").
+            # Resolve the plugin id from the component's target_path (e.g. "plugins/my_plugin" → "my_plugin").
             # Deactivate any running instance before discover() prunes its manifest.
             pid = Path(comp.target_path).name if comp and comp.target_path else component_id
             if pid in self.plugin_manager.instances:
@@ -1042,7 +1042,7 @@ class Window(QMainWindow):
         for aid, title, default_sc, callback in (
             ("new_experiment", "New experiment", "Ctrl+N", self.new_experiment),
             ("export_config", "Export draft YAML…", "Ctrl+Shift+S", self.export_config),
-            ("save_notes", "Save notes", "Ctrl+S", self.save_notes),
+            ("save_config", "Save configuration", "Ctrl+S", self.save_current_config),
             ("quit", "Quit", "Ctrl+Q", self.close),
         ):
             action = QAction(title, self)
@@ -1686,12 +1686,6 @@ class Window(QMainWindow):
             idx = self.run_combo.currentIndex()
             self.btn_prev_run.setEnabled(idx > 0)
             self.btn_next_run.setEnabled(idx >= 0 and idx < self.run_combo.count() - 1)
-        if hasattr(self, "notes"):
-            self.notes.blockSignals(True)
-            self.notes.setPlainText(run["notes"])
-            self.notes.blockSignals(False)
-            self.note_target.setText(f"Linked to {run['config']['name']}\nRun {run['id']}")
-            self.note_status.setText("Notes save automatically as you type.")
         self.render_run()
         self.backfill_metrics(run)
 
@@ -1984,16 +1978,6 @@ class Window(QMainWindow):
                 self.reward_chart.set_series(series)
                 self.selected = runs[0]
 
-    def notes_changed(self):
-        if hasattr(self, "notes") and self.selected:
-            self.selected["notes"] = self.notes.toPlainText()
-            ok = self.persist(self.selected)
-            if hasattr(self, "note_status"):
-                self.note_status.setText("Saved locally · linked to this run" if ok else "Save failed · see console")
-
-    def save_notes(self):
-        self.notes_changed()
-
     def load_selected_config(self):
         rows = self.table.selectionModel().selectedRows()
         if len(rows) != 1:
@@ -2099,7 +2083,6 @@ class Window(QMainWindow):
             self.terminal_panel.terminal.close()
         if hasattr(self, "hotkey_manager"):
             self.hotkey_manager.cleanup()
-        self.save_notes()
         event.accept()
 
     def reload_frontend(self):

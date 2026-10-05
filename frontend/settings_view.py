@@ -160,7 +160,7 @@ DEFAULT_MENU_SHORTCUTS = [
     ("stop_run", "Stop training", "Shift+F5"),
     ("new_experiment", "New experiment", "Ctrl+N"),
     ("export_config", "Export draft YAML…", "Ctrl+Shift+S"),
-    ("save_notes", "Save notes", "Ctrl+S"),
+    ("save_config", "Save configuration", "Ctrl+S"),
     ("add_to_queue", "Add to queue", "Ctrl+Shift+Q"),
     ("toggle_queue", "Start or pause queue", "Ctrl+Shift+R"),
     ("start_demo", "Start simulated demo", "Ctrl+F5"),

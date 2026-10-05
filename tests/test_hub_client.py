@@ -76,7 +76,7 @@ class TestHubClientAndInstaller(unittest.TestCase):
             "version": "1.0.0", "description": "Offline RL method", "tags": ["rl", "offline"]
         })
         c2 = HubComponent.from_dict({
-            "id": "obsidian-notes", "name": "Obsidian Notes", "kind": "plugin",
+            "id": "markdown-notes", "name": "Markdown Notes", "kind": "plugin",
             "version": "0.1.0", "description": "Markdown notebook", "tags": ["notes"]
         })
         c3 = HubComponent.from_dict({
@@ -89,7 +89,7 @@ class TestHubClientAndInstaller(unittest.TestCase):
         # Kind filter
         plugins = self.client.search(kind="plugin")
         self.assertEqual(len(plugins), 1)
-        self.assertEqual(plugins[0].id, "obsidian-notes")
+        self.assertEqual(plugins[0].id, "markdown-notes")
 
         # Query filter
         methods = self.client.search(query="cql")
@@ -99,7 +99,7 @@ class TestHubClientAndInstaller(unittest.TestCase):
         # Tag filter
         notes = self.client.search(tag="notes")
         self.assertEqual(len(notes), 1)
-        self.assertEqual(notes[0].id, "obsidian-notes")
+        self.assertEqual(notes[0].id, "markdown-notes")
 
     def test_target_directory_resolution_by_kind(self):
         installer = self.client.installer
