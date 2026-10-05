@@ -82,3 +82,4 @@ coverage.xml
 # Leftover artifacts
 temp/
 .src/
+*.pdf
