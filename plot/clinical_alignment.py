@@ -164,12 +164,18 @@ class ClinicalAlignmentPlotter(BasePlotter):
         return method_ckpts, method_interval_ckpts
 
     def _load_agent(self, path, dev):
-        from src.usr.methods.cew_agent import CEWAgent
         from src.usr.methods.cql_agent import CQLAgent
         from src.usr.methods.iql_agent import IQLAgent
 
+        classes = [CQLAgent, IQLAgent]
+        try:
+            from src.usr.methods.cew_agent import CEWAgent
+            classes.insert(1, CEWAgent)
+        except ImportError:
+            pass
+
         last_error = None
-        for cls in [CQLAgent, CEWAgent, IQLAgent]:
+        for cls in classes:
             try:
                 ag = cls.load_from_checkpoint(str(path), map_location=dev, weights_only=False)
                 ag.to(dev)
