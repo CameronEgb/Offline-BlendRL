@@ -21,4 +21,4 @@ early_prediction:
   batch_size: 128
 
 plots:
-  - ep_dl_sweep
+  - losses

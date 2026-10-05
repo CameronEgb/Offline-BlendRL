@@ -217,7 +217,7 @@ class BasePlotter:
             # Live config allows overriding visualization-only keys (plots, default_plots, etc.).
             merged = dict(saved_cfg)
             for k, v in live_cfg.items():
-                if k in ("plots", "default_plots", "style", "plot_style"):
+                if k in ("plots", "default_plots", "style", "plot_style", "early_prediction"):
                     merged[k] = v
                 elif k not in merged:
                     merged[k] = v

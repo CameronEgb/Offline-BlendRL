@@ -28,6 +28,8 @@ class LossesPlotter(BasePlotter):
                 "losses/actor_loss",
                 "losses/q_loss",
                 "losses/value_loss",
+                "val/loss",
+                "train/loss",
             ],
         )
 
