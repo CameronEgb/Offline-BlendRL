@@ -2,7 +2,7 @@ import math
 import re
 from PyQt6.QtCore import Qt, QRectF, QSize
 from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPen, QFont, QSyntaxHighlighter, QTextCharFormat, QLinearGradient
-from PyQt6.QtWidgets import QWidget, QLabel, QVBoxLayout, QFrame, QAbstractButton
+from PyQt6.QtWidgets import QWidget, QLabel, QVBoxLayout, QFrame, QAbstractButton, QTableWidgetItem
 from .theme import theme_color
 
 
@@ -11,6 +11,28 @@ def label(text, kind=None):
     if kind:
         result.setObjectName(kind)
     return result
+
+
+class SortableItem(QTableWidgetItem):
+    """Table cell that sorts by a value (number, timestamp or text) rather than by its displayed text.
+
+    Cells without a value (shown as "—") sort last in either direction.
+    """
+    def __init__(self, text, key):
+        super().__init__(text)
+        self.key = key
+
+    def __lt__(self, other):
+        if not isinstance(other, SortableItem):
+            return super().__lt__(other)
+        if self.key is None and other.key is None:
+            return False
+        if self.key is None or other.key is None:
+            table = self.tableWidget()
+            descending = (table is not None
+                          and table.horizontalHeader().sortIndicatorOrder() == Qt.SortOrder.DescendingOrder)
+            return descending if self.key is None else not descending
+        return self.key < other.key
 
 
 class MetricCard(QFrame):

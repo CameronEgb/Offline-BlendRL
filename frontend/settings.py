@@ -78,6 +78,7 @@ visible = [
     "components",
     "config",
     "monitor",
+    "results",
     "terminal",
     "console",
 ]
