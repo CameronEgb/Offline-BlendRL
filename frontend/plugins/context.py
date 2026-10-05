@@ -39,11 +39,28 @@ class PluginContext:
             icon_name: SVG icon name in frontend/icons/ or absolute path to an .svg.
             short_label: Short text label under the icon in the sidebar (defaults to title).
         """
+        resolved_icon = icon_name
+        if resolved_icon and hasattr(self._window, "plugin_manager"):
+            manifest = self._window.plugin_manager.manifests.get(self.plugin_id)
+            if manifest and manifest.plugin_dir:
+                p_cand = Path(resolved_icon)
+                builtin_icon_dir = Path(__file__).resolve().parent.parent / "icons"
+                if not (p_cand.is_file() or (builtin_icon_dir / f"{resolved_icon}.svg").is_file()):
+                    for cand in [
+                        manifest.plugin_dir / resolved_icon,
+                        manifest.plugin_dir / f"{resolved_icon}.svg",
+                        manifest.plugin_dir / f"{self.plugin_id}.svg",
+                        manifest.plugin_dir / f"{manifest.id}.svg",
+                    ]:
+                        if cand.is_file():
+                            resolved_icon = str(cand)
+                            break
+
         if hasattr(self._window, "tabs") and self._window.tabs is not None:
             self._window.tabs.addTab(
                 widget=widget,
                 text=title,
-                icon=icon_name,
+                icon=resolved_icon,
                 short=short_label or title,
                 tab_id=tab_id,
             )
