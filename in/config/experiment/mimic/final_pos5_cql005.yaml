@@ -10,6 +10,11 @@ defaults:
 resources:
   time: "01:00:00"
 
+plot_only: true
+
+plots:
+  antibiotic_timing: {}
+
 methods:
   # Universal parameters applied across all methods in this experiment
   params:
