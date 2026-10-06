@@ -163,6 +163,15 @@ class AntibioticTimingPlotter(BasePlotter):
 
             method_first_ab[method_name] = first_ab
 
+            # Free memory between checkpoints
+            del agent
+            del all_probs
+            del policy_acts_flat
+            import gc
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
         if not method_first_ab:
             print("  No inference results. Aborting antibiotic_timing plots.")
             return
@@ -318,6 +327,11 @@ class AntibioticTimingPlotter(BasePlotter):
         try:
             from src.usr.methods.cew_agent import CEWAgent
             classes.insert(1, CEWAgent)
+        except ImportError:
+            pass
+        try:
+            from src.usr.methods.blendrl_agent import BlendRLAgent
+            classes.append(BlendRLAgent)
         except ImportError:
             pass
 

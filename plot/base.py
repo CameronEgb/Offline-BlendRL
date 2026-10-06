@@ -132,7 +132,10 @@ class BasePlotter:
                             parent_resolved = self._resolve_config_defaults(parent_raw, visited)
                             base_acc = deep_update(base_acc, parent_resolved)
 
-        return deep_update(base_acc, resolved)
+        merged = deep_update(base_acc, resolved)
+        if "plots" in resolved:
+            merged["plots"] = resolved["plots"]
+        return merged
 
     def get_experiment_config(self, exp_id: str, exp_config_name: str | None = None) -> dict:
         """Finds, resolves, and loads the experiment configuration YAML or saved run config."""
