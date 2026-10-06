@@ -48,3 +48,4 @@ plots:
   losses:
     metrics: ["losses/total_loss", "losses/bellman_loss", "losses/cql_loss"]
   clinical_alignment: {}
+  antibiotic_timing: {}

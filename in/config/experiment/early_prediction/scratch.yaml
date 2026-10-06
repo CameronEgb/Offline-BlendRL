@@ -1,0 +1,60 @@
+# @package _global_
+defaults:
+  - early_prediction/_base
+
+# Cluster resources for CPU execution (NCSU HPC ncshare common partition or local CPU)
+resources:
+  partition: common
+  cores: 4
+  memory: "8G"
+  gpus: 0
+  no_gres: true
+  time: "02:00:00"
+
+methods:
+  params:
+    epochs_per_interval: 20
+    eval_interval_epochs: 5
+    batch_size: 128
+    lr: 1e-3
+
+  ep_lstm:
+    model: lstm
+
+  ep_lstm_with_v:
+    model: lstm
+    use_v: true
+
+  ep_transformer:
+    model: transformer
+
+  ep_transformer_with_v:
+    model: transformer
+    use_v: true
+
+  ep_blendrl:
+    model: blendrl
+    architecture: blendrl
+    rules: antibiotics_shock
+    blender_mode: neural
+
+
+eval_protocol:
+  horizons: [1, 5, 9, 13, 17, 21, 25, 29, 33]
+
+early_prediction:
+  checkpoint: "results/checkpoints/mimic/quick_test"
+  output_dir: results/plots/early_prediction/scratch
+  tau_min: 1
+  tau_max: 33
+  tau_step: 4
+  tau_train: 12
+  n_splits: 5
+  batch_size: 128
+  use_volatility: true
+
+plots:
+  - losses
+  - ep_dl_sweep
+  - ep_trajectories
+  - ep_counterfactual_table

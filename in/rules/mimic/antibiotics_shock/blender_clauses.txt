@@ -1,0 +1,2 @@
+logic_agent(X):-received_antibiotics(E).
+neural_agent(X):-true(E).

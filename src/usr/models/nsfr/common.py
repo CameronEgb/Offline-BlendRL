@@ -21,8 +21,8 @@ def get_nsfr_model(env_name: str, rules: str, device: str, train=False, explain=
     for clause in clauses:
         if clause.head.pred.name not in prednames:
             prednames.append(clause.head.pred.name)
-    m = len(prednames)
-    # m = 5
+    m = len(clauses)
+
     IM = build_infer_module(clauses, atoms, lang, m=m, infer_step=2, train=train, device=device)
     # Neuro-Symbolic Forward Reasoner
     NSFR = NSFReasoner(facts_converter=FC, infer_module=IM, atoms=atoms, bk=bk, clauses=clauses, device=device, train=train, explain=explain)

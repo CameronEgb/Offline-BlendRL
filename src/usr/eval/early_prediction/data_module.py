@@ -149,7 +149,13 @@ class EPSepsisDataModule(L.LightningDataModule, BaseDataModule):
             self.v_vals_all = self._compute_cql_v_values(checkpoint)
 
         self._build_training_cohort()
-        _, self.input_dim = self.get_training_sequences()
+        use_v = self._get_use_v()
+        _, self.input_dim = self.get_training_sequences(use_v=use_v)
+
+    def _get_use_v(self) -> bool:
+        if self.cfg and hasattr(self.cfg, "model") and hasattr(self.cfg.model, "get"):
+            return bool(self.cfg.model.get("use_v", False))
+        return False
 
     def _compute_cql_v_values(self, checkpoint: str) -> np.ndarray:
         """Load CQL agent and compute V(s) = max_a Q(s, a) across all trajectory states."""
@@ -311,14 +317,16 @@ class EPSepsisDataModule(L.LightningDataModule, BaseDataModule):
         batch_size = 64
         if self.cfg and hasattr(self.cfg, "agent") and hasattr(self.cfg.agent, "get") and self.cfg.agent.get("batch_size"):
             batch_size = int(self.cfg.agent.get("batch_size"))
-        loader, _, _, _ = self.get_train_dataloader(split_idx=0, batch_size=batch_size)
+        use_v = self._get_use_v()
+        loader, _, _, _ = self.get_train_dataloader(split_idx=0, use_v=use_v, batch_size=batch_size)
         return loader
 
     def val_dataloader(self) -> DataLoader | None:
         batch_size = 64
         if self.cfg and hasattr(self.cfg, "agent") and hasattr(self.cfg.agent, "get") and self.cfg.agent.get("batch_size"):
             batch_size = int(self.cfg.agent.get("batch_size"))
+        use_v = self._get_use_v()
         tr_idxs, _ = self.get_split_indices(0)
-        seqs, input_dim = self.get_training_sequences()
+        seqs, input_dim = self.get_training_sequences(use_v=use_v)
         x_train = [seqs[i] for i in tr_idxs]
-        return self.get_eval_dataloader(split_idx=0, tau=self.tau_train, x_train=x_train, input_dim=input_dim, batch_size=batch_size)
+        return self.get_eval_dataloader(split_idx=0, tau=self.tau_train, x_train=x_train, use_v=use_v, input_dim=input_dim, batch_size=batch_size)

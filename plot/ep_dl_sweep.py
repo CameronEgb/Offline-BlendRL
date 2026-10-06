@@ -18,11 +18,22 @@ DISP_MAP = {
     "lstm_with_v": "LSTM (with V)",
     "transformer_no_v": "Transformer (no V)",
     "transformer_with_v": "Transformer (with V)",
-    "ep_lstm": "EP LSTM",
-    "ep_transformer": "EP Transformer",
+    "ep_lstm": "LSTM (no V)",
+    "ep_lstm_no_v": "LSTM (no V)",
+    "ep_lstm_with_v": "LSTM (with V)",
+    "ep_transformer": "Transformer (no V)",
+    "ep_transformer_no_v": "Transformer (no V)",
+    "ep_transformer_with_v": "Transformer (with V)",
+    "ep_blendrl": "BlendRL (MLP + NSFR)",
+    "ep_blendrl_treatment": "BlendRL (Treatment Only)",
+    "ep_blendrl_physiology": "BlendRL (Physiology)",
+    "ep_blendrl_refractory": "BlendRL (Refractory Sepsis)",
+    "ep_blendrl_multiorgan": "BlendRL (Multi-Organ SOFA)",
     "lstm": "LSTM",
     "transformer": "Transformer",
 }
+
+
 
 
 class EpDlSweepPlotter(BasePlotter):
@@ -34,7 +45,11 @@ class EpDlSweepPlotter(BasePlotter):
         if not cfg.get("enabled", True):
             return
 
-        json_files = list(output_dir.glob("metrics_*.json"))
+        metrics_dir = output_dir / "metrics"
+        if metrics_dir.exists():
+            json_files = list(metrics_dir.glob("metrics_*.json"))
+        else:
+            json_files = list(output_dir.glob("metrics_*.json"))
         if not json_files:
             json_files = list(output_dir.rglob("metrics_*.json"))
         if not json_files:

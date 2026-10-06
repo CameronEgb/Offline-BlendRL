@@ -22,3 +22,4 @@ plots:
   clinical: {}
   reports:
     include_hyperparameters: true
+  antibiotic_timing: {}

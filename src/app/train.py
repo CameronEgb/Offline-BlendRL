@@ -225,17 +225,17 @@ def _run_supervised_evaluation(cfg, model, datamodule, paradigm_def):
         except Exception as e:
             logger.warning("Could not compute optimal threshold on validation loader: %s", e)
 
+    use_v = False
+    if hasattr(cfg, "model") and hasattr(cfg.model, "get"):
+        use_v = bool(cfg.model.get("use_v", False))
+
     tr_idxs, _ = delegate.get_split_indices(0) if hasattr(delegate, "get_split_indices") else ([], [])
     if hasattr(delegate, "get_training_sequences"):
-        seqs, input_dim = delegate.get_training_sequences()
+        seqs, input_dim = delegate.get_training_sequences(use_v=use_v)
         x_train = [seqs[i] for i in tr_idxs]
     else:
         x_train = None
         input_dim = getattr(delegate, "input_dim", 64)
-
-    use_v = False
-    if hasattr(cfg, "model") and hasattr(cfg.model, "get"):
-        use_v = bool(cfg.model.get("use_v", False))
 
     tau_results = {
         "tau": [],
@@ -274,19 +274,21 @@ def _run_supervised_evaluation(cfg, model, datamodule, paradigm_def):
 
     clean_exp = Path(cfg.experiment_id).stem
     plot_dir = Path("results/plots") / str(cfg.group) / clean_exp
-    plot_dir.mkdir(parents=True, exist_ok=True)
+    metrics_dir = plot_dir / "metrics"
+    metrics_dir.mkdir(parents=True, exist_ok=True)
 
     method_name = get_method_name(cfg)
     clean_key = method_name.lower().replace(" ", "_").replace("(", "").replace(")", "")
-    json_path = plot_dir / f"metrics_{clean_key}.json"
+    json_path = metrics_dir / f"metrics_{clean_key}.json"
     with open(json_path, "w") as f:
         json.dump(tau_results, f, indent=2)
     print(f"\n[Supervised Horizon Eval] Saved lead-time sweep metrics ({len(tau_results['tau'])} horizons) to: {json_path}")
 
     # Also save with canonical model keys for compatibility with DISP_MAP
     if clean_key.startswith("ep_"):
-        alt_key = clean_key.replace("ep_", "") + ("_with_v" if use_v else "_no_v")
-        alt_json_path = plot_dir / f"metrics_{alt_key}.json"
+        base_clean = clean_key.replace("ep_", "").replace("_with_v", "").replace("_no_v", "")
+        alt_key = base_clean + ("_with_v" if use_v else "_no_v")
+        alt_json_path = metrics_dir / f"metrics_{alt_key}.json"
         with open(alt_json_path, "w") as f:
             json.dump(tau_results, f, indent=2)
 

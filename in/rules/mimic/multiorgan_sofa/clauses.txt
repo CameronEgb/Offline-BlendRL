@@ -1,0 +1,4 @@
+shock(X):-low_bp(X),high_lactate(X).
+shock(X):-high_creatinine(X),high_bilirubin(X).
+shock(X):-low_bp(X),low_platelets(X).
+shock(X):-high_creatinine(X),low_platelets(X).

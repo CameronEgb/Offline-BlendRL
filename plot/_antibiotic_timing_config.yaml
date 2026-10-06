@@ -1,0 +1,21 @@
+# Default configuration for plot/antibiotic_timing.py
+# Override per-experiment in plots: antibiotic_timing: { ... }
+
+# ---- inference ----
+batch_size: 10000          # inference batch size (number of transitions)
+
+# ---- case study ----
+n_case_studies: 3          # number of patient trajectories to plot
+max_hours: 240             # x-axis limit (hours since ICU admission)
+figsize_case_study: [14, 11]
+vital_signs:               # top vital sign panels (order matters)
+  - HeartRate_mean
+  - RespiratoryRate_mean
+  - Temperature_mean
+# case_study_patient_ids: []   # optional: force specific patient indices
+
+# ---- summary bar chart ----
+figsize_summary: [10, 5]
+
+# ---- shared ----
+dpi: 200

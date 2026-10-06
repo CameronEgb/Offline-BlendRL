@@ -727,7 +727,12 @@ def parse_methods_dict(cfg) -> dict[str, dict]:
 
         result[str(method_name)] = resolved_mcfg
 
+    only_method = cfg.get("only_method") or cfg.get("method") if hasattr(cfg, "get") else None
+    if only_method and str(only_method) in result:
+        return {str(only_method): result[str(only_method)]}
+
     return result
+
 
 
 def resolve_experiment_config_name(exp_input: str) -> str:

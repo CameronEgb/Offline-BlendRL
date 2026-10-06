@@ -91,3 +91,15 @@ def normal_organs(agent: th.Tensor) -> th.Tensor:
 
 def true(env_obj: th.Tensor) -> th.Tensor:
     return bool_to_probs(th.ones_like(env_obj[..., 0], dtype=th.bool))
+
+
+def received_antibiotics(agent: th.Tensor) -> th.Tensor:
+    # Feature 47 is AntiInfectiveAdmin_max
+    if agent.shape[-1] > 47:
+        abx = agent[..., 47]
+        if abx.ndim > 1 and abx.shape[-1] > 1:
+            abx = th.max(abx, dim=-1)[0]
+    else:
+        abx = th.zeros_like(agent[..., 0])
+    return _smooth_gt(abx, 0.5, tau=0.2)
+

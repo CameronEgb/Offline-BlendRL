@@ -36,13 +36,16 @@ if os.path.join(PROJECT_ROOT, "src") not in sys.path:
     sys.path.insert(0, os.path.join(PROJECT_ROOT, "src"))
 
 from src.usr.eval.early_prediction.model import (
+    SepsisBlendRL,
     SepsisLSTM,
     SepsisTransformer,
     compute_volatility_features,
+    evaluate_blendrl_model,
     evaluate_lstm_model,
     evaluate_transformer_model,
     normalize_features,
 )
+
 
 # ---------------------------------------------------------------------------
 #  Helpers
@@ -288,6 +291,8 @@ def load_ep_model(ckpt_path, device):
     if not m_type:
         if arch_name.startswith("transformer") or "transformer" in Path(ckpt_path).stem.lower():
             m_type = "transformer"
+        elif "blendrl" in arch_name.lower() or "blendrl" in Path(ckpt_path).stem.lower():
+            m_type = "blendrl"
         else:
             m_type = "lstm"
 
@@ -317,6 +322,18 @@ def load_ep_model(ckpt_path, device):
             pos_type=params.get("pos_type", "learned"),
             use_cls_token=params.get("use_cls_token", True),
             use_tcn_conv=params.get("use_tcn_conv", False),
+        ).to(device)
+    elif m_type == "blendrl":
+        rules = params.get("rules", "antibiotics_shock")
+        model = SepsisBlendRL(
+            input_dim=input_dim,
+            rules=rules,
+            env_name=params.get("env_name", "mimic"),
+            hidden_dim=params.get("hidden_dim", 64),
+            hidden_sizes=params.get("hidden_sizes", [64, 64]),
+            blender_mode=params.get("blender_mode", "neural"),
+            blend_function=params.get("blend_function", "softmax"),
+            dropout=params.get("dropout", 0.1),
         ).to(device)
     else:
         raise ValueError(f"Unknown EP model type: {m_type}")
@@ -364,10 +381,13 @@ def predict_shock_probs_with_ep_models(ep_ckpts_for_tau, X_sequences, device):
         model, m_type, input_dim, _ = load_ep_model(ckpt_path, device)
         if m_type == "lstm":
             probs = evaluate_lstm_model(model, X_norm, input_dim, device=str(device))
+        elif m_type == "blendrl":
+            probs = evaluate_blendrl_model(model, X_norm, input_dim, device=str(device))
         else:
             probs = evaluate_transformer_model(model, X_norm, input_dim, device=str(device))
         all_probs.append(probs)
     return np.mean(all_probs, axis=0)
+
 
 
 # ---------------------------------------------------------------------------
@@ -782,33 +802,15 @@ def compute_ep_eval_data(
                 per_patient_tp[i] = (clin_acts == 1).sum()
                 per_patient_tn[i] = (clin_acts == 0).sum()
             else:
-                matches = 0
-                admin_count = 0
-                tp, fp, fn, tn = 0, 0, 0, 0
-                for t in valid_steps:
-                    obs = torch.tensor(X[i, t, :46], dtype=torch.float32).unsqueeze(0).to(device)
-                    action, _ = get_policy_actions(agent, agent_type, obs, device)
-                    clin_act = int(X[i, t, 47])
-                    act = action[0]
-                    if act == clin_act:
-                        matches += 1
-                    if act == 1:
-                        admin_count += 1
-                    if act == 1 and clin_act == 1:
-                        tp += 1
-                    elif act == 1 and clin_act == 0:
-                        fp += 1
-                    elif act == 0 and clin_act == 1:
-                        fn += 1
-                    elif act == 0 and clin_act == 0:
-                        tn += 1
-
-                per_patient_agr[i] = (matches / len(valid_steps)) * 100.0
-                per_patient_admin[i] = admin_count / len(valid_steps)
-                per_patient_tp[i] = tp
-                per_patient_fp[i] = fp
-                per_patient_fn[i] = fn
-                per_patient_tn[i] = tn
+                obs_batch = torch.tensor(X[i, valid_steps, :46], dtype=torch.float32, device=device)
+                acts, _ = get_policy_actions(agent, agent_type, obs_batch, device)
+                clin_acts = X[i, valid_steps, 47].astype(int)
+                per_patient_agr[i] = ((acts == clin_acts).sum() / len(valid_steps)) * 100.0
+                per_patient_admin[i] = (acts == 1).sum() / len(valid_steps)
+                per_patient_tp[i] = ((acts == 1) & (clin_acts == 1)).sum()
+                per_patient_fp[i] = ((acts == 1) & (clin_acts == 0)).sum()
+                per_patient_fn[i] = ((acts == 0) & (clin_acts == 1)).sum()
+                per_patient_tn[i] = ((acts == 0) & (clin_acts == 0)).sum()
 
         patient_agreements[method_key] = per_patient_agr
 
@@ -999,4 +1001,7 @@ def compute_ep_eval_data(
         "y": y,
         "ep_shock_results": ep_shock_results,
         "cf_data": cf_data,
+        "checkpoint_root": str(checkpoint_root) if checkpoint_root else None,
+        "cql_ckpt_path": str(cql_ckpt_for_v) if cql_ckpt_for_v else None,
+        "policies": {k: str(v) for k, v in policies.items()},
     }
