@@ -4,12 +4,23 @@ from nsfr.utils.common import bool_to_probs
 
 
 VALUATION_MODE = "rigid"
+VALUATION_TAU = float(os.environ.get("MIMIC_VALUATION_TAU", "0.5"))
 
 
 def set_valuation_mode(mode: str):
     """Set valuation mode to 'rigid' or 'continuous'."""
     global VALUATION_MODE
     VALUATION_MODE = str(mode).lower()
+
+
+def set_valuation_tau(tau: float):
+    """Set temperature parameter for soft continuous valuations."""
+    global VALUATION_TAU
+    VALUATION_TAU = float(tau)
+
+
+def get_valuation_tau() -> float:
+    return VALUATION_TAU
 
 
 def _is_continuous() -> bool:
@@ -19,17 +30,19 @@ def _is_continuous() -> bool:
     return os.environ.get("MIMIC_VALUATION_MODE", "rigid").lower() in ["continuous", "soft"]
 
 
-def _smooth_lt(x: th.Tensor, threshold: float, tau: float = 0.5) -> th.Tensor:
+def _smooth_lt(x: th.Tensor, threshold: float, tau: float | None = None) -> th.Tensor:
     """Continuous soft less-than: P(x < threshold) = sigmoid((threshold - x) / tau)."""
+    t = tau if tau is not None else VALUATION_TAU
     if _is_continuous():
-        return th.sigmoid((threshold - x) / tau).clamp(min=1e-4, max=1.0 - 1e-4)
+        return th.sigmoid((threshold - x) / t).clamp(min=1e-4, max=1.0 - 1e-4)
     return bool_to_probs(x < threshold)
 
 
-def _smooth_gt(x: th.Tensor, threshold: float, tau: float = 0.5) -> th.Tensor:
+def _smooth_gt(x: th.Tensor, threshold: float, tau: float | None = None) -> th.Tensor:
     """Continuous soft greater-than: P(x > threshold) = sigmoid((x - threshold) / tau)."""
+    t = tau if tau is not None else VALUATION_TAU
     if _is_continuous():
-        return th.sigmoid((x - threshold) / tau).clamp(min=1e-4, max=1.0 - 1e-4)
+        return th.sigmoid((x - threshold) / t).clamp(min=1e-4, max=1.0 - 1e-4)
     return bool_to_probs(x > threshold)
 
 

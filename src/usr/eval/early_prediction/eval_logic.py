@@ -37,10 +37,12 @@ if os.path.join(PROJECT_ROOT, "src") not in sys.path:
 
 from src.usr.eval.early_prediction.model import (
     SepsisBlendRL,
+    SepsisDNN,
     SepsisLSTM,
     SepsisTransformer,
     compute_volatility_features,
     evaluate_blendrl_model,
+    evaluate_dnn_model,
     evaluate_lstm_model,
     evaluate_transformer_model,
     normalize_features,
@@ -293,13 +295,22 @@ def load_ep_model(ckpt_path, device):
             m_type = "transformer"
         elif "blendrl" in arch_name.lower() or "blendrl" in Path(ckpt_path).stem.lower():
             m_type = "blendrl"
+        elif arch_name.startswith("dnn") or arch_name.startswith("mlp") or "dnn" in Path(ckpt_path).stem.lower():
+            m_type = "dnn"
         else:
             m_type = "lstm"
 
     input_dim = data.get("input_dim", hparams.get("input_dim", 196))
     params = data.get("hyperparams", hparams)
 
-    if m_type == "lstm":
+    if m_type == "dnn" or m_type == "mlp":
+        model = SepsisDNN(
+            input_dim=input_dim,
+            hidden_dim=params.get("hidden_dim", 64),
+            hidden_sizes=params.get("hidden_sizes", [64, 64]),
+            dropout=params.get("dropout", 0.1),
+        ).to(device)
+    elif m_type == "lstm":
         model = SepsisLSTM(
             input_dim=input_dim,
             hidden_dim=params.get("hidden_dim", 64),
@@ -325,10 +336,16 @@ def load_ep_model(ckpt_path, device):
         ).to(device)
     elif m_type == "blendrl":
         rules = params.get("rules", "antibiotics_shock")
+        neural_backbone = params.get("neural_backbone", "mlp")
+        if "transformer" in arch_name.lower() or "transformer" in Path(ckpt_path).stem.lower():
+            neural_backbone = "transformer"
+        elif "lstm" in arch_name.lower() or "lstm" in Path(ckpt_path).stem.lower():
+            neural_backbone = "lstm"
         model = SepsisBlendRL(
             input_dim=input_dim,
             rules=rules,
             env_name=params.get("env_name", "mimic"),
+            neural_backbone=neural_backbone,
             hidden_dim=params.get("hidden_dim", 64),
             hidden_sizes=params.get("hidden_sizes", [64, 64]),
             blender_mode=params.get("blender_mode", "neural"),

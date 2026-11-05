@@ -21,6 +21,7 @@ import time
 from pathlib import Path
 
 import hydra
+import numpy as np
 import omegaconf
 import torch
 from omegaconf import DictConfig, OmegaConf
@@ -129,6 +130,7 @@ def main(cfg: DictConfig):
             "use_focal_loss",
             "pos_weight",
             "weight_decay",
+            "logic_lr",
         ):
             if k not in kwargs and hasattr(cfg, "get") and cfg.get(k) is not None:
                 kwargs[k] = cfg.get(k)
@@ -159,6 +161,20 @@ def main(cfg: DictConfig):
     metric = finalize_training(trainer, cfg, ckpt_dir, training_time, start_time, end_time)
 
     if paradigm_name == "supervised":
+        best_ckpt = getattr(trainer.checkpoint_callback, "best_model_path", None)
+        if not best_ckpt or not os.path.exists(best_ckpt):
+            candidate = os.path.join(ckpt_dir, "best_model.ckpt")
+            if os.path.exists(candidate):
+                best_ckpt = candidate
+        if best_ckpt and os.path.exists(best_ckpt):
+            print(f"[Supervised Evaluation] Loading best validation model from: {best_ckpt}")
+            try:
+                ckpt_data = torch.load(best_ckpt, map_location="cpu", weights_only=False)
+                sd = ckpt_data.get("state_dict", ckpt_data)
+                model.load_state_dict(sd)
+            except Exception as e:
+                logger.warning("Could not restore best validation checkpoint: %s", e)
+
         _run_supervised_evaluation(cfg, model, datamodule, paradigm_def)
 
     return metric
@@ -249,24 +265,38 @@ def _run_supervised_evaluation(cfg, model, datamodule, paradigm_def):
         "f1_05_sem": [],
     }
 
+    n_splits = int(ep_cfg.get("n_splits", getattr(delegate, "n_splits", 5)))
+
     for tau in horizons:
-        try:
-            eval_loader = delegate.get_eval_dataloader(
-                split_idx=0,
-                tau=int(tau),
-                x_train=x_train,
-                use_v=use_v,
-                input_dim=input_dim,
-            )
-            if eval_loader is None:
-                continue
-            m = eval_protocol.evaluate(model, eval_loader, device=device, opt_thresh=opt_thresh)
+        split_metrics = {k: [] for k in ["auc", "auprc", "f1_opt", "f1_05"]}
+        for s_idx in range(n_splits):
+            try:
+                tr_s, _ = delegate.get_split_indices(s_idx) if hasattr(delegate, "get_split_indices") else ([], [])
+                x_train_s = [seqs[i] for i in tr_s] if seqs else None
+                eval_loader = delegate.get_eval_dataloader(
+                    split_idx=s_idx,
+                    tau=int(tau),
+                    x_train=x_train_s,
+                    use_v=use_v,
+                    input_dim=input_dim,
+                )
+                if eval_loader is None:
+                    continue
+                # Evaluate with horizon-specific optimal threshold search (opt_thresh=None) alongside standard 0.5
+                m = eval_protocol.evaluate(model, eval_loader, device=device, opt_thresh=None)
+                for k in split_metrics:
+                    split_metrics[k].append(float(m.get(k, 0.0)))
+            except Exception as e:
+                logger.warning("Horizon evaluation failed for tau=%s split=%s: %s", tau, s_idx, e)
+
+        if split_metrics["auc"]:
             tau_results["tau"].append(int(tau))
             for k in ["auc", "auprc", "f1_opt", "f1_05"]:
-                tau_results[k].append(float(m.get(k, 0.0)))
-                tau_results[f"{k}_sem"].append(0.0)
-        except Exception as e:
-            logger.warning("Horizon evaluation failed for tau=%s: %s", tau, e)
+                vals = np.array(split_metrics[k])
+                mean_val = float(np.mean(vals))
+                sem_val = float(np.std(vals, ddof=1) / np.sqrt(len(vals))) if len(vals) > 1 else 0.0
+                tau_results[k].append(mean_val)
+                tau_results[f"{k}_sem"].append(sem_val)
 
     if not tau_results["tau"]:
         logger.warning("No horizon evaluation data was collected.")

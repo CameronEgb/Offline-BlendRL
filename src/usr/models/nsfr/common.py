@@ -6,7 +6,7 @@ from nsfr.utils.logic import build_infer_module, get_blender_lang, get_lang
 from nsfr.valuation import ValuationModule
 
 
-def get_nsfr_model(env_name: str, rules: str, device: str, train=False, explain=False):
+def get_nsfr_model(env_name: str, rules: str, device: str, train=False, valuation_mode="continuous", valuation_tau=0.5, explain=False):
     current_path = os.path.dirname(__file__)
     lark_path = os.path.join(current_path, 'lark/exp.lark')
     lang_base_path = f"in/rules/{env_name}/"
@@ -15,6 +15,11 @@ def get_nsfr_model(env_name: str, rules: str, device: str, train=False, explain=
 
     val_fn_path = f"in/envs/{env_name}/valuation.py"
     val_module = ValuationModule(val_fn_path, lang, device)
+    if hasattr(val_module, "module"):
+        if hasattr(val_module.module, "set_valuation_mode"):
+            val_module.module.set_valuation_mode(valuation_mode)
+        if hasattr(val_module.module, "set_valuation_tau"):
+            val_module.module.set_valuation_tau(valuation_tau)
 
     FC = FactsConverter(lang=lang, valuation_module=val_module, device=device)
     prednames = []

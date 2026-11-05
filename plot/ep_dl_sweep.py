@@ -14,21 +14,33 @@ from plot.base import BasePlotter
 from src.usr.methods.method_style_registry import get_style
 
 DISP_MAP = {
-    "lstm_no_v": "LSTM (no V)",
+    "dnn": "DNN (MLP)",
+    "dnn_no_v": "DNN (MLP)",
+    "ep_dnn": "DNN (MLP)",
+    "ep_dnn_no_v": "DNN (MLP)",
+    "lstm_no_v": "LSTM",
     "lstm_with_v": "LSTM (with V)",
-    "transformer_no_v": "Transformer (no V)",
+    "transformer_no_v": "Transformer",
     "transformer_with_v": "Transformer (with V)",
-    "ep_lstm": "LSTM (no V)",
-    "ep_lstm_no_v": "LSTM (no V)",
+    "ep_lstm": "LSTM",
+    "ep_lstm_no_v": "LSTM",
     "ep_lstm_with_v": "LSTM (with V)",
-    "ep_transformer": "Transformer (no V)",
-    "ep_transformer_no_v": "Transformer (no V)",
+    "ep_transformer": "Transformer",
+    "ep_transformer_no_v": "Transformer",
     "ep_transformer_with_v": "Transformer (with V)",
     "ep_blendrl": "BlendRL (MLP + NSFR)",
     "ep_blendrl_treatment": "BlendRL (Treatment Only)",
     "ep_blendrl_physiology": "BlendRL (Physiology)",
     "ep_blendrl_refractory": "BlendRL (Refractory Sepsis)",
-    "ep_blendrl_multiorgan": "BlendRL (Multi-Organ SOFA)",
+    "ep_blendrl_multiorgan": "BlendRL (MLP + SOFA)",
+    "ep_blendrl_lstm": "BlendRL (LSTM + SOFA)",
+    "ep_blendrl_transformer": "BlendRL (Transformer + SOFA)",
+    "blendrl_multiorgan": "BlendRL (MLP + SOFA)",
+    "blendrl_multiorgan_no_v": "BlendRL (MLP + SOFA)",
+    "blendrl_lstm": "BlendRL (LSTM + SOFA)",
+    "blendrl_lstm_no_v": "BlendRL (LSTM + SOFA)",
+    "blendrl_transformer": "BlendRL (Transformer + SOFA)",
+    "blendrl_transformer_no_v": "BlendRL (Transformer + SOFA)",
     "lstm": "LSTM",
     "transformer": "Transformer",
 }
@@ -88,7 +100,8 @@ class EpDlSweepPlotter(BasePlotter):
             style = get_style(m_name)
             c = style.get("color", colors[idx % len(colors)])
             m = style.get("marker", markers[idx % len(markers)])
-            axes[0, 0].plot(tau_arr, mean_arr, marker=m, color=c, label=m_name, linewidth=2)
+            ls = style.get("linestyle", "-")
+            axes[0, 0].plot(tau_arr, mean_arr, marker=m, color=c, linestyle=ls, label=m_name, linewidth=2.5, markersize=7)
             axes[0, 0].fill_between(tau_arr, mean_arr - sem_arr, mean_arr + sem_arr, color=c, alpha=0.15)
         axes[0, 0].set_title("AUC-ROC vs. Lead Time (τ)", fontsize=12, fontweight="bold")
         axes[0, 0].set_xlabel("Lead Time (hours early - τ)", fontsize=11)
@@ -104,7 +117,8 @@ class EpDlSweepPlotter(BasePlotter):
             style = get_style(m_name)
             c = style.get("color", colors[idx % len(colors)])
             m = style.get("marker", markers[idx % len(markers)])
-            axes[0, 1].plot(tau_arr, mean_arr, marker=m, color=c, label=m_name, linewidth=2)
+            ls = style.get("linestyle", "-")
+            axes[0, 1].plot(tau_arr, mean_arr, marker=m, color=c, linestyle=ls, label=m_name, linewidth=2.5, markersize=7)
             axes[0, 1].fill_between(tau_arr, mean_arr - sem_arr, mean_arr + sem_arr, color=c, alpha=0.15)
         axes[0, 1].set_title("AUPRC (PR-AUC) vs. Lead Time (τ)", fontsize=12, fontweight="bold")
         axes[0, 1].set_xlabel("Lead Time (hours early - τ)", fontsize=11)
@@ -120,7 +134,8 @@ class EpDlSweepPlotter(BasePlotter):
             style = get_style(m_name)
             c = style.get("color", colors[idx % len(colors)])
             m = style.get("marker", markers[idx % len(markers)])
-            axes[1, 0].plot(tau_arr, mean_arr, marker=m, color=c, label=m_name, linewidth=2)
+            ls = style.get("linestyle", "-")
+            axes[1, 0].plot(tau_arr, mean_arr, marker=m, color=c, linestyle=ls, label=m_name, linewidth=2.5, markersize=7)
             axes[1, 0].fill_between(tau_arr, mean_arr - sem_arr, mean_arr + sem_arr, color=c, alpha=0.15)
         axes[1, 0].set_title("Optimal F1-Score (θ*) vs. Lead Time (τ)", fontsize=12, fontweight="bold")
         axes[1, 0].set_xlabel("Lead Time (hours early - τ)", fontsize=11)
@@ -136,7 +151,8 @@ class EpDlSweepPlotter(BasePlotter):
             style = get_style(m_name)
             c = style.get("color", colors[idx % len(colors)])
             m = style.get("marker", markers[idx % len(markers)])
-            axes[1, 1].plot(tau_arr, mean_arr, marker=m, color=c, label=m_name, linewidth=2)
+            ls = style.get("linestyle", "-")
+            axes[1, 1].plot(tau_arr, mean_arr, marker=m, color=c, linestyle=ls, label=m_name, linewidth=2.5, markersize=7)
             axes[1, 1].fill_between(tau_arr, mean_arr - sem_arr, mean_arr + sem_arr, color=c, alpha=0.15)
         axes[1, 1].set_title("Standard F1-Score (θ=0.5) vs. Lead Time (τ)", fontsize=12, fontweight="bold")
         axes[1, 1].set_xlabel("Lead Time (hours early - τ)", fontsize=11)

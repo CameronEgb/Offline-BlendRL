@@ -1,0 +1,72 @@
+# @package _global_
+defaults:
+  - early_prediction/_base
+
+# Cluster resources for CPU execution (NCSU HPC ncshare common partition or local CPU)
+resources:
+  partition: common
+  cores: 4
+  memory: "8G"
+  gpus: 0
+  no_gres: true
+  time: "02:00:00"
+
+methods:
+  params:
+    epochs_per_interval: 25
+    eval_interval_epochs: 1
+    batch_size: 128
+    lr: 1e-3
+    logic_lr: 5e-3
+    early_stopping_patience: 6
+
+  ep_dnn:
+    model: dnn
+
+  ep_lstm:
+    model: lstm
+
+  ep_transformer:
+    model: transformer
+
+  ep_blendrl_multiorgan:
+    model: blendrl
+    architecture: blendrl
+    neural_backbone: mlp
+    rules: multiorgan_sofa
+    blender_mode: neural
+    blend_function: residual
+
+  ep_blendrl_lstm:
+    model: blendrl
+    architecture: blendrl
+    neural_backbone: lstm
+    rules: multiorgan_sofa
+    blender_mode: neural
+    blend_function: residual
+
+  ep_blendrl_transformer:
+    model: blendrl
+    architecture: blendrl
+    neural_backbone: transformer
+    rules: multiorgan_sofa
+    blender_mode: neural
+    blend_function: residual
+
+eval_protocol:
+  horizons: [1, 5, 9, 13, 17, 21, 25, 29, 33]
+
+early_prediction:
+  checkpoint: null
+  tau_min: 1
+  tau_max: 33
+  tau_step: 4
+  tau_train: 12
+  n_splits: 5
+  batch_size: 128
+  use_volatility: true
+
+plots:
+  - losses
+  - ep_dl_sweep
+  - ep_counterfactual_table

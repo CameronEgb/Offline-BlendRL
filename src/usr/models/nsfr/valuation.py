@@ -49,6 +49,7 @@ class ValuationModule(nn.Module, ABC):
         val_fn_module = load_module(val_fn_path)
         all_functions = inspect.getmembers(val_fn_module, inspect.isfunction)
         self.val_fns = {fn[0]: fn[1] for fn in all_functions}
+        self.module = val_fn_module
 
         self.lang = lang
         self.device = device

@@ -5,7 +5,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 
 from src.usr.eval.early_prediction.data_module import EPSepsisDataset, collate_ep_batch
-from src.usr.eval.early_prediction.model import FocalLoss, SepsisBlendRL, SepsisLSTM, SepsisTransformer
+from src.usr.eval.early_prediction.model import FocalLoss, SepsisBlendRL, SepsisDNN, SepsisLSTM, SepsisTransformer
 
 
 class EPSepsisLightningModule(L.LightningModule):
@@ -14,8 +14,16 @@ class EPSepsisLightningModule(L.LightningModule):
         self.save_hyperparameters()
         self.architecture_name = architecture_name
         self.lr = lr
+        self.logic_lr = float(kwargs.get("logic_lr", 5e-3))
 
-        if architecture_name.startswith("lstm"):
+        if architecture_name.startswith("dnn") or architecture_name == "mlp":
+            self.model = SepsisDNN(
+                input_dim=input_dim,
+                hidden_dim=kwargs.get("hidden_dim", 64),
+                hidden_sizes=kwargs.get("hidden_sizes", [64, 64]),
+                dropout=kwargs.get("dropout", 0.1),
+            )
+        elif architecture_name.startswith("lstm"):
             self.model = SepsisLSTM(
                 input_dim=input_dim,
                 hidden_dim=kwargs.get("hidden_dim", 64),
@@ -48,6 +56,15 @@ class EPSepsisLightningModule(L.LightningModule):
                 rules = "antibiotics_shock"
 
             env_name = blend_kwargs.pop("env_name", "mimic")
+            neural_backbone = blend_kwargs.pop("neural_backbone", None)
+            if not neural_backbone:
+                if "transformer" in architecture_name.lower():
+                    neural_backbone = "transformer"
+                elif "lstm" in architecture_name.lower():
+                    neural_backbone = "lstm"
+                else:
+                    neural_backbone = "mlp"
+
             hidden_dim = blend_kwargs.pop("hidden_dim", 64)
             hidden_sizes = blend_kwargs.pop("hidden_sizes", [64, 64])
             blender_mode = blend_kwargs.pop("blender_mode", "neural")
@@ -58,6 +75,7 @@ class EPSepsisLightningModule(L.LightningModule):
                 input_dim=input_dim,
                 rules=rules,
                 env_name=env_name,
+                neural_backbone=neural_backbone,
                 hidden_dim=hidden_dim,
                 hidden_sizes=hidden_sizes,
                 blender_mode=blender_mode,
@@ -108,7 +126,37 @@ class EPSepsisLightningModule(L.LightningModule):
 
     def configure_optimizers(self):
         weight_decay = self.hparams.get("weight_decay", 1e-4)
-        return torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=weight_decay)
+        logic_lr = float(getattr(self, "logic_lr", self.hparams.get("logic_lr", 5e-3)))
+
+        logic_params = []
+        neural_params = []
+        for name, param in self.named_parameters():
+            if not param.requires_grad:
+                continue
+            if "logic" in name or "blender" in name:
+                logic_params.append(param)
+            else:
+                neural_params.append(param)
+
+        param_groups = []
+        if neural_params:
+            param_groups.append({"params": neural_params, "lr": self.lr, "weight_decay": weight_decay})
+        if logic_params:
+            param_groups.append({"params": logic_params, "lr": logic_lr, "weight_decay": 0.0})
+
+        optimizer = torch.optim.AdamW(param_groups if param_groups else self.parameters())
+        try:
+            max_epochs = self.trainer.max_epochs if (self.trainer and self.trainer.max_epochs) else 25
+        except (RuntimeError, AttributeError):
+            max_epochs = 25
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max_epochs, eta_min=1e-5)
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "epoch",
+            },
+        }
 
 
 def build_ep_trainer(epochs, device_str):

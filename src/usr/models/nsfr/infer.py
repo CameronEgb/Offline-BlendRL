@@ -34,22 +34,20 @@ class InferModule(nn.Module):
         self.device = device
         self.train_ = train
         if not train:
-            self.register_buffer("W", self.init_identity_weights(device))
+            self.register_buffer("W", self.init_identity_weights(device, scale=10.0))
         else:
-            # to learng the clause weights, initialize W as follows:
-            self.W = nn.Parameter(torch.Tensor(
-                np.random.normal(size=(m, self.I.size(0)))).to(device))
+            # Initialize clause weights with unsaturated scale=2.0 so rules start favored but gradients remain strong (~0.2 vs 1e-4)
+            self.W = nn.Parameter(self.init_identity_weights(device, scale=2.0))
         
         # clause functions
         self.cs = nn.ModuleList([ClauseFunction(i, self.I[i], gamma=gamma)
                                  for i in range(self.I.size(0))])
 
-        # assert m == self.C, "Invalid m and C: " + \
-        #     str(m) + ' and ' + str(self.C)
-
-    def init_identity_weights(self, device):
-        ones = torch.ones((self.C,), dtype=torch.float32) * 10
-        return torch.diag(ones).to(device)
+    def init_identity_weights(self, device=None, scale=10.0):
+        ones = torch.ones((self.C,), dtype=torch.float32) * scale
+        if device is not None:
+            return torch.diag(ones).to(device)
+        return torch.diag(ones)
 
     def forward(self, x):
         """

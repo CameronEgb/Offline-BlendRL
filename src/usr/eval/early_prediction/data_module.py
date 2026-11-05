@@ -143,13 +143,13 @@ class EPSepsisDataModule(L.LightningDataModule, BaseDataModule):
         self.use_all_trajectories = ep_cfg.get("use_all_trajectories", data_cfg.get("use_all_trajectories", False))
         self.n_splits = ep_cfg.get("n_splits", data_cfg.get("n_splits", 20))
 
-        # Precompute CQL policy values V(s) if checkpoint is supplied
+        # Precompute CQL policy values V(s) only if checkpoint is supplied AND use_v is requested
+        use_v = self._get_use_v()
         checkpoint = ep_cfg.get("checkpoint")
-        if checkpoint:
+        if checkpoint and use_v:
             self.v_vals_all = self._compute_cql_v_values(checkpoint)
 
         self._build_training_cohort()
-        use_v = self._get_use_v()
         _, self.input_dim = self.get_training_sequences(use_v=use_v)
 
     def _get_use_v(self) -> bool:

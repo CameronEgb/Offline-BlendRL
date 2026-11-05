@@ -319,44 +319,29 @@ def evaluate_transformer_model(model, X_test, input_dim, device="cpu"):
     return np.concatenate(all_probs)
 
 
-# --- BlendRL Model for Sepsis Early Prediction (MLP Neural + NSFR Logic + MLP Blender) ---
-class SepsisBlendRL(nn.Module):
+# --- Standalone Feedforward Neural Network (MLP/DNN) Model for Sepsis Early Prediction ---
+class SepsisDNN(nn.Module):
     """
-    Hybrid Neuro-Symbolic Early Prediction Model (BlendRL for Sepsis).
-    Composes an MLP neural sequence classifier, an NSFR fuzzy logic reasoner,
-    and a neural MLP blender that dynamically weights logic and neural predictions.
+    Feedforward Neural Network (MLP) for Sepsis Early Prediction.
+    Serves as the standalone pure-neural baseline counterpart to SepsisBlendRL,
+    sharing the exact same pooled trajectory backbone.
     """
 
     def __init__(
         self,
         input_dim,
-        rules="antibiotics_shock",
-        env_name="mimic",
         hidden_dim=64,
         hidden_sizes=None,
-        blender_mode="neural",
-        blend_function="softmax",
         dropout=0.1,
         **kwargs,
     ):
         super().__init__()
         self.input_dim = input_dim
-        self.rules = rules
-        self.env_name = env_name
-        self.blender_mode = blender_mode
-        self.blend_function = blend_function
-
-        # 1. Symbolic / Logic module: NSFR reasoner
-        from nsfr.common import get_nsfr_model
-
-        self.logic_model = get_nsfr_model(env_name, rules, device="cpu")
-
         if hidden_sizes is None:
             hidden_sizes = [hidden_dim, hidden_dim]
         elif isinstance(hidden_sizes, (list, tuple)):
             hidden_sizes = list(hidden_sizes)
 
-        # 2. Neural module (MLP over pooled trajectory)
         in_features = input_dim * 2
         layers = [nn.LayerNorm(in_features)]
         last_sz = in_features
@@ -370,36 +355,13 @@ class SepsisBlendRL(nn.Module):
             )
             last_sz = sz
         layers.append(nn.Linear(last_sz, 1))
-        self.neural_mlp = nn.Sequential(*layers)
-
-        # 3. Blender module (MLP blender predicting mixture weights)
-        blender_layers = [nn.LayerNorm(in_features)]
-        b_last_sz = in_features
-        b_hidden = hidden_sizes[0] if hidden_sizes else 64
-        blender_layers.extend(
-            [
-                nn.Linear(b_last_sz, b_hidden),
-                nn.GELU(),
-                nn.Dropout(dropout),
-                nn.Linear(b_hidden, 2),
-            ]
-        )
-        self.blender_mlp = nn.Sequential(*blender_layers)
-
-        self.latest_blending_weights = None
-        self.latest_p_neural = None
-        self.latest_p_logic = None
+        self.mlp = nn.Sequential(*layers)
 
     def forward(self, x, lengths=None, padding_mask=None):
         if x.ndim == 2:
             pooled = torch.cat([x, x], dim=-1)
-            raw_obs = x[:, : min(x.size(-1), 49)]
-            if raw_obs.size(-1) < 49:
-                pad = torch.zeros(x.size(0), 49 - raw_obs.size(-1), device=x.device, dtype=x.dtype)
-                raw_obs = torch.cat([raw_obs, pad], dim=-1)
-            agent_rep = raw_obs
         else:
-            B, L, D = x.shape
+            B, L, _ = x.shape
             if padding_mask is not None:
                 mask = (~padding_mask).float().unsqueeze(-1)
                 mean_x = (x * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1)
@@ -417,6 +379,162 @@ class SepsisBlendRL(nn.Module):
 
             pooled = torch.cat([last_x, mean_x], dim=-1)
 
+        return self.mlp(pooled)
+
+
+def evaluate_dnn_model(model, X_test, input_dim, device="cpu"):
+    from src.usr.eval.early_prediction.data_module import EPSepsisDataset, collate_ep_batch
+
+    model.eval()
+    model.to(device)
+    dataset = EPSepsisDataset(X_test, [0] * len(X_test), input_dim)
+    loader = DataLoader(dataset, batch_size=128, shuffle=False, collate_fn=collate_ep_batch)
+
+    all_probs = []
+    with torch.no_grad():
+        for batch in loader:
+            x, _, lengths, padding_mask = batch
+            logits = model(x.to(device), lengths=lengths.to(device), padding_mask=padding_mask.to(device))
+            probs = torch.sigmoid(logits).cpu().numpy().squeeze(1)
+            all_probs.append(probs)
+
+    return np.concatenate(all_probs)
+
+
+# --- BlendRL Model for Sepsis Early Prediction (MLP Neural + NSFR Logic + MLP Blender) ---
+class SepsisBlendRL(nn.Module):
+    """
+    Hybrid Neuro-Symbolic Early Prediction Model (BlendRL for Sepsis).
+    Composes an MLP neural sequence classifier, an NSFR fuzzy logic reasoner,
+    and a neural MLP blender that dynamically weights logic and neural predictions.
+    """
+
+    def __init__(
+        self,
+        input_dim,
+        rules="antibiotics_shock",
+        env_name="mimic",
+        neural_backbone="mlp",
+        hidden_dim=64,
+        hidden_sizes=None,
+        blender_mode="neural",
+        blend_function="residual",
+        dropout=0.1,
+        **kwargs,
+    ):
+        super().__init__()
+        self.input_dim = input_dim
+        self.rules = rules
+        self.env_name = env_name
+        self.neural_backbone = str(kwargs.get("neural_backbone", neural_backbone)).lower()
+        self.blender_mode = blender_mode
+        self.blend_function = str(kwargs.get("blend_function", blend_function)).lower()
+
+        # 1. Symbolic / Logic module: NSFR reasoner with continuous valuations and learnable clause weights
+        from nsfr.common import get_nsfr_model
+
+        train_logic = kwargs.get("train_logic", True)
+        valuation_mode = kwargs.get("valuation_mode", "continuous")
+        valuation_tau = float(kwargs.get("valuation_tau", 0.5))
+        self.logic_model = get_nsfr_model(
+            env_name, rules, device="cpu", train=train_logic, valuation_mode=valuation_mode, valuation_tau=valuation_tau
+        )
+
+        if hidden_sizes is None:
+            hidden_sizes = [hidden_dim, hidden_dim]
+        elif isinstance(hidden_sizes, (list, tuple)):
+            hidden_sizes = list(hidden_sizes)
+
+        # 2. Neural backbone module
+        if "lstm" in self.neural_backbone:
+            self.neural_module = SepsisLSTM(
+                input_dim=input_dim,
+                hidden_dim=hidden_dim,
+                num_layers=kwargs.get("num_layers", 2),
+                dropout=kwargs.get("dropout", 0.2),
+                use_dual_pooling=kwargs.get("use_dual_pooling", True),
+                use_tcn_conv=kwargs.get("use_tcn_conv", False),
+                bidirectional=kwargs.get("bidirectional", False),
+            )
+        elif "transformer" in self.neural_backbone:
+            self.neural_module = SepsisTransformer(
+                input_dim=input_dim,
+                d_model=kwargs.get("d_model", hidden_dim),
+                nhead=kwargs.get("nhead", 4),
+                num_layers=kwargs.get("num_layers", 2),
+                dim_feedforward=kwargs.get("dim_feedforward", hidden_dim * 2),
+                dropout=kwargs.get("dropout", 0.1),
+                use_dual_pooling=kwargs.get("use_dual_pooling", True),
+                pos_type=kwargs.get("pos_type", "learned"),
+                use_cls_token=kwargs.get("use_cls_token", True),
+                use_tcn_conv=kwargs.get("use_tcn_conv", False),
+            )
+        else:
+            self.neural_module = SepsisDNN(
+                input_dim=input_dim,
+                hidden_dim=hidden_dim,
+                hidden_sizes=hidden_sizes,
+                dropout=dropout,
+            )
+        self.neural_mlp = self.neural_module  # alias for backward compatibility
+
+        # 3. Blender module (MLP blender predicting mixture weights)
+        self.uncertainty_aware = bool(kwargs.get("uncertainty_aware", True))
+        in_features = input_dim * 2 + (3 if self.uncertainty_aware else 0)
+        blender_layers = [nn.LayerNorm(in_features)]
+        b_last_sz = in_features
+        b_hidden = hidden_sizes[0] if hidden_sizes else 64
+        blender_layers.extend(
+            [
+                nn.Linear(b_last_sz, b_hidden),
+                nn.GELU(),
+                nn.Dropout(dropout),
+                nn.Linear(b_hidden, 2),
+            ]
+        )
+        self.blender_mlp = nn.Sequential(*blender_layers)
+        self.logic_scale = nn.Parameter(torch.tensor(1.0))
+
+        self.latest_blending_weights = None
+        self.latest_p_neural = None
+        self.latest_p_logic = None
+
+    def forward(self, x, lengths=None, padding_mask=None):
+        if x.ndim == 2:
+            x_seq = x.unsqueeze(1)
+            lengths_eff = torch.ones(x.size(0), device=x.device, dtype=torch.long)
+            mask_eff = torch.zeros(x.size(0), 1, device=x.device, dtype=torch.bool)
+            pooled = torch.cat([x, x], dim=-1)
+            raw_obs = x[:, : min(x.size(-1), 49)]
+            if raw_obs.size(-1) < 49:
+                pad = torch.zeros(x.size(0), 49 - raw_obs.size(-1), device=x.device, dtype=x.dtype)
+                raw_obs = torch.cat([raw_obs, pad], dim=-1)
+            agent_rep = raw_obs
+        else:
+            x_seq = x
+            B, L, D = x.shape
+            if padding_mask is not None:
+                mask_eff = padding_mask
+                mask = (~padding_mask).float().unsqueeze(-1)
+                mean_x = (x * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1)
+                valid_lens = (~padding_mask).sum(dim=1).clamp(min=1)
+                lengths_eff = valid_lens
+                last_idx = valid_lens - 1
+                last_x = x[torch.arange(B, device=x.device), last_idx]
+            elif lengths is not None:
+                lengths_eff = lengths.clamp(min=1, max=L)
+                mask_eff = torch.arange(L, device=x.device).unsqueeze(0) >= lengths_eff.unsqueeze(1)
+                last_idx = lengths_eff - 1
+                last_x = x[torch.arange(B, device=x.device), last_idx]
+                mean_x = x.mean(dim=1)
+            else:
+                lengths_eff = torch.full((B,), L, device=x.device, dtype=torch.long)
+                mask_eff = torch.zeros((B, L), device=x.device, dtype=torch.bool)
+                last_x = x[:, -1]
+                mean_x = x.mean(dim=1)
+
+            pooled = torch.cat([last_x, mean_x], dim=-1)
+
             # Extract patient representation for NSFR logic reasoner
             raw_seq = x[:, :, : min(D, 49)]
             if raw_seq.size(-1) < 49:
@@ -425,7 +543,12 @@ class SepsisBlendRL(nn.Module):
             agent_rep = raw_seq.max(dim=1)[0]
 
         # 1. Neural forward pass
-        neural_logits = self.neural_mlp(pooled)
+        if "lstm" in self.neural_backbone:
+            neural_logits = self.neural_module(x_seq, lengths=lengths_eff)
+        elif "transformer" in self.neural_backbone:
+            neural_logits = self.neural_module(x_seq, padding_mask=mask_eff)
+        else:
+            neural_logits = self.neural_module(x_seq, lengths=lengths_eff, padding_mask=mask_eff)
         p_neural = torch.sigmoid(neural_logits)
 
         # 2. Logic forward pass (NSFR)
@@ -434,18 +557,32 @@ class SepsisBlendRL(nn.Module):
         p_logic = logic_preds[:, :1] if logic_preds.size(-1) >= 1 else logic_preds
 
         # 3. Blender forward pass
-        blend_logits = self.blender_mlp(pooled)
-        if self.blend_function == "softmax":
-            weights = torch.softmax(blend_logits, dim=-1)
+        if getattr(self, "uncertainty_aware", True):
+            neural_uncertainty = 1.0 - 2.0 * torch.abs(p_neural - 0.5)
+            blender_input = torch.cat([pooled, neural_uncertainty, p_neural, p_logic], dim=-1)
         else:
-            weights = nn.functional.gumbel_softmax(blend_logits, dim=-1, hard=False)
+            blender_input = pooled
+        blend_logits = self.blender_mlp(blender_input)
+        if self.blend_function in ["residual", "logit_residual"]:
+            # Cooperative logit/residual gating:
+            # gate_logic modulates trust in logic evidence based on patient state
+            gate_logic = torch.sigmoid(blend_logits[:, 1:2])
+            delta_logic = self.logic_scale * gate_logic * p_logic
+            logits_blend = neural_logits + delta_logic
+            eff_logic = torch.clamp(gate_logic * p_logic, 0.0, 1.0)
+            weights = torch.cat([1.0 - eff_logic, eff_logic], dim=-1)
+        else:
+            if self.blend_function == "softmax":
+                weights = torch.softmax(blend_logits, dim=-1)
+            else:
+                weights = nn.functional.gumbel_softmax(blend_logits, dim=-1, hard=False)
 
-        w_neural = weights[:, 0:1]
-        w_logic = weights[:, 1:2]
+            w_neural = weights[:, 0:1]
+            w_logic = weights[:, 1:2]
 
-        # Weighted blending of shock probabilities
-        p_blend = (w_neural * p_neural + w_logic * p_logic).clamp(1e-6, 1.0 - 1e-6)
-        logits_blend = torch.logit(p_blend, eps=1e-6)
+            # Weighted blending of shock probabilities
+            p_blend = (w_neural * p_neural + w_logic * p_logic).clamp(1e-6, 1.0 - 1e-6)
+            logits_blend = torch.logit(p_blend, eps=1e-6)
 
         self.latest_blending_weights = weights
         self.latest_p_neural = p_neural

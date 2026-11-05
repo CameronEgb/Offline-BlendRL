@@ -213,6 +213,23 @@ def build_trainer(cfg, model=None):
                     save_on_train_epoch_end=False,
                 )
             )
+
+        patience = (
+            cfg.agent.get("early_stopping_patience")
+            if hasattr(cfg, "agent") and cfg.agent is not None and hasattr(cfg.agent, "get")
+            else cfg.get("early_stopping_patience")
+        )
+        if patience:
+            from lightning.pytorch.callbacks import EarlyStopping
+
+            callbacks.append(
+                EarlyStopping(
+                    monitor=monitor_metric,
+                    mode=monitor_mode,
+                    patience=int(patience),
+                    verbose=True,
+                )
+            )
     else:
         from src.app.core.callbacks import EnvironmentEvaluatorCallback
 
